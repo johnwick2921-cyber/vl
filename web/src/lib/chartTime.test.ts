@@ -98,3 +98,71 @@ describe('formatCTDisplayString — hand-parses the Go display string', () => {
     expect(formatCTDisplayString(null)).toBe('—')
   })
 })
+
+describe('ctTickMarkFormatter — C10 month/year follow the app language', () => {
+  const sep = Date.UTC(2026, 8, 15, 18, 0, 0) / 1000
+  const setLang = (l: string | null) => {
+    if (l === null) localStorage.removeItem('language')
+    else localStorage.setItem('language', l)
+  }
+  it('en → "Sep" (never "9月")', () => {
+    setLang('en')
+    expect(ctTickMarkFormatter(sep as Time, TickMarkType.Month)).toBe('Sep')
+  })
+  it('no saved language → en', () => {
+    setLang(null)
+    expect(ctTickMarkFormatter(sep as Time, TickMarkType.Month)).toBe('Sep')
+  })
+  it('zh → "9月"', () => {
+    setLang('zh')
+    expect(ctTickMarkFormatter(sep as Time, TickMarkType.Month)).toBe('9月')
+    setLang(null)
+  })
+  it('id → "Sep"', () => {
+    setLang('id')
+    expect(ctTickMarkFormatter(sep as Time, TickMarkType.Month)).toBe('Sep')
+    setLang(null)
+  })
+  it('year is CT-dated: 02:00 UTC Jan 1 is still 2025 in CT', () => {
+    setLang('en')
+    const t = Date.UTC(2026, 0, 1, 2, 0, 0) / 1000
+    expect(ctTickMarkFormatter(t as Time, TickMarkType.Year)).toBe('2025')
+  })
+  it('a UTC-midnight day tick is labelled by its CT date (19:00 CDT prior day)', () => {
+    const utcMidnight = Date.UTC(2026, 8, 16, 0, 0, 0) / 1000
+    expect(
+      ctTickMarkFormatter(utcMidnight as Time, TickMarkType.DayOfMonth)
+    ).toBe('09/15')
+  })
+})
+
+// m427/11 — the 'id' language month label. September is "Sep" in id-ID AND en-US,
+// so a September-only test cannot tell the locales apart (a chartLocale() that
+// returned en-US for 'id' stayed green). October/December/May differ.
+describe('ctTickMarkFormatter — Month labels follow the app language (id)', () => {
+  const oct = Date.UTC(2026, 9, 15, 14, 30, 0) / 1000
+  const dec = Date.UTC(2026, 11, 15, 14, 30, 0) / 1000
+  const setLang = (l: string | null) => {
+    if (l === null) localStorage.removeItem('language')
+    else localStorage.setItem('language', l)
+  }
+  it('id: October is Okt, December is Des', () => {
+    try {
+      setLang('id')
+      expect(ctTickMarkFormatter(oct as Time, TickMarkType.Month)).toBe('Okt')
+      expect(ctTickMarkFormatter(dec as Time, TickMarkType.Month)).toBe('Des')
+    } finally {
+      setLang(null)
+    }
+  })
+  it('en (and unset): October is Oct, December is Dec', () => {
+    setLang(null)
+    expect(ctTickMarkFormatter(oct as Time, TickMarkType.Month)).toBe('Oct')
+    try {
+      setLang('en')
+      expect(ctTickMarkFormatter(dec as Time, TickMarkType.Month)).toBe('Dec')
+    } finally {
+      setLang(null)
+    }
+  })
+})

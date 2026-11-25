@@ -6,7 +6,11 @@ import "testing"
 // nearest box edge IN the trade direction is closer than roomMultiple × risk
 // is refused; row 25 [@ 23:14–24:03]: a setup between two boxes is exempt.
 // The CTO's pin numbers: 10 pts under an FTGH with a 6 pt risk (2R = 12) →
-// refused; 20 pts → allowed; between two boxes → allowed.
+// refused; 20 pts → allowed. m465 (D3.2-R29/R30, release #60): between two
+// boxes is NO LONGER a blanket exemption — the mentor refused E6 (a short ISB on
+// the FTGL top with the FTGH drawn above) — the middle case passes only on its
+// own room; betweenExempt=true (knob mentor_near_box_between_exempt) restores the
+// pre-#60 exemption.
 func TestNearBoxRefusal(t *testing.T) {
 	cases := []struct {
 		name         string
@@ -15,6 +19,7 @@ func TestNearBoxRefusal(t *testing.T) {
 		side         Side
 		roomMultiple float64
 		risk         float64
+		exempt       bool // knob near_box_between_exempt (default false)
 		wantRefuse   bool
 	}{
 		{
@@ -36,8 +41,30 @@ func TestNearBoxRefusal(t *testing.T) {
 			wantRefuse:   false,
 		},
 		{
-			name:         "between two boxes → exempt (row 25 pin)",
+			// m465 FLIP (D3.2-R29 [D3.2 p1 @22:12–23:08]): 10 pts under the
+			// FTGH with 2R = 12 is "sát box" even with an FTGL below — refused.
+			name:         "between two boxes, 10 pts under the FTGH, 2R=12 → refused (m465 flip of the row 25 pin)",
 			boxes:        []Box{{Kind: FTGH, Top: 110, Bottom: 100}, {Kind: FTGL, Top: 85, Bottom: 80}},
+			price:        90,
+			side:         SideLong,
+			roomMultiple: 2,
+			risk:         6,
+			wantRefuse:   true,
+		},
+		{
+			name:         "between two boxes, knob between_exempt=true → exempt (pre-#60)",
+			boxes:        []Box{{Kind: FTGH, Top: 110, Bottom: 100}, {Kind: FTGL, Top: 85, Bottom: 80}},
+			price:        90,
+			side:         SideLong,
+			roomMultiple: 2,
+			risk:         6,
+			exempt:       true,
+			wantRefuse:   false,
+		},
+		{
+			// D3.2-R30 [@23:14–24:41]: the middle case with room passes on its own.
+			name:         "between two boxes, 20 pts under the FTGH, 2R=12 → allowed on its own room",
+			boxes:        []Box{{Kind: FTGH, Top: 120, Bottom: 110}, {Kind: FTGL, Top: 75, Bottom: 70}},
 			price:        90,
 			side:         SideLong,
 			roomMultiple: 2,
@@ -63,13 +90,23 @@ func TestNearBoxRefusal(t *testing.T) {
 			wantRefuse:   true,
 		},
 		{
-			name:         "box wholly above + box wholly below → allowed (F1 pin)",
+			name:         "box wholly above + box wholly below, knob exempt → allowed (F1 pin, pre-#60)",
 			boxes:        []Box{{Kind: FTGH, Top: 110, Bottom: 100}, {Kind: FTGL, Top: 80, Bottom: 70}},
 			price:        95,
 			side:         SideLong,
 			roomMultiple: 2,
 			risk:         6,
+			exempt:       true,
 			wantRefuse:   false,
+		},
+		{
+			name:         "box wholly above + box wholly below, 5 pts under the FTGH → refused (m465 default)",
+			boxes:        []Box{{Kind: FTGH, Top: 110, Bottom: 100}, {Kind: FTGL, Top: 80, Bottom: 70}},
+			price:        95,
+			side:         SideLong,
+			roomMultiple: 2,
+			risk:         6,
+			wantRefuse:   true,
 		},
 		{
 			name:         "short: 10 pts above FTGL, 6 pt risk → refused",
@@ -119,7 +156,7 @@ func TestNearBoxRefusal(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			refuse, why := nearBoxRefusal(c.boxes, c.price, c.side, c.roomMultiple, c.risk)
+			refuse, why := nearBoxRefusal(c.boxes, c.price, c.side, c.roomMultiple, c.risk, c.exempt)
 			if refuse != c.wantRefuse {
 				t.Fatalf("nearBoxRefusal(%+v, price=%.0f, side=%s, room=%g, risk=%g) = (%v, %q), want refuse=%v",
 					c.boxes, c.price, c.side, c.roomMultiple, c.risk, refuse, why, c.wantRefuse)

@@ -140,3 +140,68 @@ func TestRehydrateRingFromStoreKeepsOlderNativeDepthWhen1mShort(t *testing.T) {
 		}
 	}
 }
+
+// TestRehydrateRingFromStoreFills1mInteriorHole is the m395 production-call-site
+// pin: the 1m ring ITSELF keeps an interior hole when NT8's replay tail is short
+// (the m395 10-22 00:11→07:50 CT hole — the store held every minute, the ring
+// did not). The pre-fix path rehydrated 1m with RehydrateOlder, which extends
+// only the OLDER end and cannot reach an interior hole. MUTANT: the 1m branch of
+// rehydrateRingFromStoreWith back on RehydrateOlder leaves the hole → RED.
+func TestRehydrateRingFromStoreFills1mInteriorHole(t *testing.T) {
+	st, err := store.New(filepath.Join(t.TempDir(), "rehydrate-1m-union.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	bh := st.BarHistory()
+	if err := bh.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+
+	const (
+		symbol   = "MNQ"
+		contract = "MNQ 12-26"
+		min      = int64(60_000)
+	)
+	// Complete 1m tape, minutes 0..304 (open-stamped), all live rows — every
+	// minute of the previous run is in the store, exactly like the m395 DB.
+	var oneMin []store.BarHistoryDB
+	for m := int64(0); m <= 304; m++ {
+		c := 100 + 0.05*float64(m)
+		oneMin = append(oneMin, store.BarHistoryDB{Symbol: symbol, TF: "1m", OpenTimeMs: m * min, O: c, H: c + 0.2, L: c - 0.2, C: c, V: 1, Contract: contract, Source: store.BarSourceLive})
+	}
+	if err := bh.InsertBars(oneMin); err != nil {
+		t.Fatal(err)
+	}
+
+	// Boot-shape 1m ring: NT8's replay tail minutes 0..70, live head 200..304,
+	// with the interior hole 71..199 (the previous run's bars NT8 did not
+	// replay). SeedHistorical stamps CLOSE→OPEN (T -= 1m), so hand close-stamped
+	// times (open+1m) to land on the open grid.
+	server := ntwire.NewTCPServer(nil)
+	var ring []ntwire.Bar
+	for m := int64(0); m <= 304; m++ {
+		if m <= 70 || m >= 200 {
+			ring = append(ring, ntwire.Bar{T: (m + 1) * min, O: 100, H: 102, L: 98, C: 101})
+		}
+	}
+	server.BarCache().SeedHistorical(symbol, "1m", ring)
+
+	rehydrateRingFromStore(bh, server, time.Now()) // `now` only drives the boot-line horizon
+
+	got := server.BarCache().Get(symbol, "1m")
+	if len(got) != 305 { // (304-0)/1 + 1
+		t.Fatalf("1m ring holds %d bars after rehydrate, want 305 (hole filled)", len(got))
+	}
+	for i := 1; i < len(got); i++ {
+		if d := got[i].T - got[i-1].T; d != min {
+			t.Fatalf("interior hole remains at %d: gap %dms", i, d)
+		}
+	}
+	// The live tail (200..304) must NOT have been replaced by store bars
+	// (store C is 100+0.05m; the ring seed C=101). A merge that let the store
+	// win on the live tail would show C ≈ 115 at minute 304.
+	if tail := got[len(got)-1]; tail.C != 101 {
+		t.Fatalf("live tail was replaced by the store: C=%.2f want 101", tail.C)
+	}
+}

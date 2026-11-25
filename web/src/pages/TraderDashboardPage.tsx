@@ -34,6 +34,10 @@ import { PlanCard } from '../components/plan/PlanCard'
 import { PictureHtfPanel } from '../components/trader/PictureHtfPanel'
 import { MentorTruthCard } from '../components/mentor/MentorTruthCard'
 import { useMentorTruth } from '../components/mentor/useMentorTruth'
+import { PepTruthCard } from '../components/pep/PepTruthCard'
+import { usePepTruth } from '../components/pep/usePepTruth'
+import { ModeChip, dashboardMode } from '../components/pep/ModeChip'
+import { pepChartLines } from '../components/pep/pepOverlays'
 import { AddonOutdatedBanner } from '../components/friend/AddonOutdatedBanner'
 import type {
   SystemStatus,
@@ -187,6 +191,18 @@ export function TraderDashboardPage({
   const { truth: mentor, stale: mentorStale } = useMentorTruth(
     selectedTrader?.trader_id
   )
+  // PEP — the live pep state ("what trades"), refreshed like the mentor truth.
+  // The mode chip needs BOTH truths to have answered before it names a mode.
+  const {
+    truth: pep,
+    stale: pepStale,
+    status: pepStatus,
+  } = usePepTruth(selectedTrader?.trader_id)
+  const pepStaleSinceMs = pepStale ? (pep?.last_evaluated_ms ?? 0) : undefined
+  const pepLines = useMemo(
+    () => pepChartLines(pep, pepStaleSinceMs, language),
+    [pep, pepStaleSinceMs, language]
+  )
   // T7 (release #22): every place the evaluator trades — levels, trigger
   // lines, EMA34 location, box edges, ISB boxes, ORB, swing — plus the
   // trendlines as sloped segments.
@@ -198,6 +214,19 @@ export function TraderDashboardPage({
     [mentor, mentorStaleSinceMs]
   )
   const mentorTrendlines = mentor?.enabled ? mentor.trendlines : undefined
+  // m134 — the per-bar EMA 9/34 curve.
+  const mentorEMASeries = mentor?.enabled ? mentor.ema_series : undefined
+  // m325 — the EMA34 location line's CURRENT value (kind ema34_htf), drawn as a
+  // short right-edge segment, never a full-width flat line through history.
+  const mentorEMALocationPrice = useMemo(
+    () =>
+      mentor?.enabled
+        ? (mentor.levels ?? []).find(
+            (l) => l.kind === 'ema34_htf' && l.price > 0
+          )?.price
+        : undefined,
+    [mentor]
+  )
   // Plan 4 Task 23.4 — Dashboard tab switcher (Overview / Decisions).
   const [dashboardTab, setDashboardTab] = useState<'overview' | 'decisions'>(
     'overview'
@@ -402,7 +431,7 @@ export function TraderDashboardPage({
 
   return (
     <DeepVoidBackground className="min-h-screen pb-12" disableAnimation>
-      <div className="w-full px-4 md:px-8 relative z-10 pt-6">
+      <div className="w-full px-2 sm:px-4 md:px-8 relative z-10 pt-6">
         {/* P2 ledger-close — live pause banner on the trading view (CT-pinned) */}
         {isPauseActive(status?.stop_until) && (
           <div
@@ -420,13 +449,13 @@ export function TraderDashboardPage({
 
         {/* Trader Header */}
         <div
-          className="mb-6 rounded-lg p-6 animate-scale-in vl-neo-glass group"
+          className="mb-6 rounded-lg p-3 sm:p-6 animate-scale-in vl-neo-glass group"
           style={{
             background:
               'linear-gradient(135deg, rgba(15, 23, 42, 0.6) 0%, rgba(15, 23, 42, 0.4) 100%)',
           }}
         >
-          <div className="flex items-start justify-between mb-4">
+          <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
             <h2 className="text-2xl font-bold flex items-center gap-4 text-vl-neo-text-main">
               <div className="relative">
                 <PunkAvatar
@@ -449,7 +478,7 @@ export function TraderDashboardPage({
               </div>
             </h2>
 
-            <div className="flex items-center gap-4">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-4 max-w-full">
               {/* P2 ledger-close — stop_until pause (owner control) */}
               <PauseButton
                 traderId={selectedTrader.trader_id}
@@ -533,6 +562,12 @@ export function TraderDashboardPage({
               <span className="text-vl-neo-gold font-semibold tracking-wide">
                 {selectedTrader.strategy_name || 'No Strategy'}
               </span>
+              {isFutures && (
+                <ModeChip
+                  value={dashboardMode(mentor, pep, pepStatus)}
+                  language={language}
+                />
+              )}
             </span>
             {status && (
               <div className="hidden md:contents">
@@ -578,7 +613,7 @@ export function TraderDashboardPage({
         )}
 
         {/* Debug Info */}
-        <div className="mb-4 px-3 py-1.5 rounded bg-black/40 border border-white/5 text-[10px] font-mono text-vl-neo-text-muted flex justify-between items-center opacity-60 hover:opacity-100 transition-opacity">
+        <div className="mb-4 px-3 py-1.5 rounded bg-black/40 border border-white/5 text-[10px] font-mono text-vl-neo-text-muted flex flex-wrap gap-x-4 gap-y-1 justify-between items-center opacity-60 hover:opacity-100 transition-opacity">
           <span
             style={{
               color:
@@ -604,7 +639,7 @@ export function TraderDashboardPage({
             {health.revision ? ` · REV::${health.revision}` : ''}
           </span>
           {account ? (
-            <div className="flex gap-4">
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
               <span>LAST_UPDATE::{lastUpdate}</span>
               <span>EQ::{account.total_equity?.toFixed(2)}</span>
               {/* R22 PNL-TRUTH (P1-2): this chip read "PNL::" over a tooltip
@@ -790,8 +825,14 @@ export function TraderDashboardPage({
               )}
               mentorLevels={mentorLevels}
               mentorTrendlines={mentorTrendlines}
+              mentorTruth={mentor}
+              mentorEMASeries={mentorEMASeries}
               mentorSymbol={mentor?.symbol}
               mentorStaleSinceMs={mentorStaleSinceMs}
+              mentorEMALocationPrice={mentorEMALocationPrice}
+              pepLines={pepLines}
+              pepSymbol={pep?.symbol}
+              pepStaleSinceMs={pepStaleSinceMs}
             />
           </div>
 
@@ -806,6 +847,14 @@ export function TraderDashboardPage({
           {isFutures && selectedTrader.trader_id && (
             <div className="min-w-0 lg:col-span-2">
               <MentorTruthCard truth={mentor} stale={mentorStale} />
+            </div>
+          )}
+          {/* PEP-TRUTH CARD — the live pep state (box, signal, trades today,
+                stop/target, countdown to the 15:00 CT flat). Hides itself when
+                pep is OFF. */}
+          {isFutures && selectedTrader.trader_id && (
+            <div className="min-w-0 lg:col-span-2">
+              <PepTruthCard truth={pep} stale={pepStale} language={language} />
             </div>
           )}
           {/* Day Plan card — futures only (day_plan is a futures feature);

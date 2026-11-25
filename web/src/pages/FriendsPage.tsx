@@ -184,88 +184,90 @@ export function FriendsPage() {
       ) : friends.length === 0 ? (
         <p style={{ color: 'var(--vl-muted)' }}>No friends yet.</p>
       ) : (
-        <table
-          style={{
-            width: '100%',
-            borderCollapse: 'collapse',
-            fontSize: '0.85rem',
-          }}
-        >
-          <thead>
-            <tr>
-              {[
-                'name',
-                'bot up',
-                'NT connected',
-                'last bar age',
-                'SIM account',
-                'add-on / app',
-                'last seen',
-                'actions',
-              ].map((h) => (
-                <th
-                  key={h}
-                  style={{
-                    textAlign: 'left',
-                    borderBottom: '1px solid var(--vl-hair)',
-                    padding: '0.4rem',
-                  }}
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {friends.map((f) => (
-              <tr key={f.name} data-testid={`friend-row-${f.name}`}>
-                <td style={cellStyle}>{f.name}</td>
-                <td style={cellStyle}>
-                  {f.bot_up ? 'up' : f.probe_error ? 'down' : '—'}
-                </td>
-                <td style={cellStyle}>
-                  {f.bot_up ? (f.nt_connected ? 'yes' : 'no') : '—'}
-                </td>
-                <td style={cellStyle}>
-                  {f.last_bar_age_ms != null
-                    ? `${msToAge(f.last_bar_age_ms)}`
-                    : '—'}
-                </td>
-                <td style={cellStyle}>—</td>
-                <td style={cellStyle}>
-                  {f.addon_build
-                    ? `${f.addon_build} / ${f.app_version || '—'}`
-                    : '—'}
-                </td>
-                <td style={cellStyle}>{f.last_seen || '—'}</td>
-                <td style={cellStyle}>
-                  <button
-                    onClick={() =>
-                      act(f.name, f.state === 'paused' ? 'resume' : 'pause')
-                    }
-                    disabled={busy || f.state === 'revoked'}
-                    style={{ marginRight: '0.25rem' }}
+        <div style={{ overflowX: 'auto', maxWidth: '100%' }}>
+          <table
+            style={{
+              width: '100%',
+              borderCollapse: 'collapse',
+              fontSize: '0.85rem',
+            }}
+          >
+            <thead>
+              <tr>
+                {[
+                  'name',
+                  'bot up',
+                  'NT connected',
+                  'last bar age',
+                  'SIM account',
+                  'add-on / app',
+                  'last seen',
+                  'actions',
+                ].map((h) => (
+                  <th
+                    key={h}
+                    style={{
+                      textAlign: 'left',
+                      borderBottom: '1px solid var(--vl-hair)',
+                      padding: '0.4rem',
+                    }}
                   >
-                    {f.state === 'paused' ? 'Resume' : 'Pause'}
-                  </button>
-                  <button
-                    onClick={() => act(f.name, 'rotate')}
-                    disabled={busy || f.state === 'revoked'}
-                    style={{ marginRight: '0.25rem' }}
-                  >
-                    New key
-                  </button>
-                  <button
-                    onClick={() => act(f.name, 'revoke')}
-                    disabled={busy || f.state === 'revoked'}
-                  >
-                    Revoke
-                  </button>
-                </td>
+                    {h}
+                  </th>
+                ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {friends.map((f) => (
+                <tr key={f.name} data-testid={`friend-row-${f.name}`}>
+                  <td style={cellStyle}>{f.name}</td>
+                  <td style={cellStyle}>
+                    {f.bot_up ? 'up' : f.probe_error ? 'down' : '—'}
+                  </td>
+                  <td style={cellStyle}>
+                    {f.bot_up ? (f.nt_connected ? 'yes' : 'no') : '—'}
+                  </td>
+                  <td style={cellStyle}>
+                    {f.last_bar_age_ms != null
+                      ? `${msToAge(f.last_bar_age_ms)}`
+                      : '—'}
+                  </td>
+                  <td style={cellStyle}>—</td>
+                  <td style={cellStyle}>
+                    {f.addon_build
+                      ? `${f.addon_build} / ${f.app_version || '—'}`
+                      : '—'}
+                  </td>
+                  <td style={cellStyle}>{f.last_seen || '—'}</td>
+                  <td style={cellStyle}>
+                    <button
+                      onClick={() =>
+                        act(f.name, f.state === 'paused' ? 'resume' : 'pause')
+                      }
+                      disabled={busy || f.state === 'revoked'}
+                      style={{ marginRight: '0.25rem' }}
+                    >
+                      {f.state === 'paused' ? 'Resume' : 'Pause'}
+                    </button>
+                    <button
+                      onClick={() => act(f.name, 'rotate')}
+                      disabled={busy || f.state === 'revoked'}
+                      style={{ marginRight: '0.25rem' }}
+                    >
+                      New key
+                    </button>
+                    <button
+                      onClick={() => act(f.name, 'revoke')}
+                      disabled={busy || f.state === 'revoked'}
+                    >
+                      Revoke
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   )

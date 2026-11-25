@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"vl/internal/ownerpush"
 	"vl/kernel/mentor"
 	"vl/market"
 	ntwire "vl/provider/ninjatrader"
@@ -185,11 +186,12 @@ func (at *AutoTrader) mentorEnqueueFill(r store.ArmedOrderDB, u ntwire.OrderUpda
 	// P1-2: carry the armed-row fallback so a fill with no pend (a restart
 	// dropped the in-memory pends) registers from the row, never dropped.
 	row := &mentor.FillRow{
-		Side:   mentor.Side(strings.ToLower(strings.TrimSpace(r.Side))),
-		Entry:  r.EntryPx,
-		Stop:   r.StopPx,
-		Target: r.TargetPx,
-		ISB:    strings.EqualFold(strings.TrimSpace(r.Condition), "ISB"),
+		Side:     mentor.Side(strings.ToLower(strings.TrimSpace(r.Side))),
+		Entry:    r.EntryPx,
+		Stop:     r.StopPx,
+		Target:   r.TargetPx,
+		ISB:      strings.EqualFold(strings.TrimSpace(r.Condition), "ISB"),
+		SignalID: u.SignalID, // #47: match a later broker position_close
 	}
 	select {
 	case at.mentorFillCh <- mentorFillReceipt{receiptID: u.SignalID, armID: armID, lo: lo, hi: hi, row: row}:
@@ -234,6 +236,79 @@ func (at *AutoTrader) mentorDrainFills() {
 	}
 }
 
+// mentorExitReceipt is a broker exit receipt queued from the close-sync
+// goroutine to the evaluator drain (#47). signalID is the entry signal id;
+// wasStop is true when the broker closed at the ORIGINAL stop ("sl") — a
+// break-even, trailed stop, partial, news or EOD flat exits with wasStop=false.
+type mentorExitReceipt struct {
+	signalID string
+	wasStop  bool
+}
+
+// mentorEnqueueExit queues a broker position_close receipt for the mentor
+// limits (#47). Non-blocking: a full queue drops it (counted).
+func (at *AutoTrader) mentorEnqueueExit(signalID string, wasStop bool) {
+	if at == nil || at.mentorExitCh == nil || signalID == "" {
+		return
+	}
+	select {
+	case at.mentorExitCh <- mentorExitReceipt{signalID: signalID, wasStop: wasStop}:
+	default:
+		at.mentorCount("record_exit_queue_full")
+	}
+}
+
+// mentorDrainExits drains the broker-exit queue into the evaluator's Limits
+// (#47). It MUST be called with mentorEvalMu held (mentorEvalOnce is the
+// production caller). Nil-safe.
+func (at *AutoTrader) mentorDrainExits() {
+	if at == nil || at.mentorExitCh == nil || at.mentorEval == nil {
+		return
+	}
+	for {
+		select {
+		case x := <-at.mentorExitCh:
+			at.mentorEval.State.Limits.RealExit(x.signalID, x.wasStop)
+		default:
+			return
+		}
+	}
+}
+
+// mentorEntryGateInputs resolves the rule-gate / size-table inputs the ONE
+// entry path (mentorDispatchEntry) feeds mentorRuleGate and mentorSizeFor —
+// extracted so the tests run the production resolution, never a copy.
+func (at *AutoTrader) mentorEntryGateInputs(in mentor.Intent, extra mentorTierInputs) mentorTierInputs {
+	// ONE MENTOR ENTRY PATH: the order type differs only inside the
+	// evaluator; the injector always rests a stop-limit. The confluence
+	// flag feeds the size tier (10/20) and the exit fork (C).
+	extra.Confluence = mentorConfluenceFlag(in)
+	tuned := mentorTuningResolve(at, at.mentorRiskControl())
+	extra.SwingMaxStopPts = tuned.SwingMaxStopPts
+	extra.SpentDayStopCapPts = tuned.DayGateTargetCapPts
+	// R8 reads the SAME knob as the kernel (mentor_isb_max_pts, unset/0 → 20
+	// since m466 G23 D4.1-R12; PHL/PLH/BOX keep 25 via mentorStopCeilingFor) —
+	// one number, not two (P2-1).
+	cx := mentorCourseExitsResolve(at, at.mentorRiskControl())
+	extra.ISBMaxStopPts = cx.ISBMaxPts
+	// m463 D5.2-R31: the swing skip reads the SAME knob as the kernel
+	// (mentor_swing_max_stop_pts, unset/0 → 80 since answers-1112 Q13; 90 reverts).
+	extra.SwingSkipStopPts = cx.SwingMaxStopPts
+	// Stop-to-size ladder: the R8 ceiling and the size table read the SAME
+	// resolved knobs as the kernel (mentorCourseExitsResolve).
+	mentorStopLadderInputs(cx, &extra)
+	return extra
+}
+
+// mentorStopLadderInputs copies the resolved stop-to-size ladder knobs onto
+// the tier inputs — called by the gate resolver AND the one sizing call site
+// (mentorSizeFor), so no caller can size without them.
+func mentorStopLadderInputs(cx mentorCourseExitsResolved, extra *mentorTierInputs) {
+	extra.StopLadderOff = !cx.StopSizeLadder
+	extra.WideStopContracts = cx.WideStopContracts
+	extra.WideStopMaxPts = cx.WideStopMaxPts
+}
+
 // mentorDispatchEntry is the ONE mentor entry path (X-07, refactored out of
 // the dispatch switch). A single deferred guard drops the kernel's pending
 // G1/G2 sim fill for the intent's ArmID on EVERY refusal inside this
@@ -254,13 +329,7 @@ func (at *AutoTrader) mentorDispatchEntry(in mentor.Intent, extra mentorTierInpu
 	// ONE MENTOR ENTRY PATH: the order type differs only inside the
 	// evaluator; the injector always rests a stop-limit. The confluence
 	// flag feeds the size tier (10/20) and the exit fork (C).
-	extra.Confluence = mentorConfluenceFlag(in)
-	tuned := mentorTuningResolve(at, at.mentorRiskControl())
-	extra.SwingMaxStopPts = tuned.SwingMaxStopPts
-	extra.SpentDayStopCapPts = tuned.DayGateTargetCapPts
-	// R8 reads the SAME knob as the kernel (mentor_isb_max_pts, unset/0 → 30) —
-	// one number, not two (P2-1).
-	extra.ISBMaxStopPts = mentorCourseExitsResolve(at, at.mentorRiskControl()).ISBMaxPts
+	extra = at.mentorEntryGateInputs(in, extra)
 	if why := mentorRuleGate(in, extra); why != "" {
 		rule := "other"
 		if i := strings.Index(why, ":"); i > 0 {
@@ -271,11 +340,13 @@ func (at *AutoTrader) mentorDispatchEntry(in mentor.Intent, extra mentorTierInpu
 		// STALLED-SETUP ALARM (release #22): the LAST refusal reason rides the
 		// per-kind tally so a stalled setup's alert names why it died.
 		at.mentorRecordStallRefusal(in, why)
+		at.mentorGateBlock(mentorRuleGateClass(rule))
 		return
 	}
 	choice, err := at.mentorSizeFor(in, extra)
 	if err != nil {
 		at.mentorRecordStallRefusal(in, "size: "+err.Error())
+		at.mentorGateBlock("mentor_size_refused")
 		return
 	}
 	at.mentorCount("intent_" + in.Setup)
@@ -284,9 +355,30 @@ func (at *AutoTrader) mentorDispatchEntry(in mentor.Intent, extra mentorTierInpu
 			in.Setup, in.Side, choice.Contracts, in.Price, in.Stop, in.Target, choice.Tier)
 		at.mentorCount("placement_held")
 		at.mentorRecordStallRefusal(in, "MENTOR_PLACE off (dry run)")
+		at.mentorGateBlock("mentor_place_off")
 		return
 	}
 	at.mentorPlaceIntent(in, choice, lastCloseTime, emitMs)
+}
+
+// mentorRuleGateClass maps a mentorRuleGate reason prefix ("r8", "r9", "bad
+// geometry", "untagged setup", ...) to a STABLE gate-block class name for
+// GET /api/risk/gate-blocks (m425b S4). Unknown prefixes collapse to
+// mentor_rule_other so the table's keys stay a closed set.
+func mentorRuleGateClass(rule string) string {
+	switch rule {
+	case "r8":
+		return "mentor_rule_r8"
+	case "r9":
+		return "mentor_rule_r9"
+	case "r31":
+		return "mentor_rule_r31"
+	case "bad geometry":
+		return "mentor_bad_geometry"
+	case "untagged setup":
+		return "mentor_untagged_setup"
+	}
+	return "mentor_rule_other"
 }
 
 // mentorDropEvalArm drops EVERY evaluator trace of a refused entry (X-07 +
@@ -395,8 +487,17 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 		// X8 @18:02–18:14 "trade khung nào thì gồng theo khung đó": the frame
 		// the entry was READ on rides to the fill, so the runner trails on it.
 		mentorExecFrames.Store(mentorRunnerTargetKey(at.id, scenario), in.ExecTFMin)
+	} else if in.ExecTFMin == 1 {
+		// A 1m entry: the X8 trap-dodge and the trail read the 1m. m417 stamps
+		// 1 at every kernel site (ISB / reverse-ISB / level-PHL / rolling-PHL)
+		// and on the box's drawn frame, so this branch is now LIVE, not dead.
+		mentorExecFrames.Store(mentorRunnerTargetKey(at.id, scenario), 1)
 	} else {
-		// a 1m entry: no stale frame from an earlier arm of the same scenario.
+		// ExecTFMin == 0 = the frame is UNKNOWN (an ORB entry, or a frame lost at
+		// a restart — a level PHL/PLH incl. one at a trendline location IS
+		// stamped, eval.go ~2862; c52 W12 comment fix). m417: Delete so the
+		// X8 trap-dodge falls back to the 2m (the pre-m409 behaviour) instead of
+		// reading the 1m on an entry whose frame was never recorded.
 		mentorExecFrames.Delete(mentorRunnerTargetKey(at.id, scenario))
 	}
 	side := strings.ToLower(strings.TrimSpace(string(in.Side)))
@@ -439,7 +540,7 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 	// REVIEW-353: the split AT ENTRY rides the ONE frame — leg1_qty + leg1_tp
 	// go on the wire; the AddOn places TWO OCO pairs on the one fill. (0, 0)
 	// = the single-bracket legacy path (n <= 1 or swing).
-	leg1Qty, leg1TP := mentorLeg1ForFrame(in, choice.Contracts, forkMode, forkTP)
+	leg1Qty, leg1TP := mentorLeg1ForFrameFixed(in, choice.Contracts, forkMode, forkTP, mentorLeg1FixedPts(at.mentorRiskControl())) // oct-exact D2
 	if q, tp, runnerTP, ok := at.mentorSwingRunnerLegs(in, choice.Contracts, forkMode); ok {
 		// CX-2 (knob mentor_swing_runner, default OFF): leg 1 at the swing's
 		// first target, the runner held by the 4h with its own TP.
@@ -464,6 +565,15 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 	if leg2Qty > 0 {
 		row.Leg2Qty = store.IntPtr(leg2Qty)
 		row.Leg2TP = leg2TP
+	}
+	// m134 DS-108 (a): persist the evaluator snapshot the arm is authored under
+	// (EMA9/34, 1h/4h/5m triggers, HTF verdict, ORB, valid/forming trendlines,
+	// swing, nearest levels). A nil/empty evaluator leaves it NULL (absent).
+	if at.mentorEval != nil {
+		if snap, err := at.mentorEval.State.ArmSnapshot(in.Price).JSON(); err == nil {
+			s := snap
+			row.MentorSnapshot = &s
+		}
 	}
 	if err := ledger.UpsertArm(&row); err != nil {
 		at.mentorCount("placement_refused_upsert")
@@ -853,7 +963,7 @@ func (at *AutoTrader) mentorCancelOtherWorkingOnFill(filled store.ArmedOrderDB) 
 			continue
 		}
 		if side != "" && strings.EqualFold(strings.TrimSpace(other.Side), side) {
-			at.mentorCancelRestingRow(other, "one working entry per side — the same-side entry filled, cancel the rest (OCO) [D1.1 p1 @17:06–17:44]")
+			at.mentorCancelRestingRow(other, "one working entry per side — the same-side entry filled, cancel the rest (OCO) [derived from D1.1 p1 @17:28–17:44 + CTO parity ruling 1791008332386 #1]")
 		} else {
 			at.mentorCancelRestingRow(other, "no flip: a position opened — cancel the opposite-side resting entry before it can net/flip [owner ruling 2026-09-03]")
 		}
@@ -938,15 +1048,22 @@ func (at *AutoTrader) mentorSwingFill(arm mentorLiveArm) (r store.ArmedOrderDB, 
 	return r, 0, false
 }
 
-// mentorMoveStopBE executes the swing's stop-to-break-even intent. S1: it acts
-// only on the swing leg's OWN FILLED position, and the never-widen guard reads
-// the swing leg's OWN recorded stop (the arm row's StopPx) — never the ledger's
-// open-orders list. Unknown stop → refuse + log (fail closed), never skip.
+// mentorMoveStopBE executes the swing's stop-to-break-even intent.
+//
+// Release #54 (N2/N3): the move happens only when the account holds a position
+// carrying THIS arm's own signal id (mentorSwingOwnership) — a swing whose stop
+// already filled can no longer move another trade's stop — and it rides the
+// SAME signal-scoped, never-widen, broker-verified path the intraday legs use
+// (mentorMoveLegStop). The evaluator is told the outcome: SwingBEApplied on
+// success, SwingEnded when the position is provably over; on any refusal it
+// keeps the BE owed and re-emits it on the next closed 5m bar. Unknown stop →
+// refuse + log (fail closed), never skip.
 func (at *AutoTrader) mentorMoveStopBE(in mentor.Intent) {
 	arm, ok := at.mentorLiveArmFor(in.ArmID)
 	if !ok {
 		at.mentorCount("move_be_refused_unknown_arm")
-		at.logWarnf("🧑‍🏫 mentor MoveStopBE REFUSED — ArmID %q not in this process's registry: %s", in.ArmID, in.Reason)
+		at.noteRefusalStorm(ownerpush.ClassSwingBE, in.ArmID, "arm not in this process's registry") // m442 #6
+		at.logWarnf("🧑‍🏫 mentor MoveStopBE REFUSED — ArmID %q not in this process's registry; retried on the next 5m bar: %s", in.ArmID, in.Reason)
 		return
 	}
 	nt := at.armedTrader()
@@ -954,45 +1071,67 @@ func (at *AutoTrader) mentorMoveStopBE(in mentor.Intent) {
 		at.mentorCount("move_be_refused_unavailable")
 		return
 	}
-	// S1: a phantom swing (never filled, or an unattributable fill) must not
-	// move another trade's stop.
-	r, _, ok := at.mentorSwingFill(arm)
-	if !ok {
+	r, qty, own, why := at.mentorSwingOwnership(nt, arm)
+	switch own {
+	case mentorSwingGone:
+		at.mentorCount("move_be_refused_position_gone")
+		at.logWarnf("🧑‍🏫 mentor MoveStopBE REFUSED — ArmID %q: %s; the swing is over, its state is cleared and no other trade's stop is touched: %s", in.ArmID, why, in.Reason)
+		at.mentorSwingFinish(in.ArmID, why)
+		return
+	case mentorSwingUnproven:
 		at.mentorCount("move_be_refused_not_filled")
-		at.logWarnf("🧑‍🏫 mentor MoveStopBE REFUSED — ArmID %q never filled; the swing leg has no position of its own: %s", in.ArmID, in.Reason)
+		at.noteRefusalStorm(ownerpush.ClassSwingBE, in.ArmID, "arm never filled") // m442 #6
+		at.logWarnf("🧑‍🏫 mentor MoveStopBE REFUSED — ArmID %q owns no provable position yet (%s); the swing leg has no position of its own, retried on the next 5m bar: %s", in.ArmID, why, in.Reason)
 		return
 	}
-	// The widen guard reads the swing leg's OWN stop (SwingState.Pos.Stop's
-	// ledger mirror = the arm row's StopPx). Fail closed when it is unknown.
-	curStop := r.StopPx
-	if curStop <= 0 {
+	if r.StopPx <= 0 {
 		at.mentorCount("move_be_refused_no_stop")
+		at.noteRefusalStorm(ownerpush.ClassSwingBE, in.ArmID, "filled arm has no recorded stop") // m442 #6
 		at.logWarnf("🧑‍🏫 mentor MoveStopBE REFUSED — ArmID %q filled but its own stop is unknown (StopPx=0); never skip the guard: %s", in.ArmID, in.Reason)
 		return
 	}
-	if refuse, why := mentorNeverWiden(arm.Side, curStop, arm.Entry); refuse {
+	if refuse, why := mentorNeverWiden(arm.Side, r.StopPx, at.mentorSwingBEStop(arm)); refuse {
 		at.mentorCount("widen_refused")
+		at.noteRefusalStorm(ownerpush.ClassSwingBE, in.ArmID, "break-even would widen the stop") // m442 #6
 		at.logWarnf("🧑‍🏫 %s", why)
 		return
 	}
-	if err := moveStopWire(nt, arm.Side, arm.Entry); err != nil {
-		at.mentorCount("move_be_refused")
-		at.logWarnf("🧑‍🏫 mentor stop→BE refused: %v", err)
+	applied, ended := at.mentorSwingApplyBE(nt, r, arm, qty)
+	if ended {
+		at.mentorCount("move_be_closed_through_market")
+		at.mentorSwingFinish(in.ArmID, "the break-even was through the market and the leg was closed at market")
 		return
 	}
+	if !applied {
+		at.mentorCount("move_be_refused")
+		at.noteRefusalStorm(ownerpush.ClassSwingBE, in.ArmID, "stop-to-break-even not applied") // m442 #6
+		at.logWarnf("🧑‍🏫 mentor stop→BE not applied for ArmID %q — kept owed, retried on the next 5m bar: %s", in.ArmID, in.Reason)
+		return
+	}
+	at.mentorSwingReportBE(in.ArmID)
 	at.mentorCount("move_be_sent")
 	at.logInfof("🧑‍🏫 mentor stop moved to break-even (entry %.2f) for ArmID %q: %s", arm.Entry, in.ArmID, in.Reason)
 }
 
 // mentorClosePosition executes the swing's hold-close intent: a mentor-owned
-// market close of the swing leg's OWN filled position — never a side-wide
-// close (S1: CloseLong/CloseShort(sym, 0) would flatten a different mentor
-// position open on the same side).
+// close of the swing leg's OWN filled position — never a side-wide close (S1:
+// CloseLong/CloseShort(sym, 0) would flatten a different mentor position open
+// on the same side).
+//
+// Release #54 (N2/N3/#15): (a) it acts only when the account holds a position
+// carrying THIS arm's own signal id — the AddOn runs close_position as a
+// whole-instrument flatten, so a stale swing used to be able to flatten a LATER
+// trade; (b) the evaluator keeps the hold-close owed until the position is
+// provably gone, and re-emits it on the next closed 5m bar after any refusal;
+// (c) the exit is the X8 marketable limit (cancels only this position's
+// bracket), with one market close if the position is still open on the next bar
+// — not a market Flatten that cancels every resting arm on the account.
 func (at *AutoTrader) mentorClosePosition(in mentor.Intent) {
 	arm, ok := at.mentorLiveArmFor(in.ArmID)
 	if !ok {
 		at.mentorCount("close_refused_unknown_arm")
-		at.logWarnf("🧑‍🏫 mentor ClosePosition REFUSED — ArmID %q not in this process's registry: %s", in.ArmID, in.Reason)
+		at.noteRefusalStorm(ownerpush.ClassSwingClose, in.ArmID, "arm not in this process's registry") // m442 #6
+		at.logWarnf("🧑‍🏫 mentor ClosePosition REFUSED — ArmID %q not in this process's registry; retried on the next 5m bar: %s", in.ArmID, in.Reason)
 		return
 	}
 	nt := at.armedTrader()
@@ -1002,33 +1141,37 @@ func (at *AutoTrader) mentorClosePosition(in mentor.Intent) {
 	}
 	// S1: the close must be attributed to the swing leg's own fill, sized by
 	// its own contracts — never a side-wide 0, never guessed.
-	r, qty, ok := at.mentorSwingFill(arm)
-	if ok {
-		// CX-2: a split swing closes only what the broker still holds.
-		if qty, ok = at.mentorSwingCloseQty(r, arm.Side, qty); !ok {
-			return
-		}
-	} else {
+	r, qty, own, why := at.mentorSwingOwnership(nt, arm)
+	switch own {
+	case mentorSwingGone:
+		at.mentorCount("close_refused_position_gone")
+		at.logWarnf("🧑‍🏫 mentor ClosePosition REFUSED — ArmID %q: %s; the swing is over, its state is cleared and nothing is sent: %s", in.ArmID, why, in.Reason)
+		at.mentorSwingFinish(in.ArmID, why)
+		return
+	case mentorSwingUnproven:
 		at.mentorCount("close_refused_not_filled")
-		at.logWarnf("🧑‍🏫 mentor ClosePosition REFUSED — ArmID %q never filled (or its fill has no attributable contracts); a phantom swing must not close another trade: %s", in.ArmID, in.Reason)
+		at.noteRefusalStorm(ownerpush.ClassSwingClose, in.ArmID, "arm never filled") // m442 #6
+		at.logWarnf("🧑‍🏫 mentor ClosePosition REFUSED — ArmID %q owns no provable position (%s); a phantom swing must not close another trade, retried on the next 5m bar: %s", in.ArmID, why, in.Reason)
 		return
 	}
-	var err error
+	// CX-2: a split swing closes only what the broker still holds.
+	qty, ok = at.mentorSwingCloseQty(r, arm.Side, qty)
+	if !ok {
+		return
+	}
 	switch arm.Side {
-	case "long":
-		_, err = nt.CloseLong(at.futuresSymbol(), qty)
-	case "short":
-		_, err = nt.CloseShort(at.futuresSymbol(), qty)
+	case "long", "short":
 	default:
 		at.mentorCount("close_refused_bad_side")
 		at.logWarnf("🧑‍🏫 mentor ClosePosition REFUSED — unknown side %q for ArmID %q", arm.Side, in.ArmID)
 		return
 	}
-	if err != nil {
+	if err := at.mentorSwingSendClose(nt, in.ArmID, arm.Side, qty); err != nil {
 		at.mentorCount("close_refused")
-		at.logWarnf("🧑‍🏫 mentor close failed for ArmID %q: %v", in.ArmID, err)
+		at.noteRefusalStorm(ownerpush.ClassSwingClose, in.ArmID, err.Error()) // m442 #6
+		at.logWarnf("🧑‍🏫 mentor close failed for ArmID %q: %v — retried on the next 5m bar", in.ArmID, err)
 		return
 	}
 	at.mentorCount("close_sent")
-	at.logInfof("🧑‍🏫 mentor position closed (%s, %.0f contracts) for ArmID %q: %s", arm.Side, qty, in.ArmID, in.Reason)
+	at.logInfof("🧑‍🏫 mentor position close sent (%s, %.0f contracts) for ArmID %q — the swing stays owed until the position is confirmed closed: %s", arm.Side, qty, in.ArmID, in.Reason)
 }

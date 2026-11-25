@@ -201,6 +201,14 @@ type Decision struct {
 	EntryPrice    float64 `json:"entry_price,omitempty"`
 	MentorSourced bool    `json:"-"`
 
+	// PEP MODE (owner order 2026-10-29) — a synthetic decision from kernel/pep's
+	// evaluator. PepSourced is internal only (json:"-"; the AI decision JSON shape
+	// is unchanged). PepContracts is the EXACT contract count the evaluator asked
+	// for: the executor sizes from PositionSizeUSD like every decision and then
+	// REFUSES if the result is not PepContracts (no silent shrink or growth).
+	PepSourced   bool `json:"-"`
+	PepContracts int  `json:"-"`
+
 	// P3.5 (advisory) — the plan scenario the executor cited for this decision,
 	// or "off-plan". Empty when day_plan is inactive. Advisory only: it never
 	// gates the trade (plan restricts, never compels; hard gates outrank).

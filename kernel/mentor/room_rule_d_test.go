@@ -82,7 +82,7 @@ func TestPHLRoomRefusalCountsRoomKey(t *testing.T) {
 // 4R) → REFUSED (named RED: the old 2R check ADMITTED it); first level 40 →
 // ADMITTED.
 func TestBoxConfluenceRoomIs4RAtTheCallSite(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.KeyLevelTFMinutes = 1
 	cfg.EMAPeriod34 = 0

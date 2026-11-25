@@ -40,7 +40,7 @@ func rel5ISBEval(t *testing.T, cfg Config, levels []Level, htfPrice float64) (*E
 // trigger / wick microscalp) and a trendline are never range boundaries.
 // Mutant: drop the Kind filter in MidRange → RED.
 func TestMidRangeIgnoresTargetOnlyLevels(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.RangeGapPts = 20
 	price := 100.0
 	cases := []struct {
@@ -82,7 +82,7 @@ func TestMidRangeIgnoresTargetOnlyLevels(t *testing.T) {
 // now counts "phl_mid_range" instead of a silent continue. Mutant: revert the
 // eval.go:1202 continue to a silent one → RED.
 func TestPHLMidRangeNamedRefusal(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.RangeGapPts = 20
 	cfg.PHLTargetShyPts = 6
@@ -126,7 +126,7 @@ func TestPHLMidRangeNamedRefusal(t *testing.T) {
 // Mutant: replace nextLevelBeyondRoom with nextLevelBeyond → RED (the ISB is
 // refused "room").
 func TestISBRoomFallsThroughTargetOnly(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.EMAPeriod34 = 0
 	cfg.EMAPeriod9 = 0
@@ -164,7 +164,7 @@ func TestISBRoomFallsThroughTargetOnly(t *testing.T) {
 // legitimate same-side ISB via isbArmActive). Mutant: remove the reconcile in
 // Tick → RED (the arm survives).
 func TestISBArmsReconciledAfterLimitsDrop(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.EMAPeriod34 = 0
 	cfg.EMAPeriod9 = 0

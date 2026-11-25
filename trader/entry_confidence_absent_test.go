@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"vl/kernel"
-	"vl/store"
 	ntwire "vl/provider/ninjatrader"
+	"vl/store"
 )
 
 // R22 P2 — a plan-arm fill carries NO AI confidence. Before R22 the row stored

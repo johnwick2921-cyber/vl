@@ -30,7 +30,7 @@ func tape(n int) []market.Kline {
 // the evaluator aggregates (the build and the hit are both byte-identical to
 // barsTF).
 func TestBarsTFMemoHitMatchesFresh(t *testing.T) {
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	bars := tape(600) // 10h of 1m — covers 2/5/15/30/60/240 bucket boundaries
 	for _, tf := range []int{2, 5, 15, 30, 60, 240} {
 		first := e.barsTFMemo(bars, tf)
@@ -47,7 +47,7 @@ func TestBarsTFMemoHitMatchesFresh(t *testing.T) {
 // PIN 2 — a NEW bar invalidates: appending one 1m bar (same tf) must rebuild,
 // never return the pre-append buckets.
 func TestBarsTFMemoInvalidatesOnNewBar(t *testing.T) {
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	bars := tape(300)
 	const tf = 5
 	first := e.barsTFMemo(bars, tf)
@@ -71,7 +71,7 @@ func TestBarsTFMemoInvalidatesOnNewBar(t *testing.T) {
 // PIN 3 — Tick clears the memo, so the NEXT Tick's buckets are rebuilt from the
 // new tape (the per-Tick scope, not a session-long cache).
 func TestBarsTFMemoClearedPerTick(t *testing.T) {
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	e.Cfg.Enabled = true
 	bars := tape(60)
 	e.Tick(bars, bars[len(bars)-1].CloseTime+1)
@@ -92,7 +92,7 @@ func TestBarsTFMemoClearedPerTick(t *testing.T) {
 // must still equal a fresh barsTF of the SAME input. A consumer that writes the
 // shared backing array (append, b[i]=, b[i].Field=, sort) turns this pin red.
 func TestBarsTFMemoUncorruptedAfterTick(t *testing.T) {
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	e.Cfg.Enabled = true
 	bars := tape(300)
 	e.Tick(bars, bars[len(bars)-1].CloseTime+1)

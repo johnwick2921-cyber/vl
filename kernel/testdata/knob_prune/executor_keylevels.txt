@@ -1,24 +1,24 @@
 KEY LEVELS (map, nearest-first; price 20041.83):
-  20040.64  POC                  A  fresh·x5  magnet_meanrevert -1.2
-  20045.77  VWAP+1σ              A  fresh·x6  magnet_meanrevert +3.9
-  20036.56  PDC                  A  fresh·x5  pivot           -5.3
-  20056.51  VAH                  A  fresh·x5  react_zone      +14.7
+  20040.62  POC                  A  fresh·x4  magnet_meanrevert -1.2
+  20045.77  VWAP+1σ              A  fresh·x5  magnet_meanrevert +3.9
   20060.46  SWG-H·5m             A  fresh·x6  react_zone      +18.6
-  20075.16  SETT                 A  fresh·x5  pivot           +33.3
-  20079.55  SWG-H·5m             A  fresh·x5  react_zone      +37.7
+  20063.75  VAH                  A  fresh·x6  react_zone      +21.9
+  20075.16  PDC·last print       A  fresh·x6  pivot           +33.3
+  20079.55  SWG-H·5m             A  fresh·x6  react_zone      +37.7
   20001.23  VWAP                 A  fresh·x3  magnet_meanrevert -40.6
+  20082.73  PDH                  A  fresh·x5  react_zone      +40.9
 Anchor: react AT these levels (grade A>B>C); between them, a confirmed momentum/breakout may still be traded.
 role playbook: magnet_meanrevert = price gravitates back (fade/reversion setups) · liquidity_break = resting stops (break or sweep-reclaim, never a blind fade) · react_zone = first-touch reaction reference (reject/hold evidence) · target_only = take-profit / invalid reference only, NEVER an entry trigger · pivot = the auction's fulcrum (bias flips measured against it).
 
 MAP (merged references, nearest-first; price 20041.83):
-  20040.64  POC                                          A  target           -1.19 pt / 0.07 ATR  not-an-entry: nearest opposing reference 5.13 pt away, under the 27.12 pt minimum  min_tgt≥54.25pts
-  20045.77  VWAP+1σ                                      A  target           +3.94 pt / 0.22 ATR  not-an-entry: nearest opposing reference 5.13 pt away, under the 27.12 pt minimum  min_tgt≥54.25pts
-  20036.56  PDC                                          A  target           -5.28 pt / 0.29 ATR  not-an-entry: nearest opposing reference 4.08 pt away, under the 27.12 pt minimum  min_tgt≥54.25pts
-  20056.51  VAH                                          A  target           +14.68 pt / 0.81 ATR  not-an-entry: nearest opposing reference 10.74 pt away, under the 27.12 pt minimum  min_tgt≥54.25pts
-  20060.46  SWG-H·5m · SWG-H·15m                         A  target           +18.63 pt / 1.03 ATR  not-an-entry: nearest opposing reference 3.95 pt away, under the 27.12 pt minimum  min_tgt≥54.25pts
-  20075.16  SETT                                         A  target           +33.33 pt / 1.84 ATR  not-an-entry: nearest opposing reference 14.7 pt away, under the 27.12 pt minimum  min_tgt≥54.25pts
+  20040.62  POC                                          A  target           -1.21 pt / 0.07 ATR  not-an-entry: nearest opposing reference 5.15 pt away, under the 27.12 pt minimum  min_tgt≥54.25pts
+  20045.77  VWAP+1σ                                      A  target           +3.94 pt / 0.22 ATR  not-an-entry: nearest opposing reference 5.15 pt away, under the 27.12 pt minimum  min_tgt≥54.25pts
+  20060.46  SWG-H·5m · SWG-H·15m                         A  target           +18.63 pt / 1.03 ATR  not-an-entry: nearest opposing reference 14.69 pt away, under the 27.12 pt minimum  min_tgt≥54.25pts
+  20063.75  VAH                                          A  target           +21.92 pt / 1.21 ATR  not-an-entry: nearest opposing reference 3.29 pt away, under the 27.12 pt minimum  min_tgt≥54.25pts
+  20075.16  PDC·last print                               A  target           +33.33 pt / 1.84 ATR  not-an-entry: nearest opposing reference 11.41 pt away, under the 27.12 pt minimum  min_tgt≥54.25pts
   20079.55  SWG-H·5m · SWG-H·15m · LDN-H                 A  target           +37.72 pt / 2.09 ATR  not-an-entry: nearest opposing reference 4.4 pt away, under the 27.12 pt minimum  min_tgt≥54.25pts
   20001.23  VWAP · RN 20000 [merged x2]                  A  entry-candidate  -40.6 pt / 2.25 ATR  min_tgt≥54.25pts
+  20082.73  PDH · SWG-H·5m · SWG-H·15m                   A  target           +40.9 pt / 2.26 ATR  not-an-entry: nearest opposing reference 3.18 pt away, under the 27.12 pt minimum  min_tgt≥54.25pts
   20100     RN 20100                                     —  target           +58.17 pt / 3.22 ATR  projection: round number beyond the range (step 100)  min_tgt≥54.25pts
   19900     RN 19900                                     —  target           -141.83 pt / 7.84 ATR  projection: round number beyond the range (step 100)  min_tgt≥54.25pts
   20184.61  ATR-PROJ-H                                   —  target           +142.78 pt / 7.9 ATR  projection: session open 20019 ± 1×daily-ATR 165.61 [I]  min_tgt≥54.25pts

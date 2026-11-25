@@ -43,13 +43,13 @@ func TestG563ArmIntentSplitTable(t *testing.T) {
 	at, st := resetTrader(t, store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true}})
 	ledger := st.ArmedOrders()
 	cases := []struct {
-		arm       string
-		n         int
-		mode      string
-		forkTP    float64
-		partial   float64
-		wantLeg2  int // 0 = nil/absent
-		wantLeg1  int
+		arm      string
+		n        int
+		mode     string
+		forkTP   float64
+		partial  float64
+		wantLeg2 int // 0 = nil/absent
+		wantLeg1 int
 	}{
 		{"g5", 5, "B", 0, 107, 1, 3},
 		{"g3", 3, "B", 0, 107, 0, 2},

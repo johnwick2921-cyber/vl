@@ -57,7 +57,7 @@ func breakevenTriggerR(rc store.RiskControlConfig, side string, entry, mark, r, 
 func (at *AutoTrader) breakevenTriggerFor(symbol, side string, entry, mark float64) (bool, float64) {
 	rc := at.config.StrategyConfig.RiskControl
 	r, _ := store.ResolveBreakevenTriggerR(rc)
-	if r <= 0 || at.mentorEnabled() || !hlBool(rc.BreakevenEnabled, false) {
+	if r <= 0 || at.modeOwnsExits() || !hlBool(rc.BreakevenEnabled, false) {
 		return breakevenTrigger(rc, side, entry, mark)
 	}
 	risk, src, ok := at.initialRiskFor(symbol, side, entry)

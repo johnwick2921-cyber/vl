@@ -139,7 +139,7 @@ func klinesAcrossRollDerived(base []market.Kline, bh *store.BarHistoryStore, cur
 			subset = append(subset, k)
 		}
 	}
-	derived := kernel.AggregateToMinutes(subset, tfMin)
+	derived := kernel.AggregateSessionAnchored(subset, tf)
 	for i := range derived {
 		derived[i].Derived = true
 		derived[i].Contract = prior // the bucket helper carries no contract

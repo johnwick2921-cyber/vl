@@ -43,7 +43,7 @@ func TestSeedMissingColdStart(t *testing.T) {
 		}
 	}
 
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	if m := Seed(e, nil, now); len(m) != 5 {
 		t.Fatalf("Seed returned %d missing, want 5", len(m))
 	}
@@ -72,7 +72,7 @@ func TestSeedKeyLevelsGolden(t *testing.T) {
 	}
 	now := ctMs(t, 8, 9, 0)
 
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	Seed(e, bars1m, now)
 
 	want := keyLevelsFromCandles(keyLevel1HBars(bars1m), e.Cfg.KeyLevelPrunePts)
@@ -90,7 +90,7 @@ func TestSeedKeyLevelsGolden(t *testing.T) {
 // TestSeedIncrementalEMA: seed over the first half of the tape, then advance —
 // the incremental EMA must equal a full rebuild over the whole tape.
 func TestSeedIncrementalEMA(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	var bars []market.Kline
 	cl := 100.0
 	for i := 0; i < 100; i++ {
@@ -139,7 +139,7 @@ func TestSeedFailClosed(t *testing.T) {
 // TestSeedSwingLineWarm: 9 days of 1h closes → the swing line is seeded as the
 // EMA recurrence over all closed 4h candles, bucket start = the current one.
 func TestSeedSwingLineWarm(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	// 19 days of around-the-clock 1m bars: Seed builds the 1h aggregation and
 	// the 4h buckets (17:00 CT anchor) from it (P1: 1m only).
 	bars1m := minuteTape(t, 19)
@@ -173,7 +173,7 @@ func TestSeedSwingLineWarm(t *testing.T) {
 // TestSeedSwingFlipIncremental: a 4h flip advances the warm line by the SAME
 // EMA recurrence (not a cold recompute) — parity with a full rebuild.
 func TestSeedSwingFlipIncremental(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	// 9 days of around-the-clock 1m bars (P1: 1m only — the 4h buckets are
 	// aggregated with the 17:00 CT anchor).
 	bars1m := minuteTape(t, 9)
@@ -234,7 +234,7 @@ func TestSeedSwingFlipIncremental(t *testing.T) {
 
 // TestSeedLineNamesDepths: the one-liner reports per-source depths.
 func TestSeedLineNamesDepths(t *testing.T) {
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	Seed(e, nil, ctMs(t, 0, 9, 0))
 	l := e.seedLine
 	for _, want := range []string{"4h EMA34 0/102", "1m EMA34 0/102", "1H RTH levels 0 candles", "levels 0"} {
@@ -313,7 +313,7 @@ func hourTape(t *testing.T, days int) []market.Kline {
 // source (cancels still flow). The mutant that disables the sweep turns this
 // RED: the placement comes back.
 func TestSeedFailClosedTick(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.RoomMultiple = 0 // item 25: this fixture pins the seed fail-closed sweep, not the room rule
 	head := rthBars(0, 121, 121.5, 120.5, 120)
@@ -355,8 +355,9 @@ func TestSeedFailClosedTick(t *testing.T) {
 		t.Fatalf("control placements = %d, want 1 (tape must emit when unseeded)", p)
 	}
 
-	// Seeded with a missing source: the same tape must refuse entries, but
-	// the ISB stacking cancel still flows.
+	// Seeded with a missing source: the same tape must refuse entries. m425a
+	// S1: the refused entry's arm is un-registered, so NO stacking cancel flows
+	// for the never-authored arm (it used to emit CancelArm for a phantom).
 	seeded := setup()
 	Seed(seeded, nil, bars[len(bars)-1].CloseTime)
 	if len(seeded.SourcesMissing()) == 0 {
@@ -366,8 +367,8 @@ func TestSeedFailClosedTick(t *testing.T) {
 	if p != 0 {
 		t.Fatalf("seeded-missing placements = %d, want 0 (fail-closed)", p)
 	}
-	if c == 0 {
-		t.Fatalf("seeded-missing cancels = 0, want the stacking cancel to flow")
+	if c != 0 {
+		t.Fatalf("seeded-missing cancels = %d, want 0 (m425a S1: a fail-closed-dropped entry leaves no phantom arm to cancel)", c)
 	}
 }
 
@@ -378,7 +379,7 @@ func TestSeed1hEquals1mAggregation(t *testing.T) {
 	bars1m := minuteTape(t, 9)
 	now := ctMs(t, 8, 20, 0)
 
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	Seed(e, bars1m, now)
 
 	// 1h: the level walk equals keyLevel1HBars over the same 1m tape.
@@ -424,7 +425,7 @@ func TestSeedDropsForming1HCandleUntilTickClosesIt(t *testing.T) {
 	bars := formingSeedTape(t, 10*60+31, 101, 105, 103)
 	seedNow := ctMs(t, 0, 10, 15)
 	seedEnd := 10*60 + 15 - (8*60 + 30) + 1
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	e := New(cfg)
 	Seed(e, bars[:seedEnd], seedNow)
@@ -466,7 +467,7 @@ func TestSeedFormingCandleColourFlipUsesClosedColour(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			bars := formingSeedTape(t, 10*60+29, 101, tc.partialClose, tc.finalClose)
-			cfg := DefaultConfig()
+			cfg := preOctCfg()
 			cfg.Enabled = true
 			e := New(cfg)
 			Seed(e, bars[:10*60+15-(8*60+30)+1], ctMs(t, 0, 10, 15))
@@ -493,7 +494,7 @@ func TestSeedFormingCandleColourFlipUsesClosedColour(t *testing.T) {
 
 func TestSeedClosedHistoryAtMidnightIsByteIdentical(t *testing.T) {
 	bars := formingSeedTape(t, 14*60+59, 101, 101, 101)
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	e := New(cfg)
 	Seed(e, bars, ctMs(t, 1, 0, 0))
 
@@ -525,7 +526,7 @@ func TestSeedClosedHistoryAtMidnightIsByteIdentical(t *testing.T) {
 
 func TestSeedDropsScheduledFormingCandleWithClosedStoredBars(t *testing.T) {
 	seedBars := formingSeedTape(t, 10*60+14, 101, 105, 103)
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	e := New(cfg)
 	Seed(e, seedBars, ctMs(t, 0, 10, 15)+30_000)
@@ -558,8 +559,10 @@ func TestSeedDropsScheduledFormingCandleWithClosedStoredBars(t *testing.T) {
 
 func TestSeed14h30CandleClosesAt1500(t *testing.T) {
 	bars := formingSeedTape(t, 14*60+59, 101, 101, 101)
-	e := New(DefaultConfig())
-	Seed(e, bars, ctMs(t, 0, 15, 0))
+	e := New(preOctCfg())
+	// the 14:30 candle's scheduled close is 15:15 [Oct D5.2 @ 02:14-02:40]
+	// (September: 15:00), so it is a closed candle only from 15:15 on.
+	Seed(e, bars, ctMs(t, 0, 15, 15))
 
 	var found int
 	for _, c := range e.State.Seed1HBars {
@@ -584,7 +587,7 @@ func TestSeed14h30CandleClosesAt1500(t *testing.T) {
 // never become a live order. Mutant: drop the LastBarTime assignment in Seed →
 // (b1) turns RED.
 func TestSeedSwingWatermarkBlocksOldTouches(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	// 19 days of around-the-clock 1m bars: ≥102 closed 4h candles so the swing
 	// is allowed (not refused by the warm-up gate), and every touch in the tape

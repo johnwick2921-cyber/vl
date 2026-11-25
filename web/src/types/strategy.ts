@@ -62,6 +62,60 @@ export interface StrategyConfig {
   // Day Plan settings block (root-level, additive; mirrors Go DayPlanConfig).
   // Absent/undefined = feature off (byte-identical to a pre-day-plan strategy).
   day_plan?: DayPlanConfig
+  // Pep trading-mode block (root-level, additive; mirrors Go store.PepConfig).
+  // Absent = pep OFF (byte-identical to a pre-pep strategy). The block is a
+  // MODE of its own, never combined with mentor_mode or the day plan.
+  pep?: PepConfig
+}
+
+// PepConfig — mirrors Go store.PepConfig (store/pep.go). Every leaf name is
+// unique (pep_*, pep_a_*, pep_e_*, pep_c_*). Optional = the server resolves the shipped
+// default; the Studio panel always SENDS a concrete value (fullPepBlock) so the
+// server-side merge (which keeps absent keys) can never leave a stale number.
+export interface PepStyleAConfig {
+  pep_a_box_minutes?: number
+  pep_a_sl_fraction?: number
+  pep_a_tp_fraction?: number
+  pep_a_both_edges?: string // no_trade | nearest_open
+}
+export interface PepStyleEConfig {
+  pep_e_box_minutes?: number
+  pep_e_sl_fraction?: number
+  pep_e_tp_fraction?: number
+  pep_e_ema_period?: number
+  pep_e_ema_tf_min?: number
+  pep_e_signal_source?: string // ema | close
+  pep_e_warmup_bars?: number // 0 = auto (3 x period)
+}
+// Custom style (m461): the ONLY editable style. A and E are locked to the PDF
+// (the server ignores their stored numbers); Custom reads these plus the root
+// rule leaves (box start, flat time, stop rounding, max trades, max box).
+export interface PepStyleCustomConfig {
+  pep_c_entry_type?: string // ema_cross | breakout
+  pep_c_box_minutes?: number
+  pep_c_sl_fraction?: number
+  pep_c_tp_fraction?: number
+  pep_c_both_edges?: string // breakout only: no_trade | nearest_open
+  pep_c_ema_period?: number // ema_cross only
+  pep_c_ema_tf_min?: number // ema_cross only
+  pep_c_signal_source?: string // ema_cross only: ema | close
+  pep_c_warmup_bars?: number // ema_cross only; 0 = auto (3 x period)
+}
+export interface PepConfig {
+  pep_enabled?: boolean
+  pep_style?: string // 'A' | 'E' | 'Custom'
+  pep_contracts?: number
+  pep_box_start_ct?: string // HH:MM America/Chicago
+  pep_flat_time_ct?: string // HH:MM America/Chicago
+  pep_tick_size?: number
+  pep_sl_rounding?: string // outward | nearest
+  pep_max_trades_per_day?: number
+  pep_fee_per_contract_usd?: number
+  pep_max_box_points?: number // 0 = OFF
+  pep_signal_max_age_min?: number
+  style_a?: PepStyleAConfig
+  style_e?: PepStyleEConfig
+  style_custom?: PepStyleCustomConfig
 }
 
 // DayPlanSessionOverride — per-session overrides; an ABSENT field inherits the
@@ -302,14 +356,21 @@ export interface MentorTuning {
   level_max_visits?: number // explicit 0 = no per-day cap
   orb_gate_enabled?: boolean
   isb_reverse_ema9_enabled?: boolean
-  htf_gate_news_only?: boolean // D4.4-11 — unset = OFF (all-day gate; owner decision A 2026-10-21); ON = news-only 07:20–07:35 CT
-  exec_2m_after_30m?: boolean // X5-10 — unset = ON (1m for the first 30 min, then 2m for ISB + PHL/PLH)
+  htf_gate_news_only?: boolean // D2-G7 oct round 2 — unset = ON = the 4h/1h gate only in the news + open windows (October: the 5m is the only big frame); OFF (stored) = the m462 all-session gate (Sept D5.1-R9/R11)
+  exec_2m_after_30m?: boolean // X5-10 — unset = OFF since m472 A1 [Oct D4.2 @ 22:56-23:46] "Trade khung 1 phut, chu khong la khung 2 phut" (when ON, execution frame: 2m after 09:00 CT (1m 08:30–09:00) for ISB + PHL/PLH, EMA 9/34, boxes, trendlines and the X8 exit)
   day_gate_spent_pts?: number
   day_gate_target_cap_pts?: number
+  htf_opposed_range_halt_pts?: number // answers-1112 Q1 extra rule — unset / 0 = OFF (today): > 0 = from the 08:30 CT open to the 17:00 CT roll, 4h/1h triggers opposed + the Globex day run (17:00 CT → now) at/above this → no new mentor entries for the rest of the trading day (<setup>_htf_opposed_range_halt) [Sept D5.1 p1 @19:22-19:26 "300-400 điểm … Tắt máy nghỉ luôn"]; 50..2000
   swing_max_stop_pts?: number
   // Course-entry knobs (release #25). Unset = the ruled default in brackets.
   // D4.2 p1 — a 1m ISB under a standing 15m box [require_5m_isb]
   '15m_ib_requires_5m_isb'?: 'off' | 'require_5m_isb' | 'no_trade_until_escape'
+  // m465 P1 (release #60). D4.2-R2 — box the FORMING 15m from 2 churning 5m candles [true]
+  '15m_early_read'?: boolean
+  // D4.2-R17 — mode C from the standing 15m + 5m boxes [standing_boxes]
+  mtf_confluence_source?: 'standing_boxes' | 'last_pair'
+  // D3.4-R43 — crossing 5m ISBs hand the trigger to the 15m, then the 30m [true]
+  trigger_escalation?: boolean
   // D4.2 p1 @07:54 — when a 5m/15m box conflict ends [both_boxes] (OQ-2)
   tf_conflict_end?: 'first_box' | 'both_boxes'
   // D4.4 p1 @21:55 — news day: wait beyond the 4h trigger line until 08:30 [true]
@@ -317,9 +378,9 @@ export interface MentorTuning {
   // D4.4 p1 @18:18 — drop print→08:30 bars from the 1h/4h feed [true]
   news_bars_excluded?: boolean
   // D4.1 p1 @20:52 — ISB rest box escape test [body]
-  isb_box_escape?: 'close' | 'body'
+  isb_box_escape?: 'close5m' | 'close' | 'body'
   // D4.2 p2 @01:33 — EMA 34 back after one loss [until_zone_exit]
-  ema34_loss_relock?: 'session' | 'until_zone_exit'
+  ema34_loss_relock?: 'off' | 'session' | 'until_zone_exit'
   // X5 @08:52 — refuse an entry within N pts of the ORB edge [0 = off]
   orb_edge_veto_pts?: number
   // rule 5 (release #31): the ORB-edge ISB candle must lie ≥ this fraction outside [0.80]
@@ -339,6 +400,122 @@ export interface MentorTuning {
   // D3.4 p3 recovered2 @00:00 — after a box escapes, a new same-role box
   // outside the old range; D3.2 p2 @09:47 "Đừng vẽ vùng thứ 3… Rối lắm" [true]
   box_new_zone_after_escape?: boolean
+  // Release #52 B19 — the ORB opens only on a candle COMPLETELY outside the
+  // 2-minute range, wicks included; "Routine trước khi trade" part1
+  // @06:47–07:16 [false = the body test]
+  orb_escape_completely?: boolean
+  // m465 P5 (release #60) — the D4.3 wick microscalp, the whole setup: a run
+  // of ≥2 same-way 5m wicks WITH the 5m trend draws a zone box (extended
+  // right); a 1m ISB/PHL at the zone arms; the target is the nearby 5m wicks.
+  // Advanced — "đừng có tập khúc này đầu liền" D4.3 @04:55 [false]
+  wick_microscalp?: boolean
+  // m465 P5 — D4.3-R20 safe play: a setup at a wick zone waits for its
+  // reference candle to close beyond the zone's near edge, D4.3 @14:07 [false]
+  wick_safe_play?: boolean
+  // Release #52 W11 — invented-constant knobs: every number is OURS, not the
+  // course's; each default is what the kernel hard-coded before.
+  // B8 [4] — the candle a resting 2m ISB arm is cancelled on (3–12);
+  // "Ngày 4.2 Multitime frame 15_" part2 @00:08:53 counts 1m candles only
+  isb_stack_cancel_candle_2m?: number
+  // B8 [12.5 — m465 D5.1-R26, the worked example's measured stop] — a stop at
+  // or under this keeps the arm past the cancel candle; "Ngày 5.1 Go over lại
+  // tất cả" part2 @02:24–04:41 (0.01 = effectively off)
+  isb_stack_tiny_stop_pts?: number
+  // B10 [100 / 15 / 0] — evening "slow": cutoff pts, start hour CT (15–17),
+  // trailing window minutes (0 = cumulative); X11 @17:40–18:26, owner Q6
+  evening_slow_pts?: number
+  evening_slow_from_hour?: number
+  evening_slow_window_min?: number
+  // B11 [2 / true] — near-box room × risk (0 = off) and whether it gates PHL/PLH
+  near_box_room_multiple?: number
+  near_box_room_phl?: boolean
+  // answers-1112 Q2 [unset = follow near_box_room_multiple, today] — the near-box
+  // multiple for the PHL/PLH leg only (0 = PHL/PLH leg off; the 2x is ours, owner question)
+  near_box_room_phl_multiple?: number
+  // C16 [5] — PHL/PLH target pts short of the old extreme (0 = at it)
+  phl_target_shy_pts?: number
+  // phl audit PHL-1 [4] — the rolling PHL/PLH old extreme is the 1m swing the pullback started from; its width k (1..10; -1 = the pre-PHL-1 5m/15m pivots). The course states no number: 4 reproduces the four Oct D2.3 worked examples.
+  phl_old_extreme_1m_k?: number
+  // B27 [2 / 0] — ISB size cuts: "at the old extreme" ± pts; "in range"
+  // key-level gap (0 = inherit ping_pong_min_gap_pts)
+  isb_old_extreme_pts?: number
+  isb_in_range_gap_pts?: number
+  // m465 P3 (release #60) — structure-fidelity knobs; unset = the course (the
+  // full video read), the other value = the pre-#60 behaviour.
+  // D2.3-R7 [unset = 'third' since m472 A2 (Oct D3.2 @31:00); 'fourth' = the September reading] — a 1m/2m trendline is not a location on its 3rd-touch
+  // candle (the test); the entry comes on a later touch [D2.3 p1 @02:34–03:16]
+  trendline_entry_touch?: 'fourth' | 'third'
+  // D3.2-R29/R30 [false] — no blanket "between two boxes" near-box exemption
+  // (E6 refused); true = the pre-#60 exemption [D3.2 p1 @22:12–24:41]
+  near_box_between_exempt?: boolean
+  // D2.2-R64 ['flat_near'] — a flat low is an FTGL, not a PHL [D2.2 p3 @07:44–10:15]
+  phl_flat_low?: 'flat_near' | 'strict'
+  // D5.4-R7 ['pair'] — reverse-ISB EMA 9 touch reads the mother + ISB group
+  // [D5.4 p1 @03:35–03:46]
+  isb_reverse_touch?: 'pair' | 'isb_candle'
+  // m466 P2 (release #61) — levels and touches; unset = the course.
+  // G2 D1.3-R21 ['on'] — a key level that held today and then breaks flips its
+  // role once (Uno Reverse); the backtest reject trades [D1.3 p1 @12:31–12:58]
+  uno_key_levels?: 'on' | 'off'
+  // levels audit LL-4 ['own'] — pre-roll key-level candles from the current contract's
+  // own native bars where they cover the candle [OctD5.2-R16]; 'stitched' = back-adjusted
+  key_level_history_source?: 'own' | 'stitched'
+  // levels audit LL-2 ['on'] — a key level whose first touch closes through it flips;
+  // the first retest from the new side is the PHL/PLH reference [OctD5.2-R20/R24/R25]
+  key_level_break_retest?: 'on' | 'off'
+  // D3-G15 ['off'] — 'on' re-arms an ISB-only key level on visit departure [OctD3.2-R78, [B]]
+  key_level_rearm?: 'on' | 'off'
+  // D5.3-R43/R44 ['ema'] — the reverse ISB at EMA 9 trades with the EMA 9/34 line trend; 'trigger' = today's 5m trigger side
+  isb_reverse_trend?: 'ema' | 'trigger'
+  // D5.4-SCALP ['on'] — a PHL/PLH against the governing 5m trigger sizes the reduced tier; 'off' = today
+  counter_5m_reduce_size?: 'on' | 'off'
+  // levels audit LL-1 ['off'] — October keeps a key level a 1H body closed through
+  // [OctD5.2-R13..R20]; 'on' = the deck / September deletion (slide 31 step 4)
+  key_level_delete_on_1h_close?: 'on' | 'off'
+  phl_min_above_old_extreme_pts?: number
+  isb_target_fill_close?: boolean // D2-G3 oct round 2 — unset = OFF (review: course does not state it, [B]); true = the ISB first target is the fill candle close (+1R leg-1 TP); no level required (OctD2.2-R35/R37); unset/false = the September level target. Since answers-1112 Q3 its own case is a level inside 1R; the no-level case is isb_no_level_fill_close
+  isb_no_level_fill_close?: boolean // answers-1112 Q3 — unset = ON: an ISB with NO level beyond is traded, first target the fill candle close (+1R leg-1 TP) [Oct D2.2 @28:37-28:56, @30:24-30:43]; a level inside 1R stays refused; false = today's isb_missing_target refusal
+  box_trendline_partial_not_room?: boolean // answers-1112 Q12 — unset = OFF (today, since the 2026-11-12 review; owner opt-in). true: for a BOX trade a trendline in the path is a place to sell part, not the room cap — the target and the room read the next real level beyond it, and the line is the runner's first partial past 1:1 [Sept D3.3 p1 @05:15-07:46; Sept D3.2 p2 @11:06-11:39]; a line with nothing real beyond stays the target; false/unset = today
+  phl_5m_box_same_dir_allowed?: boolean // answers-1112 Q9 — unset = OFF (today): true = inside a standing 5m ISB box a PHL/PLH on the box's own side (candle-1 colour) is not refused phl_5m_box_ban; a scalp, target capped at the box's far edge [Oct D4.3 @1:08:24-1:08:39, @1:11:20-1:11:45]; the opposite side stays banned; experienced only [@1:10:58-1:11:03]
+  touch_stop_cover_later_wick?: boolean // answers-1112 Q7 — unset = OFF (today, since the 2026-11-12 review: a [B] port onto the swing re-arm; owner opt-in). true: two touch candles, entry on the SECOND (the swing leeway re-arm, the bot's only later-candle entry): when candle 2's wick reaches further than candle 1's and past the line+30 stop, the stop covers it 1 pt beyond [Oct D5.2 @19:42-20:03; Oct D2.3 @46:20-47:20]; widen only, the R31 skip still applies; candle-1 entries unchanged; false = today
+  trigger_from_open?: boolean // G4 oct round 2 — unset = ON: the 5m trigger line is read from the 08:30 CT open (OctD4.3-R5); false = the whole-history read
+  rolling_left_break_cancel?: boolean
+  rolling_stale_touch_releases?: boolean // FIX-1112 B — unset = OFF (today): true = a level touch of an EARLIER leg does not own the rolling pullback entry (WE6, OctD2.3 @13:37-28:33); false = any live touch-reject owns (m216)
+  rolling_keypair_tape_exempt?: boolean // FIX-1112 B — unset = OFF (today): true = the X4 keypair sit-out is not applied to the rolling ladder's 1m tape old extreme (WE7, OctD2.3 @35:46-39:09); false = today
+  htf_trendline_flip?: boolean // D3-G12 oct round 2
+  trendline_max_slope_pts_per_bar?: number // D3-G14 oct round 2
+  trendline_min_bounce_pts?: number // D3-G10 oct round 2
+  knock_knock_zone?: boolean // D2-G10 oct round 2
+  trendline_first_bottom_anchor?: boolean // D3-G9 oct round 2
+  box_flip_reversible?: boolean // D3-G7 oct round 2
+  box_carried_stays_live?: boolean // D3-G4 oct round 2
+  box_swing_both_roles?: boolean // D3-G2 oct round 2
+  box_preopen_lookback_min?: number // D3-G1 oct round 2
+  phl_room_multiple?: number // D2-G2 / answers-1112 Q2 [1] — unset = 1 (October 1:1, Oct D2.3 @49:37-49:56); 2 = the September 2R room (revert); a confluence PHL/PLH asks 1 × its 2R leg 1 = 2R at 1, 4R at 2 [Sept D3.4 p3]
+  // G10/G11 D3.1-R26/R20 ['on'] — the session open candle wick is an old
+  // high/low; an unfilled ≥20-pt gap's far edge is a level [D3.1 p1 @11:58–12:22, @09:41–09:51]
+  session_open_levels?: 'on' | 'off'
+  // G17 D2.3-R34 ['current_line'] — a trendline / EMA 34 order cancels on a
+  // close through the line's CURRENT price [D2.3 p1 @23:35–24:03]
+  level_arm_line_cancel?: 'current_line' | 'placement_price'
+  // G41 D2.2-R59 ['pullback'] — the whole pullback's low must hold above the
+  // prior low [D2.2 p3 @08:25–09:25]
+  phl_pullback_low?: 'pullback' | 'signal'
+  // m466 P1 (release #61) — boxes, breaks, ranges (absent = the course default).
+  // newest (default): the 5m ISB box is the NEWEST 5m inside bar [D4.1-R37]; first = pre-#61.
+  mentor_5m_box_source?: 'merge' | 'newest' | 'first'
+  // default ON: after a box break only setups in the break direction [D4.1-R31/R33, D4.1-R55].
+  mentor_break_direction_lock?: boolean
+  // default OFF (release #61 final — the course states no candle count / breakout margin): when true, no entry inside a range too small for its candles (61.50 pts / two 30-pt candles) [D4.2-R33].
+  mentor_small_range_guard?: boolean
+  // default ON: mid-range, trade WITH the last box rejection [D2.2-R71].
+  mentor_mid_range_reject_side?: boolean
+  // isbTF audit — numbers the course does not state, at today's values (absent = unchanged).
+  // default ON: one FILLED inside-bar trade per 4h level per 4h candle — the bot's [B] reading, mentor question [D5.2-R25].
+  mentor_swing_isb_one_per_candle?: boolean
+  // crossing read for the trigger escalation [D3.4-R43]: last N closed buckets (3..12, default 3) holding at least M inside bars of both directions (2..N-1, default 2) — mentor Q10.
+  crossing_isb_lookback?: number
+  crossing_isb_min?: number
 }
 
 export interface RiskControlConfig {
@@ -390,7 +567,7 @@ export interface RiskControlConfig {
   // the knob-rule default (course-defaults-30, owner "fix all"): first-target
   // ON, runner ON, resonance runner TP ON, BE-before-partial ON (reverses R3),
   // candle-3 any-profit ON (today's rule), reverse-ISB-as-PHL ON, EMA 9 visits
-  // shared, ISB max stop 30, keypair ratio 1, box height 0 (off), box fresh
+  // shared, ISB max stop 20 (m466), keypair ratio 1, box height 0 (off), box fresh
   // RTH pair OFF.
   mentor_swing_ema34_is_first_target?: boolean
   mentor_swing_runner?: boolean
@@ -403,6 +580,42 @@ export interface RiskControlConfig {
   mentor_keypair_candle_ratio?: number
   mentor_box_fresh_rth_pair?: boolean
   mentor_box_max_height_pts?: number
+  // m463 (D5.2-R31): a SWING4H stop ABOVE this is refused; unset → 80
+  // (answers-1112 Q13, Sept D5.2 p2 @05:25-05:33 "7-80 điểm"; 90 reverts).
+  mentor_swing_max_stop_pts?: number
+  // m465 P2 (release #60, D4.2-R27): what an ISB stop-out boxes — 'range'
+  // (default) = the whole 5m range that held the trade; 'band' = the pre-#60
+  // entry-to-stop band. Unset → range.
+  mentor_isb_loss_box?: 'range' | 'band'
+  // m466 P4 (release #61, swing D5.2). G63 R26: 'not_required' (default) =
+  // after an invalid cross the 5m inside bar alone is the setup; 'required' =
+  // the pre-#61 close back. G66 R25: unset → ON = a resting inside-bar order
+  // survives a later 5m close through the line. G65 R6: 'none' (default) = the
+  // swing runner has no TP (held by the 4h); 'capped' = the pre-#61 cap.
+  mentor_swing_isb_close_back?: 'not_required' | 'required'
+  mentor_swing_isb_keep?: boolean
+  mentor_swing_runner_tp?: 'none' | 'capped'
+  // m465 P4 (release #60): D2.4-R2 — a raw same-way inside bar within 3
+  // candles of a PHL/PLH fill arms resonance; unset → ON.
+  mentor_resonance_raw_isb?: boolean
+  // m465 P4 (release #60): D3.1-R30 — a 2m/5m ISB/PHL/PLH entry takes the
+  // reduced size; unset → ON.
+  mentor_2m_reduce_size?: boolean
+  // Stop-to-size ladder (owner order 2026-11-10): a non-swing stop above the
+  // setup's own ceiling is SIZED DOWN, not refused — (20,30] → the reduced
+  // tier [OctD2.2-R73], above 30 → mentor_wide_stop_contracts [OctD2.3-R47].
+  // Unset → ON / 1 / 0 = no cap (owner order 2026-11-15); a stored
+  // mentor_wide_stop_max_pts refuses above it (40 reverts).
+  mentor_stop_size_ladder?: boolean
+  mentor_wide_stop_contracts?: number
+  mentor_wide_stop_max_pts?: number
+  // m466 P3 (release #61): G55 D4.4-R40 — what breaks the opening 5m range
+  // (unset → '1m_close'); G56 D4.4-R22 — the news wait reads both lines
+  // (unset → 'both'); G58 D4.4-R6 — minutes before the print the 1h/4h read
+  // is taken (unset → 30; 0 = the pre-#61 07:20 start).
+  mentor_open5m_break?: '1m_close' | '5m_close'
+  mentor_news_wait_mode?: 'both' | '4h_only'
+  mentor_news_read_lead_min?: number
   // Mentor method numbers (K3). Every field unset = the ruled default; the
   // Go side (store.MentorTuning) fails closed to the default on a bad value.
   mentor_tuning?: MentorTuning

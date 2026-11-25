@@ -253,8 +253,10 @@ type Host interface {
 	// AddonRestore MOVES a placed AddOn's backup back into bin/Custom — never
 	// a delete (THE ONE RULE). docsDir is the NT8 Documents dir (bin/Custom
 	// under it); backupDir is the directory addonbuild.Place returned ("" =
-	// nothing was backed up, nothing to restore).
-	AddonRestore(docsDir, backupDir string) error
+	// nothing was backed up, nothing to restore); preJobBuild is the AddOn
+	// build the box ran before the job (m357 D — a legacy sidecar-less backup
+	// is accepted only when its embedded build id equals it).
+	AddonRestore(docsDir, backupDir, preJobBuild string) error
 
 	// FriendFlat asks a friend bot (baseURL, the box's tunnel IP + the
 	// friend's web port) whether it is flat: GET /api/health answers 200 AND

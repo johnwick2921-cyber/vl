@@ -1,5 +1,12 @@
 package mentor
 
+import (
+	"fmt"
+	"sort"
+
+	"vl/market"
+)
+
 // PHL / PLH [§2.2] — R2 mechanics, verbatim [D2.2 p1 @ 19:34–19:58, 23:22]:
 //
 //   - PHL = LONG: in an uptrend price pulls back; a buy stop sits at the
@@ -54,24 +61,70 @@ func phlPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing floa
 	if !ok {
 		return Intent{}, false, "no reject entry"
 	}
+	// m472 A3: entry ray = candle extreme +/- 1.0, stop ray = the other extreme
+	// -/+ 1.0 (2 pts total, risk = range + 2.0) [Oct D2.3 @ 46:20-47:20]; supersedes
+	// Sept D2.2-R10 0.50/0.50 (the example below). The 25-pt stop ceiling now bites
+	// at a 23-pt candle range.
 	// R2: the buy stop sits at the PREVIOUS candle's high; stop = the low
 	// of that broken candle. The previous candle = the touch reference.
-	// D2-15 [D2.2 p1 @06:50 drawn]: the entry sits ~1 pt BEYOND the candle
-	// extreme (high 29,396.25 → entry 29,397.25) — the course buffer. The
-	// stop stays at the broken candle's extreme (the frame draws it AT the
-	// low; the +0.25 offset is a quarter-tick artefact, not a stated rule).
+	// SUPERSEDED by the Oct D2.3 rays above; D2.2-R10 [p1 @04:14–05:43, screen — release #59 fix round, mentor-exact]:
+	// the entry RAY is the signal high + 0.50 (29,395.75 → 29,396.25) and the
+	// stop RAY the signal low − 0.50 (29,386.50 → 29,386.00) —
+	// PHLEntryBufferPts / PHLStopBufferPts. The structural checks below (the
+	// EMA 34 nuance, the higher low / lower high) read the candle's own
+	// extreme; the stop buffer is added last.
 	price := t.RefBar.High + cfg.PHLEntryBufferPts
 	stop := t.RefBar.Low
 	if side == SideShort {
 		price = t.RefBar.Low - cfg.PHLEntryBufferPts
 		stop = t.RefBar.High
 	}
+	emaStop := false
+	// D3.3 p1 @00:40–01:05 — the EMA34 stop nuance: when the location is the EMA
+	// 34 and the reference candle only TOUCHED it (its wick did not pass through),
+	// the stop goes right AT the EMA 34 (covering it), no extra room. A wick that
+	// already passed through keeps the normal beyond-the-wick stop.
+	if (t.LevelKey == string(KindEMA34) || t.LevelKey == string(KindEMA34HTF)) && t.PriceAtTouch > 0 {
+		if side == SideLong && t.PriceAtTouch < stop {
+			stop = t.PriceAtTouch
+			emaStop = true
+		}
+		if side == SideShort && t.PriceAtTouch > stop {
+			stop = t.PriceAtTouch
+			emaStop = true
+		}
+	}
 	if priorSwing != 0 {
 		if side == SideLong && stop <= priorSwing {
-			return Intent{}, false, "not a higher low — a flat low is an FTGL, not a PHL [D2.2 p1 R2]"
+			return Intent{}, false, "not a higher low — a flat low is an FTGL, not a PHL [D2.2 p3 @08:45–10:02]"
+
 		}
 		if side == SideShort && stop >= priorSwing {
-			return Intent{}, false, "not a lower high — a flat high is an FTGH, not a PLH [D2.2 p1 R2]"
+			return Intent{}, false, "not a lower high — a flat high is an FTGH, not a PLH [D2.2 p3 @ 14:03–14:22]"
+		}
+	}
+	// G7 (oct round 2): the entry must stand off the old low it rests on —
+	// 6.50 pts above it "is not even called a Potential High Low", about 15 is
+	// the mentor's figure [OctD4.2-R39/R41/R42 @ 36:45–40:20]. Knob
+	// phl_min_above_old_extreme_pts (0 = off).
+	if cfg.PHLMinAbovePriorPts > 0 && priorSwing != 0 {
+		dist := price - priorSwing
+		kind := "old low"
+		if side == SideShort {
+			dist = priorSwing - price
+			kind = "old high"
+		}
+		if dist < cfg.PHLMinAbovePriorPts {
+			return Intent{}, false, fmt.Sprintf("entry only %.2f pts from the %s — the course wants about %.0f pts beyond it [OctD4.2-R39/R41/R42 @ 36:45–40:20]", dist, kind, cfg.PHLMinAbovePriorPts)
+		}
+	}
+	// D2.2-R10: the stop ray sits PHLStopBufferPts beyond the candle extreme —
+	// not when the D3.3 EMA 34 nuance put it AT the EMA ("no extra room").
+	if !emaStop {
+		if side == SideShort {
+			stop += cfg.PHLStopBufferPts
+		} else {
+			stop -= cfg.PHLStopBufferPts
 		}
 	}
 	// The old extreme must be on the TARGET side: long → old high above;
@@ -96,7 +149,16 @@ func phlPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing floa
 	if risk <= 0 || reward <= 0 {
 		return Intent{}, false, "degenerate stop/target geometry"
 	}
-	if risk > cfg.StopCeilingPts {
+	// Stop-size ladder (owner order 2026-11-10): ON lets a wide stop through
+	// to the trader's size table, which sizes it down [OctD2.2-R73 @01:12:32,
+	// OctD2.3-R47 @48:12] — with no size cap by default (mentor_wide_stop_max_pts
+	// 0, owner order 2026-11-15); a stored mentor_wide_stop_max_pts caps
+	// (revert 40). OFF = the D3.3 25 exactly. The 1:1 floor / room below still
+	// apply to every stop — a wide stop needs a level that far away.
+	if ceil := StopLadderCeiling(cfg, cfg.StopCeilingPts); risk > ceil {
+		if ceil > cfg.StopCeilingPts {
+			return Intent{}, false, fmt.Sprintf("%s (%g pts) — do not trade [\"40 điểm… Mình không trade\" OctD2.3-R47 @48:12, R48 @49:38]", PHLWideStopReasonPrefix, ceil)
+		}
 		return Intent{}, false, "stop over the 25-pt ceiling — not worth trading [D3.3 p1 @ 02:04]"
 	}
 	// E-2: the D1.2 floor is checked BEFORE the room knob — when the
@@ -106,7 +168,7 @@ func phlPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing floa
 	if reward < risk {
 		return Intent{}, false, targetCloserThanStopReason
 	}
-	if refuse, why := roomRefusal(price, stop, target, confluence, cfg.RoomMultiple); refuse {
+	if refuse, why := roomRefusal(price, stop, target, confluence, targetRoomMultiple(levels, target, cfg.PHLRoomMultiple)); refuse { // D2-G2: October 1R for a PHL/PLH; m465 D4.3-R17: 1R for a 5m-wick target
 		return Intent{}, false, why
 	}
 	setup := "PHL"
@@ -168,12 +230,12 @@ func phlTarget(oldExtreme Level, price float64, side Side, levels []Level, cfg C
 //
 //		§5.4 (fold item 3): entries only WITH the 4h trigger direction; the 1h
 //		agreeing or silent. A 1h opposite the 4h refuses the setup until it
-//		flips [D4.4 p1 @ 16:00].
+//		flips [D4.4 p1 @15:09–15:34].
 //
 //	  §7 (fold item 4): a SPENT day with a 4h/1h conflict shuts the day off
 //	  (latched at the 08:30 read — a later 1h flip does not reopen it); a
 //	  spent day that agrees caps the target at TargetCapPts
-//	  ("15 điểm bán, 10 điểm bán") [D5.1 p1 @ 15:57]; an unmeasured run
+//	  ("15 điểm bán, 10 điểm bán") [D5.1 p1 @19:56–20:07]; an unmeasured run
 //	  fails closed ("any trade you are vague about — don't" [§12]). On a
 //	  NORMAL day a conflict is §5.4 case 3 — the HTF gate above sits out
 //	  per tick until the 1h flips, not a day off.
@@ -204,10 +266,11 @@ func phlPLHGatedR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing
 	if !ok {
 		return in, false, reason
 	}
-	if htfOK, side, htfReason := HTFVerdict(htf); !htfOK {
-		return in, false, "HTF direction gate: no trade — " + htfReason
-	} else if side != "" && side != in.Side {
-		return in, false, "HTF direction gate: entry side " + string(in.Side) + " against the " + string(side) + " trigger — entries only with the 4h direction [D4.4 p1 @ 16:00]"
+	// m462: the ONE shared 4h/1h check — all session by default (D5.1-R9/R11).
+	// The reason carries the kind so phlRefusalName names it per kind:
+	// phl_htf_no_4h / phl_htf_conflict / phl_htf_side_mismatch.
+	if r, why := HTFEntryCheck(htf, in.Side); r != "" {
+		return in, false, "HTF direction gate: " + string(r) + " — no trade — " + why
 	}
 	// A10 (CTO 20:15:49Z): ONE day gate — DayOff AND DayNotMeasured refuse
 	// every intraday setup through the same helper (dayGateRefusal).
@@ -240,4 +303,120 @@ func phlPLHGatedR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing
 		return in, false, why
 	}
 	return capped, true, ""
+}
+
+// phlFlatExtremeRefusal — m465 (release #60, D2.2-R64/R65): a PHL needs a low
+// HIGHER than the previous low, and a FLAT low is not one: "đang đi kiếm một
+// cái lệnh có đáy cao hơn đáy trước đó; mà ngay chỗ này nó ngang phè" [D2.2 p3
+// @07:44–09:46]; "Cái chỗ này anh đang gọi nó là failure to go lower"
+// [@09:46–10:15] (on screen the pink box 29,369.00–~29,380.25 over the repeated
+// lows). The strict check in phlPLHR2 (stop <= priorSwing →
+// phl_not_higher_low) let a low one tick higher through. "Flat" is the
+// owner-ruled m428 R2 "same price" measure (flatNearPts — half the average
+// candle range of the last 20 closed traded-frame candles), so no number is
+// invented here; near is passed in by the caller (phlFlatNear).
+//
+// Long: refused phl_flat_low_is_ftgl when 0 < ref.Low − priorSwing ≤ near.
+// Short (mirror, "a flat high is an FTGH, not a PLH" [D2.2 p3 @14:03–14:22]):
+// refused plh_flat_high_is_ftgh when 0 < priorSwing − ref.High ≤ near. A low at
+// or under the prior low is left to phl_not_higher_low. The flat pair itself is
+// already a flat support/resistance LEVEL (trendline_flat.go), so the FTGL
+// reading of the same place stays tradeable. Knob PHLFlatLow "strict" = the
+// pre-#60 strict comparison only (returns ""). priorSwing 0 = no check.
+func phlFlatExtremeRefusal(cfg Config, side Side, ref market.Kline, priorSwing, near float64) string {
+	if cfg.PHLFlatLow == PHLFlatLowStrict || priorSwing == 0 || near <= 0 {
+		return ""
+	}
+	switch side {
+	case SideLong:
+		if d := ref.Low - priorSwing; d > 0 && d <= near {
+			return "phl_flat_low_is_ftgl"
+		}
+	case SideShort:
+		if d := priorSwing - ref.High; d > 0 && d <= near {
+			return "plh_flat_high_is_ftgh"
+		}
+	}
+	return ""
+}
+
+// phlFlatNear is the m428 R2 "same price" distance for the flat-low check, read
+// on the PHL's execution frame (execTFMin: 1, 2 or 5 minutes) over the candles
+// closed at or before execCur — the candle the PHL reference is read on.
+func phlFlatNear(bars []market.Kline, execTFMin int, execCur market.Kline) float64 {
+	fb := bars
+	if execTFMin > 1 {
+		fb = closedBucketsTF(bars, execTFMin, execCur.CloseTime+1)
+	}
+	if len(fb) == 0 {
+		return 0
+	}
+	return flatNearPts(fb, len(fb)-1)
+}
+
+// phlPullbackRefusal — G41 D2.2-R59/R64 (m466 P2, release #61): the higher-low
+// test reads the WHOLE pullback, not only the signal candle. "nghĩa là anh
+// đang đi kiếm một cái lệnh có đáy cao hơn đáy trước đó" [D2.2 p3
+// @08:25–09:25]; the lows are compared with the lows on the left [@02:51–03:41].
+// phlPLHR2's check (stop <= priorSwing → phl_not_higher_low) reads only the
+// signal candle's low, so a pullback that had ALREADY printed a lower low — the
+// structure shifted — passed as soon as its newest candle's low sat higher.
+//
+// Long: refused phl_pullback_lower_low when the lowest Low of
+// bars[exIdx+1 .. refIdx] (the candles after the old high up to and including
+// the signal candle) is at or under prior (the leg-start low,
+// priorLeftExtremeOnTape). Short mirror: the highest High at or over prior →
+// plh_pullback_higher_high. exIdx is the old extreme's 1m index, refIdx the
+// signal candle's (phlRefIdx), ref the signal candle itself. prior 0, an empty
+// pullback (refIdx <= exIdx), a signal candle that itself fails the test (left
+// to phl_not_higher_low / phl_not_lower_high downstream) or knob
+// PHLPullbackLow "signal" → "" (the pre-#61 signal-only check stands).
+// The m464 rolling ladder keeps its own rules and does not call this.
+func phlPullbackRefusal(cfg Config, side Side, bars []market.Kline, exIdx, refIdx int, ref market.Kline, prior float64) string {
+	if cfg.PHLPullbackLow == PHLPullbackLowSignal || prior == 0 || exIdx < 0 || refIdx <= exIdx {
+		return ""
+	}
+	// The signal candle's OWN extreme at or beyond prior is phlPLHR2's
+	// phl_not_higher_low / phl_not_lower_high — that name stands.
+	if side == SideLong && ref.Low <= prior || side == SideShort && ref.High >= prior {
+		return ""
+	}
+	if refIdx >= len(bars) {
+		refIdx = len(bars) - 1
+	}
+	if refIdx <= exIdx {
+		return ""
+	}
+	switch side {
+	case SideLong:
+		lo := bars[exIdx+1].Low
+		for i := exIdx + 2; i <= refIdx; i++ {
+			if bars[i].Low < lo {
+				lo = bars[i].Low
+			}
+		}
+		if lo <= prior {
+			return "phl_pullback_lower_low"
+		}
+	case SideShort:
+		hi := bars[exIdx+1].High
+		for i := exIdx + 2; i <= refIdx; i++ {
+			if bars[i].High > hi {
+				hi = bars[i].High
+			}
+		}
+		if hi >= prior {
+			return "plh_pullback_higher_high"
+		}
+	}
+	return ""
+}
+
+// phlRefIdx is the 1m index of the signal (touch reference) candle: the last
+// 1m bar that closed at or before ref's close — on a 2m/5m exec frame that is
+// the bucket's last minute, so bars[exIdx+1 .. refIdx] covers every minute of
+// the signal candle. -1 when no bar qualifies.
+func phlRefIdx(bars []market.Kline, ref market.Kline) int {
+	i := sort.Search(len(bars), func(i int) bool { return bars[i].CloseTime > ref.CloseTime })
+	return i - 1
 }

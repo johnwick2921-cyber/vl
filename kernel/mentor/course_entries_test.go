@@ -111,21 +111,23 @@ func TestCE2ConflictHoldsUntilBothBoxesEscape(t *testing.T) {
 			t.Fatalf("held conflict must be counted; refusals %v", e.State.Refusals)
 		}
 	}
-	if DefaultConfig().TFConflictEnd != TFConflictBothBoxes {
+	if preOctCfg().TFConflictEnd != TFConflictBothBoxes {
 		t.Fatal("tf_conflict_end default must be both_boxes (course-defaults-30)")
 	}
 }
 
 // CE-5 (a) — "cái thân nến… nằm bên ngoài mà cái râu nến nằm bên trong cái box
 // ok… Cái đó là at least" [D4.1 p1 @20:52–21:02]. The fixture's last 1m candle
-// OPENS inside the 5m box (102 < 103.5) and CLOSES out (104): body (default)
-// keeps the box; close deletes it.
+// OPENS inside the 5m box (102 < 103.5) and CLOSES out (104): body keeps the
+// box; close deletes it. m466 G20/G49 (release #61): the DEFAULT is now close
+// — "nó đóng bên ngoài cái box là at least" [D4.1 p1 @20:36–21:03] is the
+// minimum, and the PHL/PLH 5m-box ban already reads the close.
 // MUTANT: route ISBBoxEscapeWith to ISBBoxEscape for "body" → RED.
 func TestCE5ISBBoxEscapeIsBody(t *testing.T) {
 	for _, tc := range []struct {
 		mode      string
 		wantStand bool
-	}{{"", true}, {ISBBoxEscapeBody, true}, {ISBBoxEscapeClose, false}} {
+	}{{"", true /* m473 B3: close5m default keeps the box until its own TF closes outside [Oct D4.3 @ 65:00-66:13] */}, {ISBBoxEscapeBody, true}, {ISBBoxEscapeClose, false}} {
 		e, bars, now := mtfFixture(t, false)
 		if tc.mode != "" {
 			e.Cfg.ISBBoxEscapeMode = tc.mode
@@ -146,7 +148,7 @@ func TestCE5ISBBoxEscapeIsBody(t *testing.T) {
 // MUTANT: drop the zone-exit branch in emaLossTick → RED.
 func TestCE6EmaLossRelocksOnZoneExit(t *testing.T) {
 	run := func(mode string) *Evaluator {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		if mode != "" {
 			cfg.EmaLossRelock = mode
 		}
@@ -228,8 +230,9 @@ func TestCE3NewsWaitFor4hLine(t *testing.T) {
 			t.Fatalf("refusal must be counted as news_wait_4h_line; refusals %v", e.State.Refusals)
 		}
 	}
-	if !DefaultConfig().NewsWaitBothLines {
-		t.Fatal("news_wait_both_lines default must be ON (course-defaults-30)")
+	// OCT-EXACT A1 row 6: the Sept CE-3 wait now defaults OFF; mechanics pinned under the revert value.
+	if DefaultConfig().NewsWaitBothLines || !preOctCfg().NewsWaitBothLines {
+		t.Fatal("A1 row 6: news_wait_both_lines must default OFF and be ON under the revert")
 	}
 }
 
@@ -238,14 +241,15 @@ func TestCE3NewsWaitFor4hLine(t *testing.T) {
 // print window start until the 08:30 CT day-gate read (the bars still build
 // their whole 1h/4h candles); OFF keeps the item-18 print-window drop.
 func TestCE4NewsBarsExcludedToTheOpen(t *testing.T) {
-	if !DefaultConfig().NewsBarsExcluded {
-		t.Fatal("news_bars_excluded default must be ON (case a)")
+	// OCT-EXACT A1 row 6: the Sept CE-4 freeze now defaults OFF; mechanics pinned under the revert value.
+	if DefaultConfig().NewsBarsExcluded || !preOctCfg().NewsBarsExcluded {
+		t.Fatal("A1 row 6: news_bars_excluded must default OFF and be ON under the revert")
 	}
 	w := printWindowCT(2026, 9, 15)
 
 	// ON freezes every tick from the print window start through the 08:30
 	// day-gate read (the 08:30-close tick at now = 08:31:00 releases).
-	on := DefaultConfig()
+	on := preOctCfg()
 	on.NewsBarsExcluded = true
 	on.PrintWindows = []PrintWindow{w}
 	for _, tc := range []struct {
@@ -281,7 +285,7 @@ func TestCE4NewsBarsExcludedToTheOpen(t *testing.T) {
 	}
 
 	// OFF: no freeze at all (the item-18 drop is the only behaviour).
-	off := DefaultConfig()
+	off := preOctCfg()
 	off.NewsBarsExcluded = false
 	off.PrintWindows = []PrintWindow{w}
 	if newsHTFFrozen(off, auditMs(2026, 9, 15, 7, 50, 0)) {
@@ -294,7 +298,7 @@ func TestCE4NewsBarsExcludedToTheOpen(t *testing.T) {
 // MUTANT: drop the newsHTFFrozen guard in Tick → RED.
 func TestCE4TickHTFIgnoresPostPrintBars(t *testing.T) {
 	build := func(on bool) *Evaluator {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.Enabled = true
 		cfg.NewsBarsExcluded = on
 		cfg.PrintWindows = []PrintWindow{printWindowCT(2026, 9, 15)}
@@ -326,7 +330,7 @@ func TestCE4TickHTFIgnoresPostPrintBars(t *testing.T) {
 // moves the 1h line only after the open, not during the news window.
 // MUTANT: drop the newsHTFFrozen guard in Tick → the 07:50 tick moves the line.
 func TestCE4FreezeResumesOnWholeCandles(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.NewsBarsExcluded = true
 	cfg.PrintWindows = []PrintWindow{printWindowCT(2026, 9, 15)}
@@ -367,7 +371,7 @@ func TestCE4FreezeResumesOnWholeCandles(t *testing.T) {
 // of the news window) seeded the line as never-moved ("").
 // MUTANT: revert seedHistoryState to the htfFeedBars delete → RED.
 func TestCE4SeedHistoryStateFreeze(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.NewsBarsExcluded = true
 	cfg.PrintWindows = []PrintWindow{printWindowCT(2026, 9, 15)}
@@ -408,7 +412,7 @@ func TestCE4SeedHistoryStateFreeze(t *testing.T) {
 // seed replay → the restart seeds the line long → RED.
 func TestCE4RestartDuringFreezeParity(t *testing.T) {
 	mk := func() Config {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.Enabled = true
 		cfg.NewsBarsExcluded = true
 		cfg.PrintWindows = []PrintWindow{printWindowCT(2026, 9, 15)}
@@ -503,7 +507,7 @@ func TestCE8StructureTrend5m(t *testing.T) {
 // trendline LOCATION itself never is.
 // MUTANT: skip KindTrendlineTarget in nextLevelBeyondRoom → RED.
 func TestB12TrendlineIsTarget(t *testing.T) {
-	if !DefaultConfig().TrendlineIsTarget {
+	if !preOctCfg().TrendlineIsTarget {
 		t.Fatal("trendline_is_target default must be ON (case a)")
 	}
 	levels := []Level{
@@ -572,7 +576,7 @@ func TestCE9LevelEntriesNeedTriggerSide(t *testing.T) {
 			t.Fatalf("knob OFF (school 1): the level reject must trade without the trigger; refusals %v", e.State.Refusals)
 		}
 	}
-	if DefaultConfig().LevelEntriesNeedTriggerSide {
+	if preOctCfg().LevelEntriesNeedTriggerSide {
 		t.Fatal("level_entries_need_trigger_side default must be OFF (case b)")
 	}
 }
@@ -585,23 +589,26 @@ func TestB13TrendlineBetweenBoxes(t *testing.T) {
 	boxes := []Box{{Kind: FTGL, Top: 95, Bottom: 90}, {Kind: FTGH, Top: 115, Bottom: 110}}
 	tl := Level{Key: "trendline:x", Kind: KindTrendline, Price: 100}
 	kl := Level{Key: "K", Kind: KindKeyLevel, Price: 100}
-	cfg := DefaultConfig()
-	// default ON: the trendline is exempt, the key level is not.
-	if midRangeBoxedRefuses(cfg, tl, boxes, 101) {
-		t.Fatal("default ON: a trendline reject between two boxes may trade")
-	}
-	if !midRangeBoxedRefuses(cfg, kl, boxes, 101) {
-		t.Fatal("default ON exempts the trendline only — a key level stays refused")
-	}
-	// OFF (the pre-30 behaviour): the trendline reject is refused again.
-	cfg.TrendlineBetweenBoxes = false
+	cfg := preOctCfg()
+	// D3-G8 (oct round 2): October's only word on the middle of two boxes is
+	// "ở giữa 2 box chỉ được quyền đánh Inside Bar" [OctD3.3-R59 @ 46:27], so the
+	// default is OFF: the trendline reject is refused like every other level.
 	if !midRangeBoxedRefuses(cfg, tl, boxes, 101) {
-		t.Fatal("OFF: a trendline reject between two boxes is refused")
+		t.Fatal("D3-G8 default OFF (October): a trendline reject between two boxes is refused")
 	}
 	if !midRangeBoxedRefuses(cfg, kl, boxes, 101) {
-		t.Fatal("OFF keeps the key level refused")
+		t.Fatal("default OFF: a key level stays refused")
 	}
-	if midRangeBoxedRefuses(DefaultConfig(), kl, boxes[:1], 101) {
+	// ON (the September D3.2 p2 @10:56 behaviour, the knob): the trendline is
+	// exempt, the key level is not.
+	cfg.TrendlineBetweenBoxes = true
+	if midRangeBoxedRefuses(cfg, tl, boxes, 101) {
+		t.Fatal("knob ON: a trendline reject between two boxes may trade")
+	}
+	if !midRangeBoxedRefuses(cfg, kl, boxes, 101) {
+		t.Fatal("knob ON exempts the trendline only — a key level stays refused")
+	}
+	if midRangeBoxedRefuses(preOctCfg(), kl, boxes[:1], 101) {
 		t.Fatal("one box is not mid-range")
 	}
 }
@@ -613,17 +620,16 @@ func TestB13TrendlineBetweenBoxes(t *testing.T) {
 // the intent. MUTANT: make wallFor always return ok=false → RED.
 func TestCE11FlagWallTarget(t *testing.T) {
 	const bt = int64(600_000)
-	fw := flagWalls{
-		support:        Trendline{Side: SideLong, P0Px: 95, P0T: 0, P1Px: 95, P1T: bt},
-		resistance:     Trendline{Side: SideShort, P0Px: 106, P0T: 0, P1Px: 106, P1T: bt},
-		haveSupport:    true,
-		haveResistance: true,
-	}
-	in := Intent{Action: PlaceStopLimitEntry, Side: SideLong, Price: 100, Stop: 97, Target: 120}
+	// c52 W9 B21: built through buildFlagWalls (the production call), not by hand.
+	fw := buildFlagWalls([]Trendline{
+		{Side: SideLong, P0Px: 95, P0T: 0, P1Px: 95, P1T: bt},
+		{Side: SideShort, P0Px: 106, P0T: 0, P1Px: 106, P1T: bt},
+	})
+	in := Intent{Action: PlaceStopLimitEntry, Side: SideLong, Setup: "PHL", Price: 100, Stop: 97, Target: 120}
 	var refused []string
 	ref := func(r string) { refused = append(refused, r) }
 
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	if !cfg.FlagWallTarget {
 		t.Fatal("flag_wall_target default must be ON (course-defaults-30)")
 	}
@@ -665,7 +671,9 @@ func TestCE1Opposite5mISBInside15mBox(t *testing.T) {
 	e.State.ISBBox = &ISBBox{High: 110, Low: 95, Dir: SideLong, AtTime: bars[0].OpenTime}
 	shortSide := func(e *Evaluator) {
 		e.State.HTF = HTF{FourH: TriggerLine{Dir: SideShort, Price: 120}}
-		e.State.Trigger = TriggerLine{Dir: SideShort, Price: 101}
+		// isbTF-F1: the 5m trigger gates the ISB inside the 5m box too
+		// (OctD4.3-R69) — a SELL line pinned above the tape.
+		e.State.Trigger = TriggerLine{Dir: SideShort, Price: 110, LastBucket: 1 << 62}
 		e.State.ORB = ORB{Day: dayStartCT(now), High: 120, Low: 115, Drawn: true, Escaped: SideShort}
 	}
 	shortSide(e)

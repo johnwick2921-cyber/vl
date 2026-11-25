@@ -229,6 +229,9 @@ export interface HistoricalPosition {
   leverage: number
   status: string
   close_reason: string
+  // "resolved" | "unresolved" | "partial" — the server's corrected-column status
+  // (canon class 40 + m232: an OPEN row that booked a partial leg is "partial").
+  pnl_status?: string
   // R22 PNL-TRUTH (owner ruling R1): "manual" = an NT8 position the bot
   // adopted with no order/arm of its own — listed, never in a bot total.
   origin?: 'bot' | 'manual' | string

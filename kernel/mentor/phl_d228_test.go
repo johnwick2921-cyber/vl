@@ -23,7 +23,7 @@ import (
 // This is the production call site (Evaluator.Tick).
 
 func TestPHLHigherLowValidatesAgainstTheLeftLow(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.PHLTargetShyPts = 6
 	cfg.EMALocationTFMinutes = 0 // isolate the higher-low check from the EMA-34 location target cap (B15)

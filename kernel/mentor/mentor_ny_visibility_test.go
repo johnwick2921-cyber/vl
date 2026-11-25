@@ -62,6 +62,7 @@ func TestMentorNYFirstTouchInvalidationIsCounted(t *testing.T) {
 func TestMentorNYPHLRoomCountedOncePerVisit(t *testing.T) {
 	e, bars, now := b21PairFixtureMode(b21Thin)
 	e.Cfg.RoomMultiple = 2
+	e.Cfg.PHLRoomMultiple = 2 // D2-G2: the 2R room is the knob value this count pin was written at
 	e.State.SeedLevels = append(e.State.SeedLevels, Level{Key: "KL-near", Kind: KindKeyLevel, Price: 110})
 	led := nyTicks(e, bars, now, 3)
 	if !e.State.PHLRefusedVisit["K|room"] {

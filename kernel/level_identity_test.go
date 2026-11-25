@@ -164,12 +164,16 @@ func TestIdentityE5PriorCalendarBucketAndIBClose(t *testing.T) {
 	}
 	levels := ExtractMultiDayLevels(prior, DefaultSessionRegistry(), now)
 	checked := 0
+	// m239: PDH/PDL/PDC are the prior CME session (17:00→16:00 CT). The slice's
+	// 09-09 17:00–23:59 bars are in the CURRENT session, so the prior session's
+	// last source close is the 16:59 bar, not the 23:59 bar.
+	lastPriorSessionBar := prior[16*60+59]
 	for _, l := range levels {
 		switch l.Kind {
 		case KindPDH, KindPDL, KindPDC:
 			checked++
-			if l.FormedCloseMs == nil || *l.FormedCloseMs != prior[len(prior)-1].CloseTime || l.FormedAtMs != 0 {
-				t.Fatalf("prior calendar source close lost %+v", l)
+			if l.FormedCloseMs == nil || *l.FormedCloseMs != lastPriorSessionBar.CloseTime || l.FormedAtMs != 0 {
+				t.Fatalf("prior session source close lost %+v", l)
 			}
 		}
 	}

@@ -26,25 +26,26 @@ func cxBool(v bool) *bool { return &v }
 // TestCX3ResonanceRunnerTPIsSentOnTheRunnerLeg — D2.4 p1 @01:58–02:09 "70-80% là
 // nó sẽ phá luôn cái đỉnh bên tay trái" + @02:24–02:47 "để stop loss ở break
 // even, cho nó chạy": a same-direction ISB within 3 candles of a PLH fill arms
-// mode A — both stops to BE, and (knob ON, the default) the RUNNER's TP moves
+// mode A — both stops to BE, and (knob ON, EXPLICIT — the W-MENTOR-EXACT default
+// is now OFF because the mentor never places a runner TP) the RUNNER's TP moves
 // out to the level beyond the old extreme through a REAL modify_bracket on wire
-// leg 2; leg 1's +1R TP is never touched. It was logged "WOULD set TP …
-// UNWIRED" and never sent. Knob OFF: logged only, no frame.
+// leg 2; leg 1's +1R TP is never touched. Knob OFF (now the default): logged
+// only, no frame.
 func TestCX3ResonanceRunnerTPIsSentOnTheRunnerLeg(t *testing.T) {
 	const beyond = 30680.00 // the level beyond the old low (short) the evaluator stamped
 	for _, on := range []bool{true, false} {
 		rc := store.RiskControlConfig{}
-		if !on {
-			rc.MentorResonanceRunnerTPOldHigh = cxBool(false)
-		}
+		rc.MentorResonanceRunnerTPOldHigh = cxBool(on)
 		b := r22Fixture(t, rc)
 		b.positions("short", 3)
 		b.book(r22FullBook(r22Stop)...)
 		mentorRunnerTargets.Store(mentorRunnerTargetKey(b.at.id, "isb-r22"), beyond)
 		t.Cleanup(func() { mentorRunnerTargets.Delete(mentorRunnerTargetKey(b.at.id, "isb-r22")) })
 		b.registerSplit(r22Sig, "short", "PLH", 3, 2, r22Entry, r22Stop, r22L1TP, r22Target)
-		// the fill candle closes (BarsSinceFill 1), nothing reached
+		// the fill candle closes (BarsSinceFill 1), then ONE candle AFTER the fill
+		// (c52 W2 B18: the window counts candles after the fill candle), nothing reached
 		b.candle(r22Minute(0), 30742.25, 30744.00, 30738.00, 30739.00)
+		b.candle(r22Minute(1), 30739.00, 30741.00, 30737.00, 30738.00)
 		b.at.mentorArmResonanceOnISB("short")
 		if lp := b.at.mentorLivePos[r22Sig]; lp == nil || lp.Pos.Mode != "A-resonance" {
 			t.Fatalf("on=%v: the resonance must arm mode A: %+v", on, lp)
@@ -61,11 +62,21 @@ func TestCX3ResonanceRunnerTPIsSentOnTheRunnerLeg(t *testing.T) {
 				t.Fatalf("the runner's TP belief must follow the sent modify: %.2f", tp)
 			}
 		} else {
-			if len(mods) != 0 {
-				t.Fatalf("knob OFF: no modify frame (logged only); got %+v", mods)
+			// c52 W2 A3: OFF (the default) is the course — NO cap. The runner's
+			// own TP is pushed out of reach on wire leg 2; the old-high level is
+			// only logged.
+			wantTP := mentorResonanceUncapPrice("short", r22Entry, 0.25)
+			if len(mods) != 1 || mods[0].SignalID != r22Sig || mods[0].Leg != 2 || mods[0].NewTakeProfit != wantTP || mods[0].NewStopLoss != 0 {
+				t.Fatalf("knob OFF: want ONE uncap modify_bracket {leg 2, TP %.2f, no stop}; got %+v", wantTP, mods)
 			}
-			if n := b.at.mentorCountSnapshot()["modify_bracket_resonance_logged"]; n != 1 {
-				t.Fatalf("knob OFF: modify_bracket_resonance_logged = %d, want 1", n)
+			if n := b.at.mentorCountSnapshot()["resonance_runner_uncapped"]; n != 1 {
+				t.Fatalf("knob OFF: resonance_runner_uncapped = %d, want 1", n)
+			}
+			if n := b.at.mentorCountSnapshot()["resonance_runner_tp_sent"]; n != 0 {
+				t.Fatalf("knob OFF: the old-high TP must NOT be sent: resonance_runner_tp_sent = %d", n)
+			}
+			if tp := b.at.mentorLivePos[r22Sig].Legs[1].TP; tp != wantTP {
+				t.Fatalf("the runner's TP belief must follow the uncap modify: %.2f", tp)
 			}
 		}
 		for _, m := range mods {
@@ -174,7 +185,9 @@ func TestCX2SwingRunnerSplitsAtTheFirstTarget(t *testing.T) {
 		t.Fatalf("knob OFF: today's single bracket at the first target; got leg1=%v target %.2f", r.Leg1Qty, r.TargetPx)
 	}
 	// ON, 2 contracts: leg 1 = 1 at the first target, the runner beyond.
-	at2, st2 := resetTrader(t, store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true, MentorSwingRunner: cxBool(true)}})
+	// m466 P4: the runner's TP cap is mentor_swing_runner_tp=capped now (the
+	// default none parks it 1,000 out — TestM61SwingRunnerNoTP).
+	at2, st2 := resetTrader(t, store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true, MentorSwingRunner: cxBool(true), MentorSwingRunnerTP: "capped"}})
 	at2.mentorArmIntent(in, mentorSizeChoice{Contracts: 2, Tier: "swing4h", Why: "test"}, 1000, 1100, "swing", 0)
 	r := read(st2)
 	if r.Leg1Qty == nil || *r.Leg1Qty != 1 || r.Leg1TP != in.Target {
@@ -225,9 +238,9 @@ func TestCXKnobDefaultsAndBootLine(t *testing.T) {
 		t.Fatalf("absent keys must resolve to the kernel defaults: %+v vs %+v", cfg.CourseExits, d)
 	}
 	line := at.mentorCourseExitsBootLine()
-	for _, want := range []string{"swing_ema34_is_first_target=ON", "swing_runner=ON (swing contracts 2)", "resonance_runner_tp_old_high=ON",
+		for _, want := range []string{"swing_ema34_is_first_target=ON", "swing_runner=ON (swing contracts 2)", "resonance_runner_tp_old_high=OFF",
 		"be_before_partial=ON", "isb_c3_partial_any_profit=ON", "reverse_isb_as_phl=ON", "ema9_visit_cap=shared",
-		"isb_max_pts=30", "keypair_candle_ratio=1", "box_fresh_rth_pair=OFF", "box_max_height_pts=off"} {
+		"isb_max_pts=20" /* m466 G23 D4.1-R12 */, "keypair_candle_ratio=1", "box_fresh_rth_pair=ON", "box_max_height_pts=off"} {
 		if !strings.Contains(line, want) {
 			t.Fatalf("boot line %q missing %q", line, want)
 		}

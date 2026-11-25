@@ -597,6 +597,24 @@ func mentorNotUsedSizingRow(x *effCtx) effResult {
 	}
 }
 
+// pepNotUsedSizingRow is mentorNotUsedSizingRow's pep twin: a pep trader sizes
+// every entry from pep_contracts (resolveMaxContracts returns pepMaxContracts),
+// never from the AI Risk Control cap, so the inert saved value is not the
+// running number. The count is the production reader's (never a literal).
+func pepNotUsedSizingRow(x *effCtx) effResult {
+	n, _ := x.at.pepMaxContracts()
+	return effResult{
+		value:  fmt.Sprintf("not used in pep mode — pep sizing governs (pep_contracts = %d)", n),
+		origin: pepModeOnOrigin,
+		scope:  ScopeStrategy,
+	}
+}
+
+// pepModeOnOrigin is the origin marker the Studio reads (RiskControlEditor
+// mentorNotAppliedCaveat) to render a "not applied" caveat for pep, the twin of
+// the mentor marker "mentor_mode on".
+const pepModeOnOrigin = "pep_enabled on"
+
 // ── RESOLVER TABLE ───────────────────────────────────────────────────────────
 
 const (
@@ -630,6 +648,15 @@ func buildEffectiveResolvers() map[string]effResolver {
 			return effResult{
 				value:  "not used in mentor mode — mentor entries come from the course rules and carry no AI confidence",
 				origin: "mentor_mode on",
+				scope:  ScopeStrategy,
+			}
+		}
+		// PEP (rereview m461 P2-1): pep entries are the PDF rules and carry no AI
+		// confidence either; the AI makes no entries at all.
+		if x.at != nil && x.at.pepEnabled() {
+			return effResult{
+				value:  "not used in pep mode — pep entries come from the PDF rules and carry no AI confidence",
+				origin: pepModeOnOrigin,
 				scope:  ScopeStrategy,
 			}
 		}
@@ -705,6 +732,11 @@ func buildEffectiveResolvers() map[string]effResolver {
 		if x.at != nil && x.at.mentorEnabled() {
 			return mentorNotUsedSizingRow(x)
 		}
+		// PEP (rereview m461 P2-1): resolveMaxContracts returns pep_contracts for
+		// a pep trader; the 0B 2-contract clamp and this knob do not apply.
+		if x.at != nil && x.at.pepEnabled() {
+			return pepNotUsedSizingRow(x)
+		}
 		n, src := kernel.ResolveMaxContractsWithSource(x.rc().MaxContractsPerOrder, int(maxFuturesContracts))
 		scope := ScopeFutures
 		if strings.HasPrefix(src, "env ") || strings.HasPrefix(src, "clamp") {
@@ -713,6 +745,9 @@ func buildEffectiveResolvers() map[string]effResolver {
 		return effResult{value: n, origin: src, scope: scope}
 	})
 	add(rcPath+"mentor_max_contracts", "trader.(*AutoTrader).mentorMaxContracts (the mentor-mode ceiling resolveMaxContracts actually returns)", func(x *effCtx) effResult {
+		if x.at != nil && x.at.pepEnabled() {
+			return effResult{value: "— (pep mode; not applied)", origin: "mentor_mode off", scope: ScopeStrategy}
+		}
 		if x.at == nil || !x.at.mentorEnabled() {
 			return effResult{value: "— (AI mode; not applied)", origin: "mentor_mode off", scope: ScopeStrategy}
 		}
@@ -776,13 +811,13 @@ func buildEffectiveResolvers() map[string]effResolver {
 		return *rc.MentorStopAfterLoss
 	})
 	mentorRCRow("mentor_day_off_recheck", "mentorDayOffRecheck (nil → OFF)", func(rc store.RiskControlConfig) any { return mentorDayOffRecheck(&rc) })
-	mentorRCRow("mentor_leg_budget_enabled", "mentorLegBudgetEnabled (nil → ON)", func(rc store.RiskControlConfig) any { return mentorLegBudgetEnabled(&rc) })
+	mentorRCRow("mentor_leg_budget_enabled", "mentorLegBudgetEnabled (nil → OFF, OCT-EXACT A1 row 9)", func(rc store.RiskControlConfig) any { return mentorLegBudgetEnabled(&rc) })
 	add(rcPath+"mentor_leg_reset_on", "mentorLegResetOn (default \"close\")", func(x *effCtx) effResult {
 		v := mentorLegResetOn(x.at, &x.cfg.RiskControl)
 		return effResult{value: v, origin: presenceOrigin(x, v, store.SourceShippedDefault), scope: ScopeStrategy}
 	})
 	mentorRCRow("mentor_lvl_revisit_min_pts", "mentorLvlRevisitMinPts (default 0)", func(rc store.RiskControlConfig) any { return mentorLvlRevisitMinPts(&rc) })
-	mentorRCRow("mentor_ema_max_cross_30m", "mentorEmaMaxCross30m (default 2)", func(rc store.RiskControlConfig) any { return mentorEmaMaxCross30m(&rc) })
+	mentorRCRow("mentor_ema_max_cross_30m", "mentorEmaMaxCross30m (default 0 — removed; the mentor gives no count)", func(rc store.RiskControlConfig) any { return mentorEmaMaxCross30m(&rc) })
 	mentorRCRow("mentor_loc_trigger_filter", "mentorLocationTriggerFilter (nil → ON; inert under school 1 unless level_entries_need_trigger_side)", func(rc store.RiskControlConfig) any { return mentorLocationTriggerFilter(&rc) })
 	mentorRCRow("mentor_loss_departure_pts", "mentorLossDeparturePts (default 0)", func(rc store.RiskControlConfig) any { return mentorLossDeparturePts(&rc) })
 
@@ -795,15 +830,30 @@ func buildEffectiveResolvers() map[string]effResolver {
 	}
 	mentorCXRow("mentor_swing_ema34_is_first_target", "trader.mentorCourseExitsResolve (CX-1, nil → ON)", func(c mentorCourseExitsResolved) any { return c.SwingEMA34FirstTarget })
 	mentorCXRow("mentor_swing_runner", "trader.mentorCourseExitsResolve (CX-2, nil → ON)", func(c mentorCourseExitsResolved) any { return c.SwingRunner })
-	mentorCXRow("mentor_resonance_runner_tp_old_high", "trader.mentorCourseExitsResolve (CX-3, nil → ON)", func(c mentorCourseExitsResolved) any { return c.ResonanceRunnerTP })
+	mentorCXRow("mentor_resonance_runner_tp_old_high", "trader.mentorCourseExitsResolve (CX-3, nil → OFF = runner uncapped)", func(c mentorCourseExitsResolved) any { return c.ResonanceRunnerTP })
 	mentorCXRow("mentor_be_before_partial", "trader.mentorCourseExitsResolve (CX-4, nil → ON)", func(c mentorCourseExitsResolved) any { return c.BEBeforePartial })
 	mentorCXRow("mentor_isb_c3_partial_any_profit", "trader.mentorCourseExitsResolve (CX-5, nil → ON)", func(c mentorCourseExitsResolved) any { return c.ISBC3AnyProfit })
 	mentorCXRow("mentor_reverse_isb_as_phl", "trader.mentorCourseExitsResolve (CX-6, nil → ON)", func(c mentorCourseExitsResolved) any { return c.ReverseISBAsPHL })
 	mentorCXRow("mentor_ema9_visit_cap", "trader.mentorCourseExitsResolve (CX-8)", func(c mentorCourseExitsResolved) any { return c.EMA9VisitCap })
-	mentorCXRow("mentor_isb_max_pts", "trader.mentorCourseExitsResolve", func(c mentorCourseExitsResolved) any { return c.ISBMaxPts })
+	mentorCXRow("mentor_isb_max_pts", "trader.mentorCourseExitsResolve (m466 G23 D4.1-R12, nil → 20)", func(c mentorCourseExitsResolved) any { return c.ISBMaxPts })
+	mentorCXRow("mentor_swing_max_stop_pts", "trader.mentorCourseExitsResolve (m463 D5.2-R31; answers-1112 Q13 Sept D5.2 p2 @05:25-05:33 \"7-80 điểm\": nil → 80, 90 reverts)", func(c mentorCourseExitsResolved) any { return c.SwingMaxStopPts })
+	// Stop-to-size ladder (owner order 2026-11-10; OctD2.2-R73 / OctD2.3-R47 / OctD2.2-R49).
+	mentorCXRow("mentor_stop_size_ladder", "trader.mentorCourseExitsResolve (stop-size ladder OctD2.2-R73/OctD2.3-R47, nil → ON)", func(c mentorCourseExitsResolved) any { return c.StopSizeLadder })
+	mentorCXRow("mentor_wide_stop_contracts", "trader.mentorCourseExitsResolve (stop-size ladder OctD2.3-R47 \"1 MNQ\", nil → 1)", func(c mentorCourseExitsResolved) any { return c.WideStopContracts })
+	mentorCXRow("mentor_wide_stop_max_pts", "trader.mentorCourseExitsResolve (stop-size ladder OctD2.3-R47/R48, nil → 0 = no cap, owner 2026-11-15; bad → 40 fail closed)", func(c mentorCourseExitsResolved) any { return c.WideStopMaxPts })
+	mentorCXRow("mentor_isb_loss_box", "trader.mentorCourseExitsResolve (m465 P2 D4.2-R27, \"\" → range)", func(c mentorCourseExitsResolved) any { return c.ISBLossBox })
+	mentorCXRow("mentor_open5m_break", "trader.mentorCourseExitsResolve (m466 G55 D4.4-R40, \"\" → 1m_close)", func(c mentorCourseExitsResolved) any { return c.Open5mBreak })
+	mentorCXRow("mentor_news_wait_mode", "trader.mentorCourseExitsResolve (m466 G56 D4.4-R22, \"\" → both)", func(c mentorCourseExitsResolved) any { return c.NewsWaitMode })
+	mentorCXRow("mentor_news_read_lead_min", "trader.mentorNewsReadLeadMin (m466 G58 D4.4-R6, nil → 30)", func(c mentorCourseExitsResolved) any { return c.NewsReadLeadMin })
+	mentorCXRow("mentor_swing_isb_close_back", "trader.mentorCourseExitsResolve (m466 P4 D5.2-R26, \"\" → not_required)", func(c mentorCourseExitsResolved) any { return c.SwingISBCloseBack })
+	mentorCXRow("mentor_swing_isb_keep", "trader.mentorCourseExitsResolve (m466 P4 D5.2-R25, nil → ON)", func(c mentorCourseExitsResolved) any { return c.SwingISBKeep })
+	mentorCXRow("mentor_swing_runner_tp", "trader.mentorCourseExitsResolve (m466 P4 D5.2-R6, \"\" → none)", func(c mentorCourseExitsResolved) any { return c.SwingRunnerTP })
 	mentorCXRow("mentor_keypair_candle_ratio", "trader.mentorCourseExitsResolve", func(c mentorCourseExitsResolved) any { return c.KeypairRatio })
 	mentorCXRow("mentor_box_fresh_rth_pair", "trader.mentorCourseExitsResolve", func(c mentorCourseExitsResolved) any { return c.BoxFreshRTHPair })
 	mentorCXRow("mentor_box_max_height_pts", "trader.mentorCourseExitsResolve", func(c mentorCourseExitsResolved) any { return c.BoxMaxHeightPts })
+	// m465 P4 (release #60): resolved in trader/mentor_resonance_raw.go.
+	mentorRCRow("mentor_resonance_raw_isb", "trader.mentorResonanceRawISBOn (D2.4-R2, nil → ON)", func(rc store.RiskControlConfig) any { return mentorResonanceRawISBOn(&rc) })
+	mentorRCRow("mentor_2m_reduce_size", "trader.mentor2mReduceSizeOn (D3.1-R30, nil → ON)", func(rc store.RiskControlConfig) any { return mentor2mReduceSizeOn(&rc) })
 
 	// mentor_tuning.* (K3): each through mentorTuningResolve (the ONE resolver).
 	mentorTuningRow := func(path, name string, get func(mentorTuned) any) {
@@ -819,13 +869,18 @@ func buildEffectiveResolvers() map[string]effResolver {
 	mentorTuningRow("level_max_visits", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.LevelMaxVisits })
 	mentorTuningRow("orb_gate_enabled", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.OrbGateEnabled })
 	mentorTuningRow("isb_reverse_ema9_enabled", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.ISBReverseEMA9Enabled })
-	mentorTuningRow("htf_gate_news_only", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.HTFGateNewsOnly })
+	mentorTuningRow("htf_gate_news_only", "trader.mentorTuningResolve (D2-G7 default true)", func(t mentorTuned) any { return t.HTFGateNewsOnly })
 	mentorTuningRow("exec_2m_after_30m", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.Exec2mAfter30m })
+	mentorTuningRow("be_offset_ticks", "trader.mentorTuningResolve → trader.mentorBEOffsetTicks", func(t mentorTuned) any { return t.BEOffsetTicks })
 	mentorTuningRow("day_gate_spent_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.DayGateSpentPts })
 	mentorTuningRow("day_gate_target_cap_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.DayGateTargetCapPts })
+	mentorTuningRow("htf_opposed_range_halt_pts", "trader.mentorTuningResolve (answers-1112 Q1 Sept D5.1 p1 @19:22-19:26, 4h/1h opposed + Globex day run >= this halts new entries for the day, nil \u2192 0 = OFF)", func(t mentorTuned) any { return t.HTFOpposedRangeHaltPts })
 	mentorTuningRow("swing_max_stop_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.SwingMaxStopPts })
 	mentorTuningRow("swing_min_stop_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.SwingMinStopPts })
 	mentorTuningRow("15m_ib_requires_5m_isb", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.FifteenMinIBRule })
+	mentorTuningRow("15m_early_read", "trader.mentorTuningResolve (m465 D4.2-R2)", func(t mentorTuned) any { return t.Early15mRead })
+	mentorTuningRow("mtf_confluence_source", "trader.mentorTuningResolve (m465 D4.2-R17)", func(t mentorTuned) any { return t.MTFConfluenceSource })
+	mentorTuningRow("trigger_escalation", "trader.mentorTuningResolve (m465 D3.4-R43)", func(t mentorTuned) any { return t.TriggerEscalation })
 	mentorTuningRow("tf_conflict_end", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.TFConflictEnd })
 	mentorTuningRow("news_wait_both_lines", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.NewsWaitBothLines })
 	mentorTuningRow("news_bars_excluded", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.NewsBarsExcluded })
@@ -840,6 +895,102 @@ func buildEffectiveResolvers() map[string]effResolver {
 	mentorTuningRow("leg_reset_on_wave_break", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.LegResetOnWaveBreak })
 	mentorTuningRow("flag_wall_target", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.FlagWallTarget })
 	mentorTuningRow("box_new_zone_after_escape", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.BoxNewZoneAfterEscape })
+	mentorTuningRow("orb_escape_completely", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.OrbEscapeCompletely })
+	mentorTuningRow("wick_microscalp", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.WickMicroscalp })
+	mentorTuningRow("wick_safe_play", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.WickSafePlay })
+	mentorTuningRow("isb_stack_cancel_candle_2m", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.ISBStackCancelCandle2m })
+	mentorTuningRow("isb_stack_tiny_stop_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.ISBStackTinyStopPts })
+	mentorTuningRow("evening_slow_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.EveningSlowPts })
+	mentorTuningRow("evening_slow_from_hour", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.EveningSlowFromHour })
+	mentorTuningRow("evening_slow_window_min", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.EveningSlowWindowMin })
+	mentorTuningRow("near_box_room_multiple", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.NearBoxRoomMultiple })
+	mentorTuningRow("near_box_room_phl", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.NearBoxRoomPHL })
+	mentorTuningRow("near_box_room_phl_multiple", "trader.mentorTuningResolve (answers-1112 Q2, nil \u2192 near_box_room_multiple)", func(t mentorTuned) any { return t.NearBoxRoomPHLMultiple })
+	mentorTuningRow("phl_target_shy_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.PHLTargetShyPts })
+	mentorTuningRow("phl_old_extreme_1m_k", "trader.mentorTuningResolve (phl audit PHL-1, 0 = the pre-PHL-1 5m/15m source)", func(t mentorTuned) any { return t.PHLOldExtreme1mK })
+	mentorTuningRow("isb_old_extreme_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.ISBOldExtremePts })
+	mentorTuningRow("isb_in_range_gap_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.ISBInRangeGapPts })
+	mentorTuningRow("trendline_entry_touch", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.TrendlineEntryTouch })
+	mentorTuningRow("near_box_between_exempt", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.NearBoxBetweenExempt })
+	mentorTuningRow("phl_flat_low", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.PHLFlatLow })
+	mentorTuningRow("isb_reverse_touch", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.ISBReverseTouch })
+	mentorTuningRow("key_level_delete_on_1h_close", "trader.mentorTuningResolve (LL-1)", func(t mentorTuned) any { return t.KeyLevelDeleteOn1HClose })
+	mentorTuningRow("phl_min_above_old_extreme_pts", "trader.mentorTuningResolve (G7 OctD4.2-R41, nil \u2192 0 = OFF; the course figure 15 is opt-in)", func(t mentorTuned) any { return t.PHLMinAbovePriorPts })
+	mentorTuningRow("isb_target_fill_close", "trader.mentorTuningResolve (D2-G3 OctD2.2-R35/R37, nil \u2192 OFF)", func(t mentorTuned) any { return t.ISBTargetFillClose })
+	mentorTuningRow("isb_no_level_fill_close", "trader.mentorTuningResolve (answers-1112 Q3 Oct D2.2 @28:37-31:33, nil \u2192 ON)", func(t mentorTuned) any { return t.ISBNoLevelFillClose })
+	mentorTuningRow("touch_stop_cover_later_wick", "trader.mentorTuningResolve (answers-1112 Q7 Oct D5.2 @19:42-20:03, swing candle-2 entry, [B] port, nil \u2192 OFF since the 2026-11-12 review)", func(t mentorTuned) any { return t.TouchStopCoverLaterWick })
+	mentorTuningRow("box_trendline_partial_not_room", "trader.mentorTuningResolve (answers-1112 Q12 Sept D3.3 p1 @05:15-07:46, box trade: a trendline is a partial, not the room cap, nil \u2192 OFF since the 2026-11-12 review)", func(t mentorTuned) any { return t.BoxTrendlinePartialNotRoom })
+	mentorTuningRow("phl_5m_box_same_dir_allowed", "trader.mentorTuningResolve (answers-1112 Q9 Oct D4.3 @01:08:24-01:11:45, a same-direction PHL/PLH inside the 5m ISB box is a scalp to the box edge, nil \u2192 OFF)", func(t mentorTuned) any { return t.PHL5mBoxSameDirAllowed })
+	mentorTuningRow("trigger_from_open", "trader.mentorTuningResolve (G4 OctD4.3-R5, nil \u2192 ON)", func(t mentorTuned) any { return t.TriggerFromOpen })
+	mentorTuningRow("rolling_left_break_cancel", "trader.mentorTuningResolve (D2-G6 OctD2.3-R69, nil \u2192 ON)", func(t mentorTuned) any { return t.RollingLeftBreakCancel })
+	mentorTuningRow("rolling_stale_touch_releases", "trader.mentorTuningResolve (FIX-1112 B WE6, nil \u2192 OFF)", func(t mentorTuned) any { return t.RollingStaleTouchReleases })
+	mentorTuningRow("rolling_keypair_tape_exempt", "trader.mentorTuningResolve (FIX-1112 B WE7, nil \u2192 OFF)", func(t mentorTuned) any { return t.RollingKeypairTapeExempt })
+	mentorTuningRow("htf_trendline_flip", "trader.mentorTuningResolve (D3-G12 OctD3.2-R20/R29)", func(t mentorTuned) any { return t.HTFTrendlineFlip })
+	mentorTuningRow("trendline_max_slope_pts_per_bar", "trader.mentorTuningResolve (D3-G14 OctD3.2-R40/R41)", func(t mentorTuned) any { return t.TrendlineMaxSlopePtsPerBar })
+	mentorTuningRow("trendline_min_bounce_pts", "trader.mentorTuningResolve (D3-G10 OctD3.2-R9/R35/R36)", func(t mentorTuned) any { return t.TrendlineMinBouncePts })
+	mentorTuningRow("knock_knock_zone", "trader.mentorTuningResolve (D2-G10 OctD2.1-R22/R25/R34)", func(t mentorTuned) any { return t.KnockKnockZone })
+	mentorTuningRow("trendline_first_bottom_anchor", "trader.mentorTuningResolve (D3-G9 OctD3.2-R45/R46/R59)", func(t mentorTuned) any { return t.TrendlineFirstBottomAnchor })
+	mentorTuningRow("box_flip_reversible", "trader.mentorTuningResolve (D3-G7 OctD3.3-R46/R48)", func(t mentorTuned) any { return t.BoxFlipReversible })
+	mentorTuningRow("box_carried_stays_live", "trader.mentorTuningResolve (D3-G4 OctD3.3-R27/R51)", func(t mentorTuned) any { return t.BoxCarriedStaysLive })
+	mentorTuningRow("box_swing_both_roles", "trader.mentorTuningResolve (D3-G2 OctD3.3-R25)", func(t mentorTuned) any { return t.BoxSwingBothRoles })
+	mentorTuningRow("box_preopen_lookback_min", "trader.mentorTuningResolve (D3-G1 OctD3.3-R23/R52)", func(t mentorTuned) any { return t.BoxPreOpenLookbackMin })
+	mentorTuningRow("phl_room_multiple", "trader.mentorTuningResolve (D2-G2 answers-1112 Q2 Oct D2.3 @49:37, nil \u2192 1)", func(t mentorTuned) any { return t.PHLRoomMultiple })
+	mentorTuningRow("key_level_break_retest", "trader.mentorTuningResolve (LL-2)", func(t mentorTuned) any { return t.KeyLevelBreakRetest })
+	mentorTuningRow("key_level_rearm", "trader.mentorTuningResolve (D3-G15)", func(t mentorTuned) any { return t.KeyLevelRearm })
+	mentorTuningRow("isb_reverse_trend", "trader.mentorTuningResolve (D5.3-R43/R44)", func(t mentorTuned) any { return t.ISBReverseTrend })
+	mentorTuningRow("counter_5m_reduce_size", "trader.mentorTuningResolve (D5.4-SCALP)", func(t mentorTuned) any { return t.Counter5mReduceSize })
+	mentorTuningRow("key_level_history_source", "trader.mentorTuningResolve (LL-4)", func(t mentorTuned) any { return t.KeyLevelHistorySource })
+	mentorTuningRow("uno_key_levels", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.UnoKeyLevels })
+	mentorTuningRow("session_open_levels", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.SessionOpenLevels })
+	mentorTuningRow("level_arm_line_cancel", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.LevelArmLineCancel })
+	mentorTuningRow("phl_pullback_low", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.PHLPullbackLow })
+	mentorTuningRow("mentor_5m_box_source", "trader.mentorTuningResolve (m466 D4.1-R37)", func(t mentorTuned) any { return t.FiveMinBoxSource })
+	mentorTuningRow("mentor_break_direction_lock", "trader.mentorTuningResolve (m466 D4.1-R31)", func(t mentorTuned) any { return t.BreakDirectionLock })
+	mentorTuningRow("mentor_small_range_guard", "trader.mentorTuningResolve (m466 D4.2-R33; nil → OFF, release #61 final)", func(t mentorTuned) any { return t.SmallRangeGuard })
+	mentorTuningRow("mentor_htf_gate_enabled", "trader.mentorTuningResolve (OCT-EXACT A1 row 1)", func(t mentorTuned) any { return t.HTFGateEnabled })
+	mentorTuningRow("mentor_day_gate_enabled", "trader.mentorTuningResolve (OCT-EXACT A1 row 2)", func(t mentorTuned) any { return t.DayGateEnabled })
+	mentorTuningRow("mentor_swing4h_enabled", "trader.mentorTuningResolve (OCT-EXACT A1 row 3)", func(t mentorTuned) any { return t.Swing4HEnabled })
+	mentorTuningRow("mentor_orb_part2_enabled", "trader.mentorTuningResolve (OCT-EXACT A1 row 4)", func(t mentorTuned) any { return t.OrbPart2Enabled })
+	mentorTuningRow("mentor_open5m_gate_enabled", "trader.mentorTuningResolve (OCT-EXACT A1 row 5)", func(t mentorTuned) any { return t.Open5mGateEnabled })
+	mentorTuningRow("mentor_news_hold_enabled", "trader.mentorTuningResolve (OCT-EXACT A1 row 7)", func(t mentorTuned) any { return t.NewsHoldEnabled })
+	mentorTuningRow("mentor_news_flatten_enabled", "trader.mentorTuningResolve (review fix: news flatten split from the hold, default ON)", func(t mentorTuned) any { return t.NewsFlattenEnabled })
+	mentorTuningRow("mentor_loss_box_enabled", "trader.mentorTuningResolve (OCT-EXACT A1 row 10)", func(t mentorTuned) any { return t.LossBoxEnabled })
+	mentorTuningRow("mentor_15m_box_no_trade", "trader.mentorTuningResolve (review fix, OctD4.3-R60 @58:38; default ON)", func(t mentorTuned) any { return t.Box15mNoTrade })
+	mentorTuningRow("mentor_htf_box_gates", "trader.mentorTuningResolve (OCT-EXACT A2 row 1)", func(t mentorTuned) any { return t.HTFBoxGates })
+	mentorTuningRow("mentor_tf_conflict", "trader.mentorTuningResolve (OCT-EXACT A2 row 2)", func(t mentorTuned) any { return t.TFConflictEnabled })
+	mentorTuningRow("mentor_mtf_confluence", "trader.mentorTuningResolve (OCT-EXACT A2 row 3)", func(t mentorTuned) any { return t.MTFConfluenceEnabled })
+	mentorTuningRow("mentor_rolling_level_touch_owns", "trader.mentorTuningResolve (OCT-EXACT A2 row 4)", func(t mentorTuned) any { return t.RollingLevelTouchOwns })
+	mentorTuningRow("keypair_rule_enabled", "trader.mentorTuningResolve (OCT-EXACT A2 row 5)", func(t mentorTuned) any { return t.KeypairRuleEnabled })
+	mentorTuningRow("mentor_trigger_retest_wrong_way", "trader.mentorTuningResolve (OCT-EXACT A2 row 9)", func(t mentorTuned) any { return t.TriggerRetestWrongWayRefuse })
+	mentorTuningRow("mentor_box_ping_pong", "trader.mentorTuningResolve (OCT-EXACT A2 row 11)", func(t mentorTuned) any { return t.BoxPingPongGate })
+	mentorTuningRow("mentor_phl_isb_preferred_at_box", "trader.mentorTuningResolve (OCT-EXACT A2 row 11)", func(t mentorTuned) any { return t.PHLISBPreferredAtBox })
+	mentorTuningRow("mentor_trigger_box_zone", "trader.mentorTuningResolve (OCT-EXACT A2 row 11)", func(t mentorTuned) any { return t.TriggerBoxZoneGate })
+	mentorTuningRow("mentor_isb_location_size_cuts", "trader.mentorTuningResolve (OCT-EXACT A2 row 12)", func(t mentorTuned) any { return t.ISBLocationSizeCuts })
+	mentorTuningRow("mentor_pullback_warn_cut", "trader.mentorTuningResolve (OCT-EXACT A2 row 13)", func(t mentorTuned) any { return t.PullbackWarnCut })
+	mentorTuningRow("mentor_trendline_box_beats", "trader.mentorTuningResolve (OCT-EXACT A2 row 15)", func(t mentorTuned) any { return t.TrendlineBoxBeats })
+	mentorTuningRow("mentor_confluence_hold_2r", "trader.mentorTuningResolve (OCT-EXACT A2 row 17)", func(t mentorTuned) any { return t.ConfluenceHold2R })
+	mentorTuningRow("mentor_x8_trap_dodge", "trader.mentorTuningResolve (OCT-EXACT A2 row 17)", func(t mentorTuned) any { return t.X8TrapDodge })
+	mentorTuningRow("mentor_box_room_multiple", "trader.mentorTuningResolve (OCT-EXACT A2 row 11)", func(t mentorTuned) any { return t.BoxRoomMultiple })
+	mentorTuningRow("trendline_level_prefer_pts", "trader.mentorTuningResolve (OCT-EXACT A2 row 15)", func(t mentorTuned) any { return t.TrendlineLevelPreferPts })
+	mentorTuningRow("mentor_key_level_prune_pts", "trader.mentorTuningResolve (OCT-EXACT A2 row 14)", func(t mentorTuned) any { return t.KeyLevelPrunePts })
+	mentorTuningRow("mentor_box_touch_band_pts", "trader.mentorTuningResolve (OCT-EXACT A2 row 11)", func(t mentorTuned) any { return t.BoxTouchBandPts })
+	mentorTuningRow("mentor_resonance_be_min_rr", "trader.mentorTuningResolve (OCT-EXACT A2 row 17)", func(t mentorTuned) any { return t.ResonanceBEMinRR })
+	mentorTuningRow("mentor_isb_room_multiple", "trader.mentorTuningResolve (OCT-EXACT C4: ISB room 1R, Oct D2.3-R48)", func(t mentorTuned) any { return t.ISBRoomMultiple })
+	mentorTuningRow("mentor_box_carry_first_latched", "trader.mentorTuningResolve (OCT-EXACT P3-missesA E9: the box carried past the 17:00 roll is the RTH box the mentor drew that morning, Oct D3.3-R27 @17:00)", func(t mentorTuned) any { return t.BoxCarryFirstLatched })
+	mentorTuningRow("mentor_box_counter_5m_scalp", "trader.mentorTuningResolve (OCT-EXACT P3-missesA E9: a box return against the 5m is the counter-5m scalp, Oct D5.4-R20 @07:51)", func(t mentorTuned) any { return t.BoxCounter5mScalp })
+	mentorTuningRow("mentor_isbrev_old_extreme_room", "trader.mentorTuningResolve (OCT-EXACT P4-missesB D2.3-WE8: a retagged reverse ISB (a PLH by D5.4 @03:52) with an old extreme inside 1R of the entry (measured to the shy target) is refused, no fill-close: D2.3-R53 @54:00 / R55 @57:00; nil -> true, false reverts to the r1 fill-close)", func(t mentorTuned) any { return t.ISBRevOldExtremeRoom })
+	mentorTuningRow("mentor_isbrev_fill_close", "trader.mentorTuningResolve (OCT-EXACT close r1: the reverse ISB takes the ISB first target (fill-candle close / +1R) when no level gives room: D5.3-R39 @16:43 reverse ISB is the same setup read under another name; D2.2 @28:37)", func(t mentorTuned) any { return t.ISBRevFillClose })
+	mentorTuningRow("mentor_level_first_touch_lock", "trader.mentorTuningResolve (OCT-EXACT C3: first touch closing through only cancels, Oct D5.2-R23/R24)", func(t mentorTuned) any { return t.LevelFirstTouchLock })
+	mentorTuningRow("mentor_isb_just_broken_level", "trader.mentorTuningResolve (OCT-EXACT D1: ISB at a level it just broke, OctD3.3-R47)", func(t mentorTuned) any { return t.ISBJustBrokenLevel })
+	mentorTuningRow("mentor_ftgl_body_edge_partner", "trader.mentorTuningResolve (OCT-EXACT D3: FTGL partner by body edge, OctD3.3-R54)", func(t mentorTuned) any { return t.FTGLBodyEdgePartner })
+	mentorTuningRow("mentor_leg1_fixed_pts", "trader.mentorTuningResolve (OCT-EXACT D2: leg-1 fixed partial, OctD4.2-R14/R18)", func(t mentorTuned) any { return t.Leg1FixedPts })
+	mentorTuningRow("mentor_counter_5m_scalp_pts", "trader.mentorTuningResolve (OCT-EXACT C1: counter-5m EMA 34 scalp target, Oct D5.4 Ex.1)", func(t mentorTuned) any { return t.Counter5mScalpPts })
+	mentorTuningRow("mentor_resonance_trail", "trader.mentorTuningResolve (OCT-EXACT C6: mode-A runner trails after BE, Oct D4.2-R31/R32)", func(t mentorTuned) any { return t.ResonanceTrail })
+	mentorTuningRow("trendline_max_lines_per_anchor", "trader.mentorTuningResolve (OCT-EXACT A2 row 15)", func(t mentorTuned) any { return t.TrendlineMaxLinesPerAnchor })
+	mentorTuningRow("mentor_mid_range_reject_side", "trader.mentorTuningResolve (m466 D2.2-R71)", func(t mentorTuned) any { return t.MidRangeRejectSide })
+	mentorTuningRow("mentor_swing_isb_one_per_candle", "trader.mentorTuningResolve (isbTF-F4, [B] reading, nil → ON)", func(t mentorTuned) any { return t.SwingISBOnePerCandle })
+	mentorTuningRow("crossing_isb_lookback", "trader.mentorTuningResolve (isbTF-F6 D3.4-R43, [B] reading, mentor Q10)", func(t mentorTuned) any { return t.CrossingISBLookback })
+	mentorTuningRow("crossing_isb_min", "trader.mentorTuningResolve (isbTF-F6 D3.4-R43, [B] reading, mentor Q10)", func(t mentorTuned) any { return t.CrossingISBMin })
 
 	add(rcPath+"planner_contracts", "trader.plannerContracts (dispatch-31), clamped to resolveMaxContracts — the size the authoring stamp actually writes", func(x *effCtx) effResult {
 		// The EFFECTIVE size: min(plannerContracts(rc), resolveMaxContracts()).
@@ -856,6 +1007,10 @@ func buildEffectiveResolvers() map[string]effResolver {
 			origin = "clamp (trader.plannerContractsCeiling = 10)"
 		}
 		scope := ScopeStrategy
+		if x.at != nil && x.at.pepEnabled() {
+			// PEP: the AI planner makes no entries, so this stamp size is never used.
+			return effResult{value: "not used in pep mode — the AI planner makes no entries", origin: pepModeOnOrigin, scope: ScopeStrategy}
+		}
 		if x.at != nil && !x.at.mentorEnabled() {
 			max, maxSrc := kernel.ResolveMaxContractsWithSource(rc.MaxContractsPerOrder, int(maxFuturesContracts))
 			if v > max {
@@ -869,14 +1024,14 @@ func buildEffectiveResolvers() map[string]effResolver {
 	// MENTOR-DONE-AFTER-WIN eff (release #32): the switch was UI-BLIND — the
 	// panel said "n/a — no resolver registered" while the gate read it. The
 	// value is on/off from the ONE resolver the gate and the sweep use; the
-	// origin names the owner's nil → OFF ruling when the key is absent.
+	// origin names the course's nil → ON default when the key is absent.
 	add(rcPath+"mentor_done_after_win", "trader.(*AutoTrader).mentorDoneAfterWinEnabled", func(x *effCtx) effResult {
 		on := x.at != nil && x.at.mentorDoneAfterWinEnabled()
 		v := "off"
 		if on {
 			v = "on"
 		}
-		origin := store.SourceShippedDefault + " (owner 2026-10-16: OFF)"
+		origin := store.SourceShippedDefault + " (OCT-EXACT A1 row 8: default OFF)"
 		if x.st.present {
 			origin = store.SourceSaved
 		}
@@ -909,6 +1064,11 @@ func buildEffectiveResolvers() map[string]effResolver {
 			// the mentor's exits own the stop.
 			if x.at != nil && x.at.mentorEnabled() {
 				return effResult{value: "not applied while mentor mode is ON (owner ruling 2026-10-09)", origin: "mentor_mode on", scope: ScopeStrategy}
+			}
+			// PEP (rereview m461 P2-1): modeOwnsExits() keeps the AI-era stop movers
+			// off a pep position; pep has no break-even and no trailing (PDF rule).
+			if x.at != nil && x.at.pepEnabled() {
+				return effResult{value: "not applied while pep mode is ON (pep's fixed stop and target own the exit)", origin: pepModeOnOrigin, scope: ScopeStrategy}
 			}
 			v := on(x.rc())
 			return effResult{value: v, origin: presenceOrigin(x, v, store.SourceShippedDefault), scope: ScopeFutures}
@@ -977,6 +1137,77 @@ func buildEffectiveResolvers() map[string]effResolver {
 		v := x.cfg.TransitionStanddownEnabled()
 		return effResult{value: v, origin: presenceOrigin(x, v, store.SourceShippedDefault)}
 	})
+
+	// ── Pep (owner order 2026-10-29): every leaf of the root pep block resolves
+	// through store.ResolvePep — the ONE resolver kernel/pep.FromSettings and the
+	// boot line read. A clamped number names itself in its origin; a legal saved
+	// value (including a legal 0) reads "saved value".
+	pepRow := func(path, leaf string, get func(r store.PepResolved) any) {
+		add(path, "store.ResolvePep (kernel/pep.FromSettings reads the same)", func(x *effCtx) effResult {
+			r := store.ResolvePep(x.cfg)
+			v := get(r)
+			// m461: A / E are the PDF. A rule leaf under A or E runs the PDF's value
+			// whatever is saved, and says so (the stored number stays in the DB).
+			if r.Locked && store.PepLockedLeaves[leaf] {
+				return effResult{value: v, origin: "locked to the PDF (style " + r.Style + "): the saved value is ignored; switch to Custom to edit"}
+			}
+			if note, clamped := r.Clamps[leaf]; clamped {
+				return effResult{value: v, origin: "clamp (store.ResolvePep): " + note}
+			}
+			if strings.HasPrefix(leaf, "pep_c_") && r.Style != store.PepStyleCustom {
+				return effResult{value: v, origin: "not used: style is " + r.Style + " (Custom only)"}
+			}
+			// m461 P3: a style's own leaves are read only while that style runs.
+			if r.Style == store.PepStyleCustom && (strings.HasPrefix(leaf, "pep_a_") || strings.HasPrefix(leaf, "pep_e_")) {
+				return effResult{value: v, origin: "not used: style is Custom"}
+			}
+			// ... and inside Custom, the leaves the entry type does not use.
+			if r.Style == store.PepStyleCustom && strings.HasPrefix(leaf, "pep_c_") {
+				breakout := r.Custom.EntryType == store.PepEntryBreakout
+				switch {
+				case breakout && (leaf == "pep_c_ema_period" || leaf == "pep_c_ema_tf_min" || leaf == "pep_c_signal_source" || leaf == "pep_c_warmup_bars"):
+					return effResult{value: v, origin: "not used: entry type is breakout"}
+				case !breakout && leaf == "pep_c_both_edges":
+					return effResult{value: v, origin: "not used: entry type is ema_cross"}
+				}
+			}
+			if x.st.present {
+				return effResult{value: v, origin: store.SourceSaved}
+			}
+			return effResult{value: v, origin: store.SourceShippedDefault}
+		})
+	}
+	pepRow("pep.pep_enabled", "pep_enabled", func(r store.PepResolved) any { return r.Enabled })
+	pepRow("pep.pep_style", "pep_style", func(r store.PepResolved) any { return r.Style })
+	pepRow("pep.pep_contracts", "pep_contracts", func(r store.PepResolved) any { return r.Contracts })
+	pepRow("pep.pep_box_start_ct", "pep_box_start_ct", func(r store.PepResolved) any { return r.BoxStartCT })
+	pepRow("pep.pep_flat_time_ct", "pep_flat_time_ct", func(r store.PepResolved) any { return r.FlatTimeCT })
+	pepRow("pep.pep_tick_size", "pep_tick_size", func(r store.PepResolved) any { return r.TickSize })
+	pepRow("pep.pep_sl_rounding", "pep_sl_rounding", func(r store.PepResolved) any { return r.SLRounding })
+	pepRow("pep.pep_max_trades_per_day", "pep_max_trades_per_day", func(r store.PepResolved) any { return r.MaxTradesPerDay })
+	pepRow("pep.pep_fee_per_contract_usd", "pep_fee_per_contract_usd", func(r store.PepResolved) any { return r.FeePerContractRT })
+	pepRow("pep.pep_max_box_points", "pep_max_box_points", func(r store.PepResolved) any { return r.MaxBoxPoints })
+	pepRow("pep.pep_signal_max_age_min", "pep_signal_max_age_min", func(r store.PepResolved) any { return r.SignalMaxAgeMin })
+	pepRow("pep.style_a.pep_a_box_minutes", "pep_a_box_minutes", func(r store.PepResolved) any { return r.A.BoxMinutes })
+	pepRow("pep.style_a.pep_a_sl_fraction", "pep_a_sl_fraction", func(r store.PepResolved) any { return r.A.SLFraction })
+	pepRow("pep.style_a.pep_a_tp_fraction", "pep_a_tp_fraction", func(r store.PepResolved) any { return r.A.TPFraction })
+	pepRow("pep.style_a.pep_a_both_edges", "pep_a_both_edges", func(r store.PepResolved) any { return r.A.BothEdges })
+	pepRow("pep.style_e.pep_e_box_minutes", "pep_e_box_minutes", func(r store.PepResolved) any { return r.E.BoxMinutes })
+	pepRow("pep.style_e.pep_e_sl_fraction", "pep_e_sl_fraction", func(r store.PepResolved) any { return r.E.SLFraction })
+	pepRow("pep.style_e.pep_e_tp_fraction", "pep_e_tp_fraction", func(r store.PepResolved) any { return r.E.TPFraction })
+	pepRow("pep.style_e.pep_e_ema_period", "pep_e_ema_period", func(r store.PepResolved) any { return r.E.EMAPeriod })
+	pepRow("pep.style_e.pep_e_ema_tf_min", "pep_e_ema_tf_min", func(r store.PepResolved) any { return r.E.EMATFMin })
+	pepRow("pep.style_e.pep_e_signal_source", "pep_e_signal_source", func(r store.PepResolved) any { return r.E.SignalSource })
+	pepRow("pep.style_e.pep_e_warmup_bars", "pep_e_warmup_bars", func(r store.PepResolved) any { return r.E.WarmupBars })
+	pepRow("pep.style_custom.pep_c_entry_type", "pep_c_entry_type", func(r store.PepResolved) any { return r.Custom.EntryType })
+	pepRow("pep.style_custom.pep_c_box_minutes", "pep_c_box_minutes", func(r store.PepResolved) any { return r.Custom.BoxMinutes })
+	pepRow("pep.style_custom.pep_c_sl_fraction", "pep_c_sl_fraction", func(r store.PepResolved) any { return r.Custom.SLFraction })
+	pepRow("pep.style_custom.pep_c_tp_fraction", "pep_c_tp_fraction", func(r store.PepResolved) any { return r.Custom.TPFraction })
+	pepRow("pep.style_custom.pep_c_both_edges", "pep_c_both_edges", func(r store.PepResolved) any { return r.Custom.BothEdges })
+	pepRow("pep.style_custom.pep_c_ema_period", "pep_c_ema_period", func(r store.PepResolved) any { return r.Custom.EMAPeriod })
+	pepRow("pep.style_custom.pep_c_ema_tf_min", "pep_c_ema_tf_min", func(r store.PepResolved) any { return r.Custom.EMATFMin })
+	pepRow("pep.style_custom.pep_c_signal_source", "pep_c_signal_source", func(r store.PepResolved) any { return r.Custom.SignalSource })
+	pepRow("pep.style_custom.pep_c_warmup_bars", "pep_c_warmup_bars", func(r store.PepResolved) any { return r.Custom.WarmupBars })
 
 	// ── Day plan: strategy-level rows ────────────────────────────────────────
 	add(dpPath+"plan_enabled", "trader.(*AutoTrader).dayPlanEnabled", func(x *effCtx) effResult {

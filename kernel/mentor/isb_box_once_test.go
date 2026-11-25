@@ -13,7 +13,7 @@ import (
 // through Tick with the production clock (now = the bar's OpenTime,
 // trader/mentor_tick.go mentorEvalOnce).
 func TestEscapedISBBoxIsNotRebuiltFromTheSamePair(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	mk := func(i int, o, h, l, c float64) market.Kline {
 		return market.Kline{OpenTime: int64(i) * 60_000, CloseTime: int64(i)*60_000 + 59_999, Open: o, High: h, Low: l, Close: c}
@@ -32,6 +32,7 @@ func TestEscapedISBBoxIsNotRebuiltFromTheSamePair(t *testing.T) {
 		mk(8, 101, 104, 100.5, 102),
 		mk(9, 101, 104, 100.5, 102),
 	}
+	cfg.ISBBoxEscapeMode = ISBBoxEscapeBody // m473 B3: this pin is the explicit 1m-delete mode (default is now close5m, OctD4.3-R67 [Oct D4.3 @ 65:00-66:13])
 	e := New(cfg)
 	tick := func(b market.Kline) {
 		bars = append(bars, b)

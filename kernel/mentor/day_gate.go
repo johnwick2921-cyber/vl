@@ -13,7 +13,7 @@ import (
 //     already run (Asia high to low, through pre-market);
 //  3. check the 4-HOUR trigger, then the 1-HOUR trigger.
 //
-// Table verbatim [D5.1 p1]:
+// Table verbatim [D5.1 p1 @ 16:05–16:11, @ 19:26, @ 20:02–20:07]:
 //   normal run      + agree    → TRADE, following them
 //   300–400+ pts    + conflict → "TẮT MÁY NGHỈ LUÔN CHO EM" (shut it off)
 //   300–400+ pts    + agree    → trade, but DON'T target big —
@@ -59,17 +59,30 @@ const (
 // CTO; until it lands, DefaultDayGate supplies the method defaults).
 type DayGate struct {
 	// SpentPts: a run at/above this before the open means "already run"
-	// — 300 [D5.1 p1 @ 15:57 "Already run 300–400 before the open → 80–90%
-	// it ranges"].
+	// — the rule says 300–400 [D5.1 p1 @16:05-16:11 "Already run 300–400 before
+	// the open → 80–90% it ranges"]; m465 (release #60, D5.1-R18) the worked
+	// example pins the cutoff at 265: "Một cây nến daily chạy 300 điểm, mà tới
+	// đây nó chạy gần được 300 điểm… nó chạy gần hết cây daily luôn rồi" +
+	// "phải còn 100 điểm" [D5.1 p1 @17:56–18:14], measured −265.00 (1,060
+	// ticks) — that day had nothing left to trade.
 	SpentPts float64
 	// TargetCapPts: on a spent day, the target distance cap — 15
-	// ("15 điểm bán, 10 điểm bán" [D5.1 p1]).
+	// ("15 điểm bán, 10 điểm bán" [D5.1 p1 @ 20:02–20:06]). The mentor is
+	// flexible 10–15; the 15 cap is the upper bound and a target ≤ 15 (10
+	// included) passes through unchanged — the 10-vs-15 pick itself is his
+	// discretion, not a stated rule.
 	TargetCapPts float64
+	// Off — OCT-EXACT A1 row 2: the whole §7 day gate is disabled (verdict is
+	// always DayTrade: no day_off / day_spent / day_not_measured, no spent-day
+	// target cap / stop cap / room, no R9 spent cap). Set from
+	// !Config.DayGateEnabled by the evaluator; knob mentor_day_gate_enabled=true
+	// reverts.
+	Off bool
 }
 
-// DefaultDayGate returns the §7 defaults (300 / 15).
+// DefaultDayGate returns the §7 defaults (265 / 15) — m465 D5.1-R18.
 func DefaultDayGate() DayGate {
-	return DayGate{SpentPts: 300, TargetCapPts: 15}
+	return DayGate{SpentPts: 265, TargetCapPts: 15}
 }
 
 // DayLatch is the frozen §7 verdict for a TRADING DAY (CTO reviews E1, L2).
@@ -267,14 +280,18 @@ func GlobexMeasure(bars []market.Kline, now int64, loc *time.Location) GlobexMea
 	if loc == nil {
 		loc = ctime()
 	}
-	var m GlobexMeasurement
 	openMs, closeMs := sessionBounds(now, loc)
 	hiMs := now
 	if !time.UnixMilli(now).In(loc).Before(time.UnixMilli(closeMs).In(loc)) {
 		hiMs = closeMs // session ended: freeze the 17:00→08:30 value
 	}
-	loMs := openMs
+	return measureWindow(bars, openMs, hiMs)
+}
 
+// measureWindow is the high − low of the bars that OPENED in [loMs, hiMs),
+// with the A6 coverage guard (shared by GlobexMeasure and GlobexDayMeasure).
+func measureWindow(bars []market.Kline, loMs, hiMs int64) GlobexMeasurement {
+	var m GlobexMeasurement
 	n := 0
 	var earliest int64
 	for _, b := range bars {
@@ -325,6 +342,9 @@ func GlobexRun(bars []market.Kline, now int64, loc *time.Location) (run float64,
 //	otherwise (incl. a conflict  → DayTrade — §5.4 case 3 handles the
 //	on a normal day)              per-tick sit-out until the flip
 func DayGateVerdict(run float64, haveRun bool, conflict bool, g DayGate) (DayVerdict, string) {
+	if g.Off {
+		return DayTrade, "" // OCT-EXACT A1 row 2
+	}
 	if g.SpentPts <= 0 || g.TargetCapPts <= 0 {
 		g = DefaultDayGate()
 	}
@@ -335,7 +355,7 @@ func DayGateVerdict(run float64, haveRun bool, conflict bool, g DayGate) (DayVer
 		return DayOff, "spent AND 4h/1h conflict at the pre-open read — 'TẮT MÁY NGHỈ LUÔN CHO EM', no trades today [D5.1 p1 @ 19:22]"
 	}
 	if run >= g.SpentPts {
-		return DaySpent, "already run 300–400+ before the open — trade but don't target big, 15/10 pt sales [D5.1 p1 @ 15:57]"
+		return DaySpent, "already run 300–400+ before the open — trade but don't target big, 15/10 pt sales [300-400 @16:05-16:11; 15/10 @19:56-20:07]"
 	}
 	return DayTrade, ""
 }

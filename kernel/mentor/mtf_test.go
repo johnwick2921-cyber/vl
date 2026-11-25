@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"vl/market"
 )
@@ -50,6 +51,10 @@ func TestMTFAligned(t *testing.T) {
 	}
 }
 
+// C52 W1 B9 [D4.2 p1 @12:16–12:47, @14:30–14:52, @15:16–15:36]: MTF
+// confluence is the 15m/5m/entry ISB agreement ALONE — neither D4.2 part names
+// the 5m trigger line. The trigger (silent, opposite, or the price under the
+// line) must not change the verdict.
 func TestMTFConfluence(t *testing.T) {
 	gp, gc := greenISB()
 	rp, rc := redISB()
@@ -57,35 +62,126 @@ func TestMTFConfluence(t *testing.T) {
 	longAligned5, longAligned15 := []market.Kline{gp, gc}, []market.Kline{gp, gc}
 	mixed5, mixed15 := []market.Kline{gp, gc}, []market.Kline{rp, rc}
 
-	buyTrig := TriggerLine{Dir: SideLong, Price: 99}
-	sellTrig := TriggerLine{Dir: SideShort, Price: 111}
-	silent := TriggerLine{}
-
 	cases := []struct {
 		name    string
 		side    Side
-		trig    TriggerLine
-		price   float64
 		bars5m  []market.Kline
 		bars15m []market.Kline
 		want    bool
 	}{
-		{"aligned + buy trigger agrees (long above line) → true", SideLong, buyTrig, 103, longAligned5, longAligned15, true},
-		{"aligned + sell trigger opposite → false", SideLong, sellTrig, 103, longAligned5, longAligned15, false},
-		{"aligned + silent trigger → false", SideLong, silent, 103, longAligned5, longAligned15, false},
-		{"NOT aligned (15m short) + trigger agrees → false", SideLong, buyTrig, 103, mixed5, mixed15, false},
-		{"aligned but price below the buy line → false", SideLong, buyTrig, 98, longAligned5, longAligned15, false},
+		{"15m, 5m and the entry all long → confluence", SideLong, longAligned5, longAligned15, true},
+		{"aligned long but the entry is short → no", SideShort, longAligned5, longAligned15, false},
+		{"15m opposite the 5m → no", SideLong, mixed5, mixed15, false},
+		{"short history → no", SideLong, []market.Kline{gp}, longAligned15, false},
 	}
 	for _, c := range cases {
-		if got := MTFConfluence(c.side, c.trig, c.price, c.bars5m, c.bars15m); got != c.want {
+		if got := MTFConfluence(c.side, c.bars5m, c.bars15m); got != c.want {
 			t.Errorf("%s: MTFConfluence = %v, want %v", c.name, got, c.want)
 		}
 	}
 }
 
+// mtfAlignedLongTape builds a 1m tape on 2026-09-15 CT whose latest CLOSED 15m
+// pair (09:00 green, 09:15 inside) and latest CLOSED 5m pair (09:20 green,
+// 09:25 inside) are both long ISBs, ending in a long 1m ISB (09:28, 09:29).
+// A head bar at 08:55 with a high close puts the EMA 34 target well beyond.
+func mtfAlignedLongTape() []market.Kline {
+	at := func(hh, mm int, o, h, l, c float64) market.Kline {
+		ot := auditMs(2026, 9, 15, hh, mm, 0)
+		return market.Kline{OpenTime: ot, CloseTime: ot + 59_999, Open: o, High: h, Low: l, Close: c}
+	}
+	var out []market.Kline
+	out = append(out, at(8, 55, 120, 121.5, 97, 120)) // head: EMA target beyond; wide so no 4h/1h line moves
+	// 15m A, 09:00-09:14: green, wide (low 98, high 114).
+	out = append(out, at(9, 0, 100, 114, 98, 104))
+	for m := 1; m <= 13; m++ {
+		out = append(out, at(9, m, 104, 105, 103, 104))
+	}
+	out = append(out, at(9, 14, 104, 105, 103, 112))
+	// 15m B, 09:15-09:19: flat inside A's range (wicks included).
+	for m := 15; m <= 19; m++ {
+		out = append(out, at(9, m, 105, 106, 104, 105))
+	}
+	// 5m P, 09:20-09:24: GREEN (o 103 -> c 107, range 102..108).
+	out = append(out, at(9, 20, 103, 104, 102, 104))
+	out = append(out, at(9, 21, 104, 105, 103, 105))
+	out = append(out, at(9, 22, 105, 106, 104, 105))
+	out = append(out, at(9, 23, 105, 108, 104, 106))
+	out = append(out, at(9, 24, 106, 107, 105, 107))
+	// 5m C, 09:25-09:29: inside P's range [102, 108]; ends on a long 1m ISB.
+	out = append(out, at(9, 25, 104, 105, 103.5, 104.5))
+	out = append(out, at(9, 26, 104.5, 105.5, 104, 105))
+	out = append(out, at(9, 27, 105, 105.5, 104.5, 105))
+	out = append(out, at(9, 28, 104.5, 106.2, 104.2, 105.8)) // 1m candle 1: GREEN
+	out = append(out, at(9, 29, 105.2, 105.9, 104.6, 105.5)) // 1m candle 2: inside candle 1
+	return out
+}
+
+// C52 W1 B9 at the PRODUCTION call site (Evaluator.Tick, the ISB emit): with
+// the 15m, 5m and 1m ISBs all long the intent is mode-C confluence whatever
+// the 5m trigger line says. isbTF-F1: a buy line the price is still UNDER now
+// refuses the ISB itself (isb_trigger_side — the trigger gates inside the 5m
+// box too, OctD4.3-R28/R69 [Oct D4.3 @ 22:00, 67:26]), so the cases are the
+// lines an ISB can still emit under: a buy line below the price and no line.
+func TestMTFConfluenceIgnoresTheTriggerAtTheEmitSite(t *testing.T) {
+	bars := mtfAlignedLongTape()
+	if !MTFAligned(bars5mOf(t, bars), bars15mOf(t, bars), SideLong) {
+		t.Fatal("fixture: the closed 15m/5m pairs must both be long ISBs")
+	}
+	cases := []struct {
+		name string
+		trig TriggerLine
+	}{
+		{"buy line below the price", TriggerLine{Dir: SideLong, Price: 95, LastBucket: 1 << 62}},
+		{"no 5m line", TriggerLine{LastBucket: 1 << 62}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			cfg := legacy2mCfg()
+			cfg.Enabled = true
+			cfg.RoomMultiple = 0 // this pin tests the confluence flag, not the room rule
+			e := New(cfg)
+			e.State.Trigger = c.trig
+			// The old cases' buy line above the entry was also the target;
+			// a key level at 130 stands in for it (isbTF-F1).
+			e.seeded = true
+			e.State.Seed1mWatermark = 1 << 62
+			e.State.Seed1HWatermark = 1 << 62
+			e.State.SeedLevels = []Level{{Key: "K-above", Kind: KindKeyLevel, Price: 130}}
+			e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 90}}
+			e.State.ORB = ORB{Day: dayStartCT(auditMs(2026, 9, 15, 9, 0, 0)), High: 90, Low: 85, Drawn: true, Escaped: SideLong}
+			e.State.Day = DayLatch{Key: tradingDayKey(time.UnixMilli(auditMs(2026, 9, 15, 9, 0, 0)).In(ctime())), Verdict: DayTrade}
+			last := bars[len(bars)-1]
+			ins := e.Tick(bars, last.CloseTime+1)
+			for _, in := range ins {
+				if in.Setup == "ISB" && (in.Action == PlaceStopLimitEntry || in.Action == PlaceStopEntry) {
+					if !in.Confluence {
+						t.Fatalf("aligned 15m/5m/1m long ISB must be confluence under %s: %+v", c.name, in)
+					}
+					return
+				}
+			}
+			t.Fatalf("no ISB intent emitted (refusals %v): %+v", e.State.Refusals, ins)
+		})
+	}
+}
+
+func bars5mOf(t *testing.T, bars []market.Kline) []market.Kline {
+	t.Helper()
+	e := New(preOctCfg())
+	return e.closedBucketsMemo(bars, bars[len(bars)-1].CloseTime+1)
+}
+
+func bars15mOf(t *testing.T, bars []market.Kline) []market.Kline {
+	t.Helper()
+	e := New(preOctCfg())
+	return e.closedBucketsTFMemo(bars, 15, bars[len(bars)-1].CloseTime+1)
+}
+
 // TestMTFConfluenceWiredAtTheEmitSites pins the production call sites: the ISB
 // emit and the PHL/PLH emit must stamp the intent's Confluence from
-// MTFConfluence (D4.2-06 part 1). Removing either stamp breaks this pin.
+// MTFConfluence (D4.2-06 part 1) — since m465 through e.mtfConfluence (the
+// standing boxes, D4.2-R17). Removing either stamp breaks this pin.
 func TestMTFConfluenceWiredAtTheEmitSites(t *testing.T) {
 	b, err := os.ReadFile("eval.go")
 	if err != nil {
@@ -93,9 +189,10 @@ func TestMTFConfluenceWiredAtTheEmitSites(t *testing.T) {
 	}
 	src := string(b)
 	for _, want := range []string{
-		"confluence := MTFConfluence(side, e.State.Trigger, chosen.Price, cb5, cb15)",
-		"confluence := MTFConfluence(in.Side, e.State.Trigger, in.Price, cb5, cb15)",
-		"confluence := MTFConfluence(side, e.State.Trigger, phlEntry, cb5, cb15)",
+		// m465 P1 (D4.2-R17): the emit sites read e.mtfConfluence — the
+		// standing-box read by default, MTFConfluence under last_pair.
+		"confluence := e.mtfConfluence(side, cb5, cb15)",
+		"confluence := e.mtfConfluence(in.Side, cb5, cb15)",
 		"cb5 := e.closedBucketsMemo(bars, now)",
 		"cb15 := e.closedBucketsTFMemo(bars, 15, now)",
 	} {

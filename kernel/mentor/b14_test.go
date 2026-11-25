@@ -15,7 +15,7 @@ import (
 // preset by the caller (the SwingPointLevels path is empty on a 6-bar tape,
 // so the level set is exactly the preset).
 func b14Fixture(oldHighLevels []Level, refLow float64) (*Evaluator, []market.Kline, int64, string) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.KeyLevelTFMinutes = 1
 	cfg.EMAPeriod34 = 0

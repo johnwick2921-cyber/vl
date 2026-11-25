@@ -131,6 +131,8 @@ func (s *TCPServer) observeContract(symbol, contract string, at time.Time) {
 	if s.barCache != nil {
 		purged = s.barCache.PurgeSymbol(key)
 	}
+	liveContracts.reset(key) // m446: the retired contract left the ring with the purge
+	histContracts.reset(key) // ... and so did the seed it was built from
 	// A9 — loud, with both symbols and the timestamp, every time.
 	s.logger.Warn("📜 CONTRACT ROLLED — ring purged; the retired contract's bars stay in the store as history and are filtered, never deleted",
 		"symbol", key, "from", prev, "to", contract, "at", at.Format(time.RFC3339), "ring_bars_purged", purged)

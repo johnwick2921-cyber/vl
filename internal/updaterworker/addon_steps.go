@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"vl/internal/addonbuild"
 	"vl/internal/updaterjob"
@@ -36,18 +37,27 @@ func addonDocsDir() (string, error) {
 }
 
 // winSeam is the Windows subprocess seam (dotnet.exe build, powershell.exe restart).
+// It is wrapped with the m388 WSL interop-timeout retry: a transient
+// "UtilAcceptVsock … accept4 failed 110" (Windows and WSL briefly fail to talk
+// to each other) is retried a bounded number of times; any other failure stays
+// immediate. Before a retry of a Start-Process the worker checks whether NT8 is
+// already running (m388 follow-up) so it never launches a second NinjaTrader.
 func (w *Worker) winSeam() nt8RunSeam {
-	if w.runWin != nil {
-		return w.runWin
+	raw := w.runWin
+	if raw == nil {
+		raw = execWindows
 	}
-	return execWindows
+	return retryWSLInterop(raw, w.host.Sleep, w.logf, func(ctx context.Context, name string, args []string) bool {
+		return w.nt8StartLanded(ctx, raw, name, args)
+	})
 }
 
 // addonConfig assembles the addonbuild.Config for THIS job. WorkDir is a
 // worker-made dir under /tmp — never the NT8 folder. SourceDir is the
 // RELEASE's ninjascript/*.cs (the NEW AddOn sources), never the install's —
-// EXCEPT for a catch-up job, which rebuilds the INSTALLED release's own
-// ninjascript (nothing new is being installed).
+// EXCEPT for a catch-up job, which rebuilds the VERIFIED installed release's
+// own ninjascript (m355: <VL_RELEASE_DIR>/<running revision>/ninjascript —
+// NEVER the install tree's, which is not a proof and can be stale).
 func (w *Worker) addonConfig(j updaterjob.Job) (addonbuild.Config, error) {
 	docsDir, err := addonDocsDir()
 	if err != nil {
@@ -55,7 +65,10 @@ func (w *Worker) addonConfig(j updaterjob.Job) (addonbuild.Config, error) {
 	}
 	src := ""
 	if j.Catchup {
-		src = filepath.Join(w.cfg.Target.InstallDir, "ninjascript")
+		src, err = w.catchupAddonSource()
+		if err != nil {
+			return addonbuild.Config{}, err
+		}
 	} else {
 		if j.Release == nil || j.Release.Dir == "" {
 			return addonbuild.Config{}, errors.New("addon build without a verified release dir")
@@ -76,8 +89,10 @@ func (w *Worker) addonConfig(j updaterjob.Job) (addonbuild.Config, error) {
 // build error refuses the update BEFORE any hold, kill or place — the page
 // shows the compiler error. A release whose signed manifest lists no
 // ninjascript/*.cs cannot be compiled from its own unproven sources: refused.
-// A CATCH-UP job builds the INSTALLED release's own ninjascript instead — the
-// install tree is what's running, no verdict is owed.
+// A CATCH-UP job builds the VERIFIED installed release's own ninjascript
+// (m355: <VL_RELEASE_DIR>/<running revision>/ninjascript, re-proved through its
+// verdict + SSHSIG) instead — the running release's proven sources, never the
+// install tree's stale copy.
 func (w *Worker) stepAddonBuild(ctx context.Context, j updaterjob.Job) stepResult {
 	start := w.host.Now()
 	ev := map[string]string{}
@@ -191,6 +206,12 @@ func restoreMigratedSources(docsDir, jobID string) {
 func (w *Worker) stepAddonPlace(ctx context.Context, j updaterjob.Job) stepResult {
 	start := w.host.Now()
 	ev := map[string]string{}
+	// m343 guard #3: a job that has already boot-verified must never touch the
+	// AddOn again (no late place/revert/catch-up overwrite).
+	if j.AddonProven() {
+		return stepResult{receipts: []Receipt{w.receipt("addon_place", start,
+			map[string]string{"skipped": "boot_verified"}, nil)}}
+	}
 	// Catch-up records the pre-restart accept_seq from the live hello (there is
 	// no nt8 decision to read it from).
 	var preSeq uint64
@@ -200,6 +221,7 @@ func (w *Worker) stepAddonPlace(ctx context.Context, j updaterjob.Job) stepResul
 		}
 	}
 	deferred := false
+	recoveryNeeded := false
 	backupDir, err := func() (string, error) {
 		if j.Addon == nil || j.Addon.DllPath == "" || j.Addon.Sha256 == "" {
 			return "", errors.New("addon_place without a built DLL")
@@ -277,16 +299,47 @@ func (w *Worker) stepAddonPlace(ctx context.Context, j updaterjob.Job) stepResul
 		if deferred {
 			return "", nil
 		}
+		// m355 rule 3 — NEVER DOWNGRADE: a catch-up only places a build that
+		// is strictly newer than what the box runs (the ack) or loads (the
+		// placed DLL). Refused here means bin\Custom is untouched.
+		if j.Catchup {
+			if derr := w.catchupNeverDowngrade(ctx, cfg.DocsDir, w.wantAddonBuild(j)); derr != nil {
+				return "", derr
+			}
+		}
 		b, err := addonbuild.Place(cfg, j.Addon.DllPath, j.Addon.Sha256, j.JobID)
 		if err != nil {
 			return "", fmt.Errorf("addon place: %w", err)
 		}
 		ev["backup_dir"] = b
+		// m343 verify-on-place: read back the EMBEDDED build id and refuse+revert
+		// when it is not the release's expected build (the 10-21 18:31 stale
+		// placement was never checked). With no prior DLL (b == "") there is
+		// nothing to revert to — refuse and leave it to the owner.
+		if b != "" {
+			if verr := verifyAddonPlace(cfg.DocsDir, w.wantAddonBuild(j)); verr != nil {
+				if rerr := w.host.AddonRestore(cfg.DocsDir, b, w.preJobBuild(j)); rerr != nil {
+					// m357 C: the unverified NEW DLL must not stay live — move it
+					// aside (never delete) and end recovery_needed, loudly.
+					if qerr := quarantineUnverifiedAddon(cfg.DocsDir, b); qerr != nil {
+						return "", fmt.Errorf("%v; the old AddOn could not be restored (%v) and the unverified DLL could not be moved aside: %w", verr, rerr, qerr)
+					}
+					ev["unverified_dll"] = "quarantined"
+					recoveryNeeded = true
+					return "", fmt.Errorf("%v; the old AddOn could not be restored (%v) — the unverified DLL was moved aside", verr, rerr)
+				}
+				return "", verr
+			}
+		}
 		return b, nil
 	}()
 	res := stepResult{receipts: []Receipt{w.receipt("addon_place", start, ev, err)}, err: err}
 	if err != nil {
-		res.failTo, res.reason = updaterjob.StateRevertedClean, "the AddOn place failed: "+clipText(err.Error())
+		if recoveryNeeded {
+			res.failTo, res.reason = updaterjob.StateRecoveryNeeded, "the AddOn place failed and the unverified DLL was moved aside: "+clipText(err.Error())
+		} else {
+			res.failTo, res.reason = updaterjob.StateRevertedClean, "the AddOn place failed: "+clipText(err.Error())
+		}
 		return res
 	}
 	res.set = func(k *updaterjob.Job) {
@@ -401,6 +454,13 @@ func (w *Worker) migrateRebuildPlaceWhileClosed(ctx context.Context, j updaterjo
 		restoreAll()
 		return errors.New("migration place without a built AddOn DLL")
 	}
+	// m355 rule 3 — NEVER DOWNGRADE, also on the deferred-migration place path.
+	if j.Catchup {
+		if derr := w.catchupNeverDowngrade(ctx, docs, w.wantAddonBuild(j)); derr != nil {
+			restoreAll()
+			return derr
+		}
+	}
 	abak, perr2 := addonbuild.Place(cfg, j.Addon.DllPath, j.Addon.Sha256, j.JobID)
 	if perr2 != nil {
 		// addonbuild.Place may have moved the old AddOn to the deterministic
@@ -439,6 +499,30 @@ func isRegularFile(p string) bool {
 // and the job ends reverted_clean. If NT8 exits on its own, there is no
 // re-check and no force — it closed itself, and nothing can trade while closed.
 
+// nt8PollRunning polls r.isRunning for `want` until deadline. A transient probe
+// error (tasklist exit 1, WSL interop hiccup, vsock accept failure) is RETRIED
+// until the deadline — one hiccup must not abort a bounded wait (m246). It
+// returns confirmed=true when the state matched `want` before the deadline;
+// otherwise lastErr is the most recent probe error (nil when the deadline simply
+// passed with the state never matching).
+func (w *Worker) nt8PollRunning(ctx context.Context, r nt8Restart, want bool, deadline time.Time) (bool, error) {
+	var lastErr error
+	for {
+		running, err := r.isRunning(ctx)
+		if err != nil {
+			lastErr = err
+		} else if running == want {
+			return true, nil
+		}
+		if !w.host.Now().Before(deadline) {
+			return false, lastErr
+		}
+		if err := w.host.Sleep(ctx, nt8RestartPoll); err != nil {
+			return false, err
+		}
+	}
+}
+
 // startAndVerifyNT8 starts NinjaTrader and proves it is actually running with a
 // bounded process check. Start-Process succeeding proves only "process
 // started", never "AddOn ready" — the AddOn-ready proof (build id + a new
@@ -449,21 +533,14 @@ func (w *Worker) startAndVerifyNT8(ctx context.Context, r nt8Restart, ev map[str
 	}
 	startStart := w.host.Now()
 	startDeadline := startStart.Add(nt8StartWait)
-	for {
-		running, err := r.isRunning(ctx)
-		if err != nil {
-			return err
-		}
-		if running {
-			break
-		}
-		if !w.host.Now().Before(startDeadline) {
-			ev["nt8_start_wait"] = "timeout_not_running"
-			return fmt.Errorf("NinjaTrader did not come up within %s of the start", nt8StartWait)
-		}
-		if err := w.host.Sleep(ctx, nt8RestartPoll); err != nil {
-			return err
-		}
+	confirmed, lastErr := w.nt8PollRunning(ctx, r, true, startDeadline)
+	if lastErr != nil {
+		ev["nt8_start_probe_error"] = clipText(lastErr.Error())
+		return fmt.Errorf("the NinjaTrader liveness probe kept failing after the start: %w", lastErr)
+	}
+	if !confirmed {
+		ev["nt8_start_wait"] = "timeout_not_running"
+		return fmt.Errorf("NinjaTrader did not come up within %s of the start", nt8StartWait)
 	}
 	ev["nt8_start_wait_ms"] = strconv.FormatInt(w.host.Now().Sub(startStart).Milliseconds(), 10)
 	return nil
@@ -488,25 +565,24 @@ func (w *Worker) stepNT8Restart(ctx context.Context, j updaterjob.Job) stepResul
 		if err := r.signalClose(ctx); err != nil {
 			return err
 		}
+		// m246: the point of no return — the updater is now stopping NT8. Record
+		// it on the job so the revert path brings NinjaTrader back up (restoring
+		// the old AddOn alone leaves NT8 closed, the owner's #43 Update failure).
+		if _, uerr := w.update(j.JobID, j.State, j.Phase, func(k *updaterjob.Job) error {
+			if k.Addon == nil {
+				k.Addon = &updaterjob.AddonState{}
+			}
+			k.Addon.StoppedNT8 = true
+			return nil
+		}); uerr != nil {
+			return fmt.Errorf("the NT8 stop could not be recorded on the job: %w", uerr)
+		}
 		// Poll IsRunning every 2 s up to nt8CloseWait. If NT8 exited on its own,
-		// no re-check and no force.
-		exited := false
-		deadline := w.host.Now().Add(nt8CloseWait)
-		for {
-			running, err := r.isRunning(ctx)
-			if err != nil {
-				return err
-			}
-			if !running {
-				exited = true
-				break
-			}
-			if !w.host.Now().Before(deadline) {
-				break
-			}
-			if err := w.host.Sleep(ctx, nt8RestartPoll); err != nil {
-				return err
-			}
+		// no re-check and no force. A transient tasklist error is retried; when
+		// the deadline passes without a confirmed exit, NT8 is force-stopped.
+		exited, closeProbeErr := w.nt8PollRunning(ctx, r, false, w.host.Now().Add(nt8CloseWait))
+		if closeProbeErr != nil {
+			ev["nt8_close_probe_error"] = clipText(closeProbeErr.Error())
 		}
 		if !exited {
 			// NT8 is STILL running (a dialog, a hang). The AddOn is still
@@ -527,29 +603,18 @@ func (w *Worker) stepNT8Restart(ctx context.Context, j updaterjob.Job) stepResul
 		// process released the port. Poll IsRunning, bounded; record the wait.
 		exitStart := w.host.Now()
 		exitDeadline := exitStart.Add(nt8ExitWait)
-		for {
-			running, err := r.isRunning(ctx)
-			if err != nil {
-				// NT8 was stopped; the liveness probe failed, so liveness is
-				// unproven — recovery_needed, never a false-clean revert.
-				nt8Down = true
-				return err
+		exited, lastErr := w.nt8PollRunning(ctx, r, false, exitDeadline)
+		if !exited {
+			// The OLD process is still running (or liveness never confirmed)
+			// while the NEW DLL is already on disk — a mixed state, not a clean
+			// one. recovery_needed (hold kept) until the human resolves it.
+			ev["nt8_exit_wait"] = "timeout_still_running"
+			nt8Down = true
+			if lastErr != nil {
+				ev["nt8_exit_probe_error"] = clipText(lastErr.Error())
+				return fmt.Errorf("NinjaTrader did not confirm a full exit within %s of the stop (the liveness probe kept failing: %w)", nt8ExitWait, lastErr)
 			}
-			if !running {
-				break
-			}
-			if !w.host.Now().Before(exitDeadline) {
-				// The OLD process is still running while the NEW DLL is already
-				// on disk — a mixed state, not a clean one. recovery_needed
-				// (hold kept) until the human resolves it.
-				ev["nt8_exit_wait"] = "timeout_still_running"
-				nt8Down = true
-				return fmt.Errorf("NinjaTrader did not fully exit within %s of the stop — not starting a second instance", nt8ExitWait)
-			}
-			if err := w.host.Sleep(ctx, nt8RestartPoll); err != nil {
-				nt8Down = true
-				return err
-			}
+			return fmt.Errorf("NinjaTrader did not fully exit within %s of the stop — not starting a second instance", nt8ExitWait)
 		}
 		ev["nt8_exit_wait_ms"] = strconv.FormatInt(w.host.Now().Sub(exitStart).Milliseconds(), 10)
 		// FOLD 2: a deferred migration (NT8 was open and Custom.dll still held
@@ -613,10 +678,12 @@ func (w *Worker) stepAddonReconnect(ctx context.Context, j updaterjob.Job) stepR
 	}
 	wantBuild := ""
 	if j.Catchup {
-		// Catch-up rebuilds the INSTALLED release's AddOn: the reconnect must
-		// prove that build (the nt8 decision never ran, so ManifestBuildID is
-		// not the target).
-		wantBuild = w.oldInstallBuildID()
+		// Catch-up rebuilds the VERIFIED installed release's AddOn (m355): the
+		// reconnect must prove the persisted expected build — never
+		// oldInstallBuildID() (the nt8 decision never ran).
+		if j.Addon != nil {
+			wantBuild = j.Addon.ExpectedBuild
+		}
 	} else if j.NT8 != nil {
 		wantBuild = j.NT8.ManifestBuildID
 	}

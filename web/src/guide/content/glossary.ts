@@ -40,7 +40,7 @@ export const glossary: GuideSection = {
         },
         {
           term: 'EOD flat',
-          def: 'The session-end flat: cancel resting entries, then close open positions — at market by default; when EOD_FLAT_LIMIT_TICKS > 0 (default 0) it first works a limit that many ticks away, then goes to market after EOD_FLAT_MARKET_AFTER_SEC. A SWING4H mentor position is exempt.',
+          def: 'The session-end flat: cancel resting entries, then close open positions — at market by default; when EOD_FLAT_LIMIT_TICKS > 0 (default 0) it first works a limit that many ticks away, then goes to market after EOD_FLAT_MARKET_AFTER_SEC. On an ordinary day a SWING4H mentor position is exempt; on a shortened day (12:15 CT close on 11-27 and 12-24) the flat is 12:10 CT and the SWING4H is NOT exempt.',
         },
         {
           term: 'Fail-closed',
@@ -81,7 +81,11 @@ export const glossary: GuideSection = {
         },
         {
           term: 'PDH/PDL/PDC',
-          def: 'Prior-day high/low/close — the dealing-range anchors.',
+          def: 'Prior CME session (17:00→16:00 CT) high/low/close — the dealing-range anchors (m239: the session day, never the calendar day). PDC is the native 1d close (the ~15:00 CT settle, the same source as SETT); with no daily row it is the session\u2019s last 1m close, labelled \u201cPDC·last print\u201d (m239a).',
+        },
+        {
+          term: 'Pep mode',
+          def: 'A trading mode of its own (a strategy is exactly one of AI planner, mentor or pep): two FIXED opening-range rules from the owner’s PDF — style A (5-minute ORB breakout, enter immediately) and style E (EMA9 ORB, candle-close confirmation), both locked and read-only — plus Custom, the one editable style. Separate from mentor mode, SIM only, OFF by default. Section 20.',
         },
         {
           term: 'Plan mode',

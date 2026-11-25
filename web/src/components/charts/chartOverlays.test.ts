@@ -6,6 +6,14 @@ import type { MentorTruth } from '../../lib/api/traders'
 import {
   chartFuturesRoot,
   mentorChartLines,
+  mentorLevelLabel,
+  mentorKindLabel,
+  mentorEMACurves,
+  mentorEMATf,
+  mentorBoxRects,
+  AXIS_LABEL_MIN_GAP,
+  dedupeAxisLabels,
+  mentorEMALocationSegment,
   mentorStaleMark,
   mentorTrendSegments,
   orderPriceLines,
@@ -106,21 +114,66 @@ describe('mentorChartLines', () => {
       })
     )
     const byLabel = Object.fromEntries(lines.map((l) => [l.label, l.price]))
-    expect(byLabel['mentor key level']).toBe(30000)
-    expect(byLabel['mentor old high/low · also 30110']).toBe(30100)
-    expect(byLabel['mentor 5m trigger']).toBe(30050)
-    expect(byLabel['mentor 4h trigger']).toBe(29900)
-    expect(byLabel['mentor EMA34 location']).toBe(30020)
-    expect(byLabel['mentor box top']).toBe(30200)
-    expect(byLabel['mentor box bottom']).toBe(30180)
+    expect(byLabel['mentor key level 30000']).toBe(30000)
+    expect(byLabel['mentor old high/low 30100 · also 30110']).toBe(30100)
+    expect(byLabel['mentor 5m trigger 30050']).toBe(30050)
+    // 4h trigger and the swing TP both sit at 29900 -> ONE merged axis label
+    expect(byLabel['mentor 4h trigger 29900 + swing position TP']).toBe(29900)
+    // m325: the EMA34 location line is NOT a flat line — it is a short
+    // right-edge segment (mentorEMALocationSegment), never a full-width line.
+    expect(byLabel['mentor EMA34 location']).toBeUndefined()
+    // m421b: a paired top/bottom is a RECTANGLE (mentorBoxRects), not 2 lines
+    expect(byLabel['mentor box top']).toBeUndefined()
+    expect(byLabel['mentor box bottom']).toBeUndefined()
     expect(byLabel['mentor ISB 5m high']).toBe(30060)
     expect(byLabel['mentor ISB 5m low']).toBe(30040)
     expect(byLabel['mentor ORB high (escaped long)']).toBe(30070)
     expect(byLabel['mentor swing line (4h EMA34)']).toBe(29800)
     expect(byLabel['swing position SL']).toBe(29780)
-    expect(byLabel['swing position TP']).toBe(29900)
+    expect(lines.filter((l) => l.price === 29900)).toHaveLength(2)
     // A trendline is sloped: never drawn as a flat line at today's value.
     expect(lines.some((l) => l.label.includes('trendline'))).toBe(false)
+  })
+
+  it('never draws ema34 / ema9 / ema34_htf as flat lines (key_level still drawn)', () => {
+    const lines = mentorChartLines(
+      truth({
+        levels: [
+          {
+            key: 'kl',
+            kind: 'key_level',
+            price: 30000,
+            drawn_at: 0,
+            visits_today: 0,
+          },
+          {
+            key: 'e34',
+            kind: 'ema34',
+            price: 29609.78,
+            drawn_at: 0,
+            visits_today: 0,
+          },
+          {
+            key: 'e9',
+            kind: 'ema9',
+            price: 29612.99,
+            drawn_at: 0,
+            visits_today: 0,
+          },
+          {
+            key: 'ehtf',
+            kind: 'ema34_htf',
+            price: 29609.52,
+            drawn_at: 0,
+            visits_today: 0,
+          },
+        ],
+      })
+    )
+    expect(lines.some((l) => l.label === 'mentor key level 30000')).toBe(true)
+    expect(
+      lines.some((l) => l.label.includes('EMA34') || l.label.includes('EMA9'))
+    ).toBe(false)
   })
 
   it('draws nothing when mentor mode is off, and nothing invented while computing', () => {
@@ -148,6 +201,29 @@ describe('mentorChartLines', () => {
 const bars = (t0Ms: number, stepMs: number, n: number) =>
   Array.from({ length: n }, (_, i) => (t0Ms + i * stepMs) / 1000)
 
+describe('mentorEMALocationSegment', () => {
+  it('draws the EMA34 location as a SHORT right-edge segment, never a flat line', () => {
+    const t0 = 1789480800000
+    const b = bars(t0, 300_000, 6) // 6 five-minute bars, UTC seconds
+    const seg = mentorEMALocationSegment(30020, b)
+    expect(seg).not.toBeNull()
+    expect(seg!.key).toBe('ema34_htf')
+    expect(seg!.label).toBe('EMA34 location (1m, current value)')
+    expect(seg!.points).toHaveLength(2)
+    // both points hold the CURRENT value, spanning only the last drawn bar.
+    expect(seg!.points[0].value).toBe(30020)
+    expect(seg!.points[1].value).toBe(30020)
+    expect(seg!.points[0].time).toBe(b[b.length - 2])
+    expect(seg!.points[1].time).toBe(b[b.length - 1])
+  })
+
+  it('returns null with no price or no bars', () => {
+    expect(mentorEMALocationSegment(undefined, [1])).toBeNull()
+    expect(mentorEMALocationSegment(0, [1])).toBeNull()
+    expect(mentorEMALocationSegment(30020, [])).toBeNull()
+  })
+})
+
 describe('mentorTrendSegments', () => {
   it('snaps anchors to the bar grid and re-values them on the same line', () => {
     const t0 = 1789480800000
@@ -162,23 +238,27 @@ describe('mentorTrendSegments', () => {
           now_ms: t0 + 960_000,
           now_px: 101,
           in_level: true,
+          valid: true,
         },
       ],
       bars(t0, 300_000, 6)
     )
-    expect(seg.label).toBe('mentor trendline (resistance)')
+    expect(seg.label).toBe('trend line ✓ (resistance)')
+    expect(seg.lineWidth).toBe(2)
+    expect(seg.style).toBe(0)
+    // m134: VALID extends to the right edge (the last drawn bar).
     expect(seg.points.map((p) => p.time)).toEqual([
       t0 / 1000,
       (t0 + 600_000) / 1000,
-      (t0 + 900_000) / 1000,
+      (t0 + 1_500_000) / 1000,
     ])
-    // slope = -6 / 600000 per ms: 110.6 at t0, 104.6 at +10m, 101.6 at +15m
+    // slope = -6 / 600000 per ms: 110.6 at t0, 104.6 at +10m, 95.6 at +25m
     expect(seg.points.map((p) => Math.round(p.value * 100) / 100)).toEqual([
-      110.6, 104.6, 101.6,
+      110.6, 104.6, 95.6,
     ])
   })
 
-  it('ends a box-suppressed line at its second anchor and says it is not traded', () => {
+  it('a FORMING line is thin dashed muted, says "waiting for 3rd touch", and extends dashed to the right edge', () => {
     const [seg] = mentorTrendSegments(
       [
         {
@@ -190,12 +270,46 @@ describe('mentorTrendSegments', () => {
           now_ms: 0,
           now_px: 0,
           in_level: false,
+          valid: false,
         },
       ],
       bars(0, 60_000, 5)
     )
-    expect(seg.points).toHaveLength(2)
+    expect(seg.label).toBe('trend line (support — waiting for 3rd touch)')
+    expect(seg.label).not.toContain('not traded')
+    expect(seg.lineWidth).toBe(1)
+    expect(seg.style).toBe(2)
+    // m328: a forming line extends DASHED to the right edge ("kéo dài"), never
+    // mislabelled "not traded" and never stopped at its second anchor.
+    expect(seg.points).toHaveLength(3)
+    expect(seg.points[seg.points.length - 1].time).toBe(240_000 / 1000)
+  })
+
+  it('a box-suppressed VALID line is muted dashed, says "not traded", and extends dashed to the right edge', () => {
+    const [seg] = mentorTrendSegments(
+      [
+        {
+          side: 'long',
+          p0_ms: 0,
+          p0_px: 1,
+          p1_ms: 120_000,
+          p1_px: 3,
+          now_ms: 0,
+          now_px: 0,
+          in_level: false,
+          valid: true,
+        },
+      ],
+      bars(0, 60_000, 5)
+    )
+    // m328: a VALID line inside a box (not traded) is muted + thin + dashed but
+    // STILL extends to the right edge — only a traded valid line is solid.
+    expect(seg.label).toContain('trend line ✓')
     expect(seg.label).toContain('not traded')
+    expect(seg.lineWidth).toBe(1)
+    expect(seg.style).toBe(2)
+    expect(seg.points).toHaveLength(3)
+    expect(seg.points[seg.points.length - 1].time).toBe(240_000 / 1000)
   })
 })
 
@@ -217,14 +331,16 @@ describe('UG-6 mentorTrendSegments snaps to the chart bar times', () => {
     now_ms: open + 21 * 3_600_000, // 19:00 UTC → inside the 18:00 bar
     now_px: 116,
     in_level: true,
+    valid: true,
   }
   it('every point is a bar the chart drew (4h, session-aligned)', () => {
     const [seg] = mentorTrendSegments([tl], h4)
     const drawn = new Set(h4)
+    // m134: VALID extends to the right edge (the last drawn 4h bar).
     expect(seg.points.map((p) => p.time)).toEqual([
       (open + 4 * 3_600_000) / 1000,
       (open + 12 * 3_600_000) / 1000,
-      (open + 20 * 3_600_000) / 1000,
+      (open + 28 * 3_600_000) / 1000,
     ])
     for (const p of seg.points) expect(drawn.has(p.time)).toBe(true)
     // re-valued on the same line: slope 1 pt/h → 99 at the 02:00 bar open
@@ -235,7 +351,8 @@ describe('UG-6 mentorTrendSegments snaps to the chart bar times', () => {
     const [seg] = mentorTrendSegments([tl], h12)
     const drawn = new Set(h12)
     for (const p of seg.points) expect(drawn.has(p.time)).toBe(true)
-    expect(seg.points).toHaveLength(2)
+    // m134: p0, p1 and the right edge (the last 12h bar).
+    expect(seg.points).toHaveLength(3)
   })
   it('no bars yet → nothing drawn (never a guessed grid)', () => {
     expect(mentorTrendSegments([tl], [])).toEqual([])
@@ -304,7 +421,7 @@ describe('UG-3 stale mentor lines are marked, never hidden', () => {
   it('every horizontal line carries "stale since HH:MM CT"', () => {
     const lines = mentorChartLines(t, asOf)
     expect(lines).toHaveLength(1)
-    expect(lines[0].label).toBe('mentor key level · stale since 10:07 CT')
+    expect(lines[0].label).toBe('mentor key level 30000 · stale since 10:07 CT')
     expect(lines[0].price).toBe(30000)
   })
   it('trendlines carry it too', () => {
@@ -312,7 +429,7 @@ describe('UG-3 stale mentor lines are marked, never hidden', () => {
     expect(seg.label).toContain('stale since 10:07 CT')
   })
   it('a fresh read carries no mark', () => {
-    expect(mentorChartLines(t)[0].label).toBe('mentor key level')
+    expect(mentorChartLines(t)[0].label).toBe('mentor key level 30000')
     expect(mentorStaleMark(undefined)).toBe('')
   })
 })
@@ -453,5 +570,413 @@ describe('positionBracketLines (T32)', () => {
     ).toEqual([])
     expect(positionBracketLines(undefined)).toEqual([])
     expect(positionBracketLines(null)).toEqual([])
+  })
+})
+
+// m150 — the EMA 9/34 curve is snapped to the drawn bars (it is a 1m series
+// served to charts on any interval; plotted raw it adds extra time slots).
+describe('mentorEMACurves (m150 snap)', () => {
+  const t0 = 1789480800000 // a 5m bar open
+  // 5m chart bars
+  const fiveM = bars(t0, 300_000, 4)
+  // 1m EMA series reaching 33h back — starts well left of barTimes[0].
+  const ema = Array.from({ length: 25 }, (_, i) => ({
+    ms: t0 - 120_000 + i * 60_000, // -2m .. +22m (covers all four 5m bars)
+    ema9: 100 + i,
+    ema34: 200 + i,
+  }))
+
+  it('plots only at drawn bar times, never at the raw 1m times', () => {
+    const curves = mentorEMACurves(ema, fiveM)
+    const drawn = new Set(fiveM)
+    for (const p of [...curves.ema9, ...curves.ema34]) {
+      expect(drawn.has(p.time)).toBe(true)
+    }
+    // Every drawn bar gets a point; the pre-chart -2m/-1m points are dropped.
+    expect(curves.ema9.map((p) => p.time)).toEqual(fiveM)
+  })
+
+  it('takes the LAST EMA value whose own 1m bar has closed at or before each bar close', () => {
+    const curves = mentorEMACurves(ema, fiveM)
+    // bar[0] (t0): close = t0+5m → the last point with open+60s <= close is
+    // ema[6] (open t0+4m → closes t0+5m), value 106.
+    expect(curves.ema9[0].value).toBe(106)
+    expect(curves.ema9[1].value).toBe(111)
+  })
+
+  it('m169: never looks ahead — a point that OPENS at the bar close is excluded until its own bar has closed', () => {
+    // 5m bars [t0, t0+5m]; 1m points at t0+3m (closes t0+4m), t0+4m (closes
+    // t0+5m == bar[0] close) and t0+5m (opens AT bar[0] close, closes t0+6m).
+    const straddle = [
+      { ms: t0 + 180_000, ema9: 1, ema34: 10 },
+      { ms: t0 + 240_000, ema9: 2, ema34: 20 },
+      { ms: t0 + 300_000, ema9: 3, ema34: 30 },
+    ]
+    const twoBars = bars(t0, 300_000, 2)
+    const curves = mentorEMACurves(straddle, twoBars)
+    // bar[0] close t0+5m: the t0+5m point (open == close) is NOT yet valid.
+    expect(curves.ema9.map((p) => p.time)).toEqual([
+      t0 / 1000,
+      (t0 + 300_000) / 1000,
+    ])
+    expect(curves.ema9[0].value).toBe(2)
+    expect(curves.ema34[0].value).toBe(20)
+    // bar[1] close t0+10m: the t0+5m point has now closed → it is the value.
+    expect(curves.ema9[1].value).toBe(3)
+    expect(curves.ema34[1].value).toBe(30)
+  })
+
+  it('m397: a 458-min hole in the series leaves NO held flat values and drawing resumes after it', () => {
+    const m = 60_000
+    const bars1m = bars(t0, m, 600) // 600 continuous 1m candles
+    const holeFrom = 50 // minutes after t0
+    const holeLen = 458
+    const series = Array.from({ length: 600 }, (_, i) => ({
+      ms: t0 + i * m,
+      ema9: 1000 + i,
+      ema34: 2000 + i,
+    })).filter((p) => {
+      const k = (p.ms - t0) / m
+      return k < holeFrom || k >= holeFrom + holeLen
+    })
+    const c = mentorEMACurves(series, bars1m)
+    const drawn = new Set(c.ema9.map((p) => (p.time * 1000 - t0) / m))
+    // inside the hole (past one tolerance interval) nothing is drawn
+    for (let k = holeFrom + 3; k < holeFrom + holeLen; k++) {
+      expect(drawn.has(k)).toBe(false)
+    }
+    // at most ONE bar (the one-1m-bar tolerance) inside the hole holds a value
+    const inHole = c.ema9.filter((p) => {
+      const k = (p.time * 1000 - t0) / m
+      return k >= holeFrom && k < holeFrom + holeLen
+    })
+    expect(inHole.length).toBeLessThanOrEqual(1)
+    // before the hole and after it drawing is live
+    expect(drawn.has(holeFrom - 1)).toBe(true)
+    expect(drawn.has(holeFrom + holeLen + 1)).toBe(true)
+    expect(drawn.has(599)).toBe(true)
+  })
+
+  it('m397: a 5m chart also breaks across a hole but not across ordinary lag', () => {
+    const five = bars(t0, 300_000, 120)
+    const series = Array.from({ length: 600 }, (_, i) => ({
+      ms: t0 + i * 60_000,
+      ema9: i,
+      ema34: i,
+    })).filter((p) => {
+      const k = (p.ms - t0) / 60_000
+      return k < 100 || k >= 400
+    })
+    const c = mentorEMACurves(series, five)
+    const idx = new Set(c.ema9.map((p) => (p.time * 1000 - t0) / 300_000))
+    expect(idx.has(10)).toBe(true) // before the hole
+    expect(idx.has(30)).toBe(false) // inside
+    expect(idx.has(90)).toBe(true) // after (k=450)
+  })
+
+  it('an empty series or no bars yields empty curves', () => {
+    expect(mentorEMACurves([], fiveM)).toEqual({ ema9: [], ema34: [] })
+    expect(mentorEMACurves(ema, [])).toEqual({ ema9: [], ema34: [] })
+  })
+})
+
+// m402 — the engine's EMA follows the mentor's execution frame: 1m for the
+// first 30 min after the 08:30 CT open, then 2m. Each point is read only after
+// ITS OWN bar (60s or 120s) has closed.
+describe('mentorEMACurves (m402 per-point tf_min)', () => {
+  const t0 = 1789480800000
+  const m = 60_000
+  const mixed = [
+    // 1m points: minutes 0..29 (value = minute)
+    ...Array.from({ length: 30 }, (_, i) => ({
+      ms: t0 + i * m,
+      ema9: i,
+      ema34: 500 + i,
+      tf_min: 1 as const,
+    })),
+    // 2m points: bar opens at minutes 30,32,..,58 (value = 1000 + minute)
+    ...Array.from({ length: 15 }, (_, j) => ({
+      ms: t0 + (30 + 2 * j) * m,
+      ema9: 1000 + 30 + 2 * j,
+      ema34: 1500 + 30 + 2 * j,
+      tf_min: 2 as const,
+    })),
+  ]
+  const at = (c: { time: number; value: number }[], minute: number) =>
+    c.find((p) => p.time === t0 / 1000 + minute * 60)?.value
+
+  it('5m chart: correct value per drawn bar, no look-ahead', () => {
+    const c = mentorEMACurves(mixed, bars(t0, 300_000, 12))
+    expect(at(c.ema9, 0)).toBe(4) // close 5m -> 1m pt 4
+    expect(at(c.ema9, 25)).toBe(29) // close 30m -> 1m pt 29
+    // bar 30 (close 35m): 2m pt 32 (closes 34) yes, pt 34 (closes 36) NO
+    expect(at(c.ema9, 30)).toBe(1032)
+    expect(at(c.ema34, 30)).toBe(1532)
+    // bar 35 (close 40m): pt 38 closes 40 -> 1038; pt 40 must not be read
+    expect(at(c.ema9, 35)).toBe(1038)
+    expect(c.ema9.length).toBe(12)
+  })
+
+  it('1m chart: switches at the boundary, 2m points wait for their own close, no flat hold', () => {
+    const c = mentorEMACurves(mixed, bars(t0, m, 60))
+    expect(at(c.ema9, 29)).toBe(29) // close 30m -> 1m pt 29
+    expect(at(c.ema9, 30)).toBe(29) // 2m pt 30 closes 32 -> not yet
+    expect(at(c.ema9, 31)).toBe(1030) // close 32m -> 2m pt 30 closed
+    expect(at(c.ema9, 32)).toBe(1030)
+    expect(at(c.ema9, 33)).toBe(1032)
+    expect(at(c.ema9, 58)).toBe(1056) // close 59m -> 2m pt 58 NOT yet
+    expect(at(c.ema9, 59)).toBe(1058)
+    // every bar drawn: a 2m point's natural lag is not mistaken for a hole
+    expect(c.ema9.length).toBe(60)
+  })
+
+  it('1m chart: a missing 2m span breaks the line instead of holding flat', () => {
+    const holed = mixed.filter(
+      (p) => !(p.tf_min === 2 && p.ms >= t0 + 40 * m && p.ms < t0 + 52 * m)
+    )
+    const c = mentorEMACurves(holed, bars(t0, m, 60))
+    expect(at(c.ema9, 50)).toBeUndefined()
+    expect(at(c.ema9, 58)).toBeDefined()
+  })
+
+  it('absent tf_min behaves exactly as 1m (legacy payload)', () => {
+    const legacy = Array.from({ length: 25 }, (_, i) => ({
+      ms: t0 - 120_000 + i * m,
+      ema9: 100 + i,
+      ema34: 200 + i,
+    }))
+    const tagged = legacy.map((p) => ({ ...p, tf_min: 1 as const }))
+    const five = bars(t0, 300_000, 4)
+    expect(mentorEMACurves(legacy, five)).toEqual(mentorEMACurves(tagged, five))
+    expect(mentorEMACurves(legacy, five).ema9[0].value).toBe(106)
+    expect(mentorEMATf(legacy)).toBe(1)
+  })
+
+  it('labels follow the LAST point tf_min', () => {
+    expect(mentorEMATf(mixed)).toBe(2)
+    expect(mentorEMATf(mixed.slice(0, 30))).toBe(1)
+    expect(mentorEMATf(undefined)).toBe(1)
+    const bt = [t0 / 1000, t0 / 1000 + 60]
+    expect(mentorEMALocationSegment(100, bt, undefined, 2)!.label).toBe(
+      'EMA34 location (2m, current value)'
+    )
+    expect(mentorEMALocationSegment(100, bt, undefined, 1)!.label).toBe(
+      'EMA34 location (1m, current value)'
+    )
+  })
+})
+
+// m150 — FORMING trendlines are capped at the newest 3 per side.
+describe('mentorTrendSegments forming cap (m150)', () => {
+  const t0 = 1789480800000
+  const mk = (side: string, p1Ms: number, valid = false) => ({
+    side,
+    p0_ms: p1Ms - 120_000,
+    p0_px: 100,
+    p1_ms: p1Ms,
+    p1_px: 102,
+    now_ms: p1Ms,
+    now_px: 102,
+    in_level: true,
+    valid,
+  })
+  const grid = bars(t0, 300_000, 40)
+
+  it('keeps only the newest 3 forming lines per side', () => {
+    const tls = [
+      mk('long', t0 + 1 * 300_000),
+      mk('long', t0 + 2 * 300_000),
+      mk('long', t0 + 3 * 300_000),
+      mk('long', t0 + 4 * 300_000), // newest long
+      mk('long', t0 + 5 * 300_000), // newest long (dropped: older than 3)
+      mk('short', t0 + 6 * 300_000),
+    ]
+    const segs = mentorTrendSegments(tls, grid)
+    const long = segs.filter((s) => s.key.startsWith('long:'))
+    const short = segs.filter((s) => s.key.startsWith('short:'))
+    expect(long).toHaveLength(3)
+    expect(short).toHaveLength(1)
+    // The kept forming longs are the newest 3: +3m, +4m, +5m (p1_ms desc).
+    expect(long.map((s) => s.key).sort()).toEqual(
+      [
+        `long:${t0 + 3 * 300_000 - 120_000}:${t0 + 3 * 300_000}`,
+        `long:${t0 + 4 * 300_000 - 120_000}:${t0 + 4 * 300_000}`,
+        `long:${t0 + 5 * 300_000 - 120_000}:${t0 + 5 * 300_000}`,
+      ].sort()
+    )
+  })
+
+  it('VALID lines are never capped', () => {
+    const tls = Array.from({ length: 8 }, (_, i) =>
+      mk('long', t0 + i * 300_000, true)
+    )
+    expect(mentorTrendSegments(tls, grid)).toHaveLength(8)
+  })
+})
+
+describe('m421b C6: boxes as rectangles, distinct labels, de-stacked axis', () => {
+  const lvl = (key: string, kind: string, price: number, extra = {}) => ({
+    key,
+    kind,
+    price,
+    drawn_at: 0,
+    visits_today: 0,
+    ...extra,
+  })
+  const boxLevels = (extra = {}) => [
+    lvl('ftgh:29100.00:29080.00:top', 'ftgh_edge', 29100, extra),
+    lvl('ftgh:29100.00:29080.00:bottom', 'ftgl_edge', 29080, extra),
+  ]
+  const bars = [1000, 1060, 1120, 1180, 1240]
+
+  it('a paired box is ONE rectangle (formation -> last bar) and no dotted lines', () => {
+    const t = truth({ levels: boxLevels({ drawn_at: 1100_000 }) })
+    const rects = mentorBoxRects(t, bars)
+    expect(rects).toHaveLength(1)
+    expect(rects[0]).toMatchObject({
+      top: 29100,
+      bottom: 29080,
+      startTime: 1060, // snapped to the bar at/before 1100 s
+      endTime: 1240, // live: the last bar
+    })
+    expect(mentorChartLines(t).some((l) => l.label.includes('box'))).toBe(false)
+  })
+
+  it('uses the box own end time when it ended; falls back to the first bar with no start', () => {
+    const ended = mentorBoxRects(
+      truth({ levels: boxLevels({ formed_ms: 1060_000, ended_ms: 1180_000 }) }),
+      bars
+    )
+    expect([ended[0].startTime, ended[0].endTime]).toEqual([1060, 1180])
+    const nostart = mentorBoxRects(truth({ levels: boxLevels() }), bars)
+    expect(nostart[0].startTime).toBe(1000)
+    expect(mentorBoxRects(truth({ levels: boxLevels() }), [])).toEqual([])
+  })
+
+  it('an unpaired edge stays a line', () => {
+    const t = truth({
+      levels: [lvl('ftgh:1:2:top', 'ftgh_edge', 29100)],
+    })
+    expect(mentorBoxRects(t, bars)).toEqual([])
+    expect(mentorChartLines(t).map((l) => l.label)).toEqual(['mentor box top'])
+  })
+
+  it('key levels carry distinct labels', () => {
+    const labels = mentorChartLines(
+      truth({
+        levels: [
+          lvl('key_level:29029.75:1', 'key_level', 29029.75),
+          lvl('old_extreme:29177.75', 'old_extreme', 29177.75),
+        ],
+      })
+    ).map((l) => l.label)
+    expect(labels).toEqual([
+      'mentor key level 29029.75',
+      'mentor old high/low 29177.75',
+    ])
+  })
+
+  it('keeps every line but shows ONE axis label per cluster', () => {
+    const out = dedupeAxisLabels([
+      { price: 100, label: 'old high' },
+      { price: 100.25, label: 'ISB 5m high' },
+      { price: 200, label: 'far' },
+    ])
+    expect(out).toHaveLength(3)
+    expect(out[0].label).toBe('old high + ISB 5m high')
+    expect(out[0].axisLabel).toBeUndefined()
+    expect(out[1].axisLabel).toBe(false)
+    expect(out[2]).toEqual({ price: 200, label: 'far' })
+  })
+
+  // m427/11 — the cluster edge. Two lines EXACTLY AXIS_LABEL_MIN_GAP (4) apart
+  // are NOT a cluster (the test is `< minGap`); 3.99 apart is.
+  it('lines exactly 4 pts apart keep their own axis labels; 3.99 apart merge', () => {
+    expect(AXIS_LABEL_MIN_GAP).toBe(4)
+    const exact = dedupeAxisLabels([
+      { price: 100, label: 'a' },
+      { price: 104, label: 'b' },
+    ])
+    expect(exact[0].label).toBe('a')
+    expect(exact[1].axisLabel).toBeUndefined()
+    expect(exact[1].label).toBe('b')
+    const inside = dedupeAxisLabels([
+      { price: 100, label: 'a' },
+      { price: 103.99, label: 'b' },
+    ])
+    expect(inside[0].label).toBe('a + b')
+    expect(inside[1].axisLabel).toBe(false)
+  })
+  it('lines 2 pts apart merge under the DEFAULT gap (not a 1-pt gap)', () => {
+    const out = dedupeAxisLabels([
+      { price: 100, label: 'a' },
+      { price: 102, label: 'b' },
+    ])
+    expect(out[1].axisLabel).toBe(false)
+  })
+})
+
+describe('m428 R2 flat support / resistance labels', () => {
+  it('names a flat swing pair "support" / "resistance", an ordinary old extreme stays "old high/low"', () => {
+    expect(
+      mentorLevelLabel({
+        kind: 'old_extreme',
+        key: 'old_extreme:flat_support:29171.25',
+        price: 29171.25,
+      })
+    ).toBe('support 29171.25')
+    expect(
+      mentorLevelLabel({
+        kind: 'old_extreme',
+        key: 'old_extreme:flat_resistance:29216.25',
+        price: 29216.25,
+      })
+    ).toBe('resistance 29216.25')
+    expect(mentorKindLabel('old_extreme', 'old_extreme:29278.75')).toBe(
+      'old high/low'
+    )
+  })
+})
+
+describe('m465 P5: the D4.3 wick zone draws as ONE rectangle', () => {
+  const lvl = (key: string, price: number) => ({
+    key,
+    kind: 'wick_zone',
+    price,
+    drawn_at: 1060_000,
+    visits_today: 0,
+    formed_ms: 1060_000,
+    tf: '5m',
+  })
+  const bars = [1000, 1060, 1120, 1180, 1240]
+
+  it('pairs the near and far edge into a box extended to the last bar, no lines', () => {
+    const t = truth({
+      levels: [
+        lvl('wick_zone:short:1060000:bottom', 29628),
+        lvl('wick_zone:short:1060000:top', 29642),
+      ],
+    })
+    const rects = mentorBoxRects(t, bars)
+    expect(rects).toHaveLength(1)
+    expect(rects[0]).toMatchObject({
+      top: 29642,
+      bottom: 29628,
+      startTime: 1060,
+      endTime: 1240,
+    })
+    expect(rects[0].label).toContain('D4.3 wick supply box 5m 29642-29628')
+    expect(mentorChartLines(t).some((l) => l.label.includes('wick'))).toBe(
+      false
+    )
+  })
+
+  it('names the side', () => {
+    expect(mentorKindLabel('wick_zone', 'wick_zone:long:1:top')).toBe(
+      'wick demand zone'
+    )
+    expect(mentorKindLabel('wick_zone', 'wick_zone:short:1:bottom')).toBe(
+      'wick supply zone'
+    )
   })
 })

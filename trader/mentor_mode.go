@@ -26,50 +26,92 @@ import (
 // Mentor size-table defaults (CTO defaults; the owner changes them per
 // strategy via the knobs above).
 const (
-	mentorBaseContractsDefault = 4
-	// MENTOR-SIZE-4 (owner order 2026-10-16, "set to 4 at least, sell 2 first
-	// so it's equal"): every intraday tier sizes 4 MNQ — the split sells 2
-	// first (leg 1) and holds 2 (the runner), equal halves. This OVERRIDES the
-	// course's "fixed 5" (1.1 p2 L1103, 3.4 p3 L531, slide 5) and the "reduce
-	// size" tier-3 rules (D4.1 p1 @04:37–05:04) — the reduced band no longer
-	// cuts below 4. The tiers stay (they still report WHY a trade qualified),
-	// but the count is 4. The knobs mentor_base_contracts /
+	mentorBaseContractsDefault = 5
+	// MENTOR-SIZE-5 (course D1.1 p2 L1103 "Cái sizing của em Cố định là 5 MNQ"
+	// + 3.4 p3 L531 + slide 5; m186 "all exactly like mentor" reverts the
+	// 2026-10-16 MENTOR-SIZE-4 flatten): the base, confluence and big tiers all
+	// size a FIXED 5 MNQ — the mentor does not ADD contracts on confluence or a
+	// big move as a RULE, he sizes 5 and only sizes up on his own read of a big
+	// move (D1.1 p2 @10:37–10:44 "Sẽ có những lúc em thấy được Market nó sẽ có
+	// một cái big move / Nên là em tự tin em tăng size"). The reduced tier
+	// (D4.1 p1 @04:37–05:04 rules 2+3 "giảm size") is 3 — it actually reduces.
+	// The tiers stay (they still report WHY a trade qualified), but the count is
+	// the course's. The knobs mentor_base_contracts /
 	// mentor_confluence_contracts / mentor_big_contracts /
 	// mentor_reduced_contracts stay so the owner can still choose otherwise;
 	// mentor_max_contracts (20) is a ceiling only.
-	mentorConfluenceContractsDefault = 4
-	mentorBigContractsDefault        = 4
-	mentorReducedContractsDefault    = 4
+	mentorConfluenceContractsDefault = mentorBaseContractsDefault
+	mentorBigContractsDefault        = mentorBaseContractsDefault
+	mentorReducedContractsDefault    = 3
 	mentorSwing4HContractsDefault    = 2 // 2 MNQ — the course runs ≥ 2 to sell part and hold the runner [D5.2 p2 @06:08–06:23 "Nhưng đừng vô 1 MNQ / Vô Addict là 2 của MNQ để có đường bắn bớt"]
 	mentorSpentDayContractsDefault   = 2
 	mentorMaxContractsDefault        = 20 // ceiling only — no tier sizes to it by default
 
-	mentorTargetBigPts       = 30.0 // target ≥ this for the big tier
-	mentorRoomBigMultiple    = 2.0  // room ≥ this × risk for the big tier
-	mentorStopTwentiesMinPts = 20.0 // stop ≥ 20 and < the ISB ceiling → reduced [D3.3 p1 @ 01:09]; the band top is the mentor_isb_max_pts knob (default 30 — one number, no second constant)
+	// Confluence and "big" do not buy contracts — D3.4 p3 @07:52 "tự tin, mạnh
+	// mẽ, hold cái lệnh đó, at least là risk reward 1-2" is a LONGER HOLD (exit
+	// C, ≥ 1:2), never a size-up. The invented "big" trigger (target ≥ 30 + room
+	// ≥ 2x + 4h&1h agree) is removed by W-MENTOR-EXACT; both tiers default to
+	// base so a confluence/big entry sizes exactly like a base entry.
+	mentorStopTwentiesMinPts = 20.0 // stop > 20 and ≤ the setup ceiling (mentorStopCeilingFor: PHL/PLH/BOX 25; ISB 20 since m466 → empty band) → reduced [D3.3 p1 @ 01:09]
+
+	// mentorStopLadderReducedTopPts is the top of the stop-to-size ladder's
+	// reduced band: a non-swing stop in (20, 30] sizes the reduced tier (3) —
+	// "Cái nến INSHABA này tầm 20 điểm, 30 điểm... Tôi vô size 3 hoặc tôi
+	// không trade... 12 điểm. Ok, tôi vô size 5" [OctD2.2-R73 @01:12:32, frame
+	// s_04345.jpg: −12.25 pts / 49 ticks]. Above it → mentor_wide_stop_contracts
+	// [OctD2.3-R47 @48:12], with no upper limit unless a positive
+	// mentor_wide_stop_max_pts is stored (owner order 2026-11-15).
+	mentorStopLadderReducedTopPts = 30.0
 )
 
 // mentorTierInputs is everything the size table reads. The trader computes
 // these from the intent + evaluator filters; tests pin the table itself.
 type mentorTierInputs struct {
-	Setup         string  // "ISB", "PHL", "PLH", "SWING4H"
-	StopPts       float64 // |entry - stop|
-	TargetPts     float64 // |target - entry|
-	RoomMultiple  float64 // reward/risk actually available
-	Confluence    bool    // box/zone + key level + 5m trigger agreeing (§6)
-	HTFAgree      bool    // 4h AND 1h agree
-	SpentDay      bool    // §7 spent day
-	StrongDay     bool    // S9: 5m candles running 50–80 pts → size 1–2
-	ISBOldExtreme bool    // ISB at an old high/low → the reduced tier (4 under owner order 2026-10-16) [D4.1 p1 @04:37–05:04 rule 2]
-	ISBInRange    bool    // ISB traded inside a range → the reduced tier (4 under owner order 2026-10-16) [D4.1 p1 @04:37–05:04 rule 3]
+	Setup        string  // "ISB", "PHL", "PLH", "SWING4H"
+	StopPts      float64 // |entry - stop|
+	TargetPts    float64 // |target - entry|
+	RoomMultiple float64 // reward/risk actually available
+	Confluence   bool    // box entry + 5m trigger agreeing at the real entry, or 15m/5m/1m ISBs aligned (§6; C52 W1)
+	HTFAgree     bool    // 4h AND 1h agree
+	SpentDay     bool    // §7 spent day
+	StrongDay    bool    // S9: 5m candles running 50–80 pts → size 1–2
+
+	ISBOldExtreme bool // ISB at an old high/low → the reduced tier (3) [D4.1 p1 @04:37–05:04 rule 2]
+	ISBInRange    bool // ISB traded inside a range → the reduced tier (3) [D4.1 p1 @04:37–05:04 rule 3]
+	Counter5m     bool // D5.4-SCALP: the entry is opposite to the governing 5m trigger (FlagCounter5m, knob counter_5m_reduce_size) → the reduced tier [OctD5.4-R11 @04:47]
+	PullbackWarn  bool // X11: 5m candle broke the prior 5m low in a 5m uptrend (mirror: the high in a downtrend) against an entry WITH that trend → size down [Go over lớp học @00:13:21–00:15:19]
+
+	// ExecTFMin (m465 P4, D3.1-R30) is the frame the entry was READ on — the
+	// intent's ExecTFMin (kernel/mentor/mentor.go Intent.ExecTFMin): 2 = a 2m
+	// entry, 5 = a 5m entry, 0/1 = the 1m. A 2m+ ISB/PHL/PLH entry is the
+	// reduced tier: "khi anh chị vô lệnh khung 2 phút, stop loss lớn hơn khung
+	// 1 phút… Mình phải giảm size" [D3.1 p1 @14:09–14:35].
+	ExecTFMin int
+	// Exec2mReduceOff is the knob mentor_2m_reduce_size turned OFF (false = the
+	// zero value = ON, the course default; a bare table test runs the course).
+	Exec2mReduceOff bool
 
 	// Rule-gate limits resolved from the strategy (mentorTuningResolve / the
 	// course-exits resolver): the SAME numbers the evaluator reads. Zero (a
 	// bare table test) falls back to the kernel defaults, never to a second
 	// constant.
 	SwingMaxStopPts    float64
+	SwingSkipStopPts   float64 // m463 D5.2-R31: mentor_swing_max_stop_pts (kernel SwingCfg.SkipStopPts, default 80 since answers-1112 Q13; 90 reverts) — a swing stop ABOVE it is refused
 	SpentDayStopCapPts float64
-	ISBMaxStopPts      float64 // the R8 ceiling = mentor_isb_max_pts (kernel CourseExits.ISBMaxStopPts, default 30)
+	ISBMaxStopPts      float64 // the ISB R8 ceiling = mentor_isb_max_pts (kernel CourseExits.ISBMaxStopPts, default 20 since m466; PHL/PLH/BOX: mentorStopCeilingFor → 25)
+
+	// Stop-to-size LADDER (owner order 2026-11-10; store.RiskControlConfig
+	// MentorStopSizeLadder / MentorWideStopContracts / MentorWideStopMaxPts,
+	// resolved by mentorCourseExitsResolve). StopLadderOff is the knob turned
+	// OFF (false = the zero value = ON, the default — a bare table test runs
+	// the ladder). WideStopContracts 0 → 1. WideStopMaxPts 0 → NO stop-size
+	// cap (the kernel default since owner order 2026-11-15 "tarde all isb or
+	// any thing just need adjust contact"); a positive value is the stored
+	// cap (revert 40). The resolver never hands a negative/NaN here — a bad
+	// stored value fails closed to 40 (mentorWideStopMaxResolve).
+	StopLadderOff     bool
+	WideStopContracts int
+	WideStopMaxPts    float64
 }
 
 // mentorSizeChoice is the tier decision: contracts, the tier name and why.
@@ -79,15 +121,116 @@ type mentorSizeChoice struct {
 	Why       string
 }
 
+// mentorSwingWideStopContracts is the course's top of the "1-2 MNQ and sit"
+// band for a swing whose stop reaches the ceiling.
+const mentorSwingWideStopContracts = 2
+
+// mentorSwingCeiling is the swing stop ceiling (swing_max_stop_pts, resolved
+// into the inputs; 0 -> the kernel default 100). One number, shared with the
+// kernel SwingCfg.MaxStopPts.
+func mentorSwingCeiling(in mentorTierInputs) float64 {
+	if in.SwingMaxStopPts > 0 {
+		return in.SwingMaxStopPts
+	}
+	return mentor.DefaultSwingCfg().MaxStopPts
+}
+
+// mentorSwingWideStopCap returns the MNQ cap for a swing whose stop is at or
+// beyond the ceiling, 0 when the stop is under it (normal swing size).
+func mentorSwingWideStopCap(in mentorTierInputs) int {
+	if in.StopPts >= mentorSwingCeiling(in) {
+		return mentorSwingWideStopContracts
+	}
+	return 0
+}
+
 // mentorContractsFor is THE size table (pure — the call site the tests pin).
 // Order matters: ISB reductions → swing4h → stop-in-the-reduced-band → big →
 // confluence → base, every branch capped at maxContracts. A non-positive max
 // refuses (fail-closed). B12 (CTO 1791041016051): the stop-in-the-band cut
-// wins over confluence sizing — a 20–<ceiling pt stop is the reduced tier
-// (4 under owner order 2026-10-16), never a raised tier. P1-5: the swing ranks
-// BEFORE the band, so a swing stop in [20,30) sizes by the swing tier, never
-// the reduced tier.
+// wins over confluence sizing — a 20–<ceiling pt stop is the reduced tier (3,
+// the course's tier), never a raised tier. P1-5: the swing ranks BEFORE the
+// band, so a swing stop in [20,30) sizes by the swing tier, never the reduced
+// tier.
+//
+// NEVER RAISE SIZE AFTER A LOSS [D1.1 p1 @16:39–16:50] is satisfied by ABSENCE:
+// the size table has no loss input — the tier is a pure function of the setup's
+// geometry/location, never of how the last trade went. Nothing here (or at the
+// call site) can size a trade UP because the previous one lost.
 func mentorContractsFor(in mentorTierInputs, base, conf, big, reduced, swing4h, spentCap, maxContracts int) (mentorSizeChoice, error) {
+	choice, err := mentorTierFor(in, base, conf, big, reduced, swing4h, spentCap, maxContracts)
+	if err != nil {
+		return choice, err
+	}
+	return mentorStopLadderCap(in, choice, reduced, maxContracts), nil
+}
+
+// mentorStopLadderCap is the stop-to-size LADDER (owner order 2026-11-10:
+// "stop loss can adjust contract to fit like mentor said ... cause some day
+// it go big"), applied AFTER the tier table to every non-SWING4H setup:
+//
+//	stop ≤ 20          → the tier unchanged;
+//	stop in (20, 30]   → at most the reduced tier (3) [OctD2.2-R73 @01:12:32];
+//	stop > 30          → at most mentor_wide_stop_contracts (1) [OctD2.3-R47 @48:12],
+//	                     NO upper limit by default (owner order 2026-11-15);
+//	stop > a STORED mentor_wide_stop_max_pts → never reaches here (kernel + R8
+//	                     refuse it; only with a stored positive max, revert 40).
+//
+// It only ever LOWERS the size — min(the tier the setup earned, the ladder
+// cap) — and never touches the target: "giảm size only chứ không có tăng
+// target" [OctD2.2-R49 @40:47]. SWING4H keeps its own tiers (its stop sits
+// at the 4h line and has its own ceilings, D5.2). Ladder OFF → the choice
+// unchanged (the pre-ladder bot exactly).
+func mentorStopLadderCap(in mentorTierInputs, choice mentorSizeChoice, reduced, maxContracts int) mentorSizeChoice {
+	if in.StopLadderOff || strings.EqualFold(strings.TrimSpace(in.Setup), "SWING4H") || in.StopPts <= mentorStopTwentiesMinPts {
+		return choice
+	}
+	// wideMax ≤ 0 = no stop-size cap (owner order 2026-11-15); a positive
+	// value is the stored cap. No fallback to a second default: 0 IS the
+	// kernel default.
+	wideMax := in.WideStopMaxPts
+	var limit int
+	var tier, why string
+	if in.StopPts <= mentorStopLadderReducedTopPts {
+		limit, tier = reduced, "stop_ladder_reduced"
+		why = fmt.Sprintf("stop %.1f pts in the 20–30 band → size %d, the target unchanged [mentor_stop_size_ladder; OctD2.2-R73 @01:12:32 \"tầm 20 điểm, 30 điểm… Tôi vô size 3 hoặc tôi không trade\"; OctD2.2-R49 @40:47 \"giảm size only chứ không có tăng target\"]",
+			in.StopPts, reduced)
+	} else {
+		limit = in.WideStopContracts
+		if limit <= 0 {
+			limit = mentorWideStopContractsDefault
+		}
+		tier = "stop_ladder_wide"
+		capNote := ""
+		if reduced > 0 && limit > reduced {
+			// A wider stop is never sized BIGGER than a narrower one: the wide tier
+			// is min(wide, reduced) [OctD2.2-R49 @40:47 "giảm size only"].
+			limit = reduced
+			capNote = fmt.Sprintf(", capped at the reduced tier %d (mentor_wide_stop_contracts is above it)", reduced)
+		}
+		var rangeNote string
+		if wideMax <= 0 {
+			rangeNote = "no stop-size cap — mentor_wide_stop_max_pts unset, owner order 2026-11-15 \"trade all isb or anything just need adjust contract\""
+		} else if in.StopPts <= wideMax {
+			rangeNote = fmt.Sprintf("≤ the %g-pt mentor_wide_stop_max_pts", wideMax)
+		} else {
+			rangeNote = fmt.Sprintf("above the %g-pt mentor_wide_stop_max_pts, admitted by the stored mentor_isb_max_pts / stop ceiling (the ladder never narrows a setup's ceiling)", wideMax)
+		}
+		why = fmt.Sprintf("stop %.1f pts above 30 (%s) → %d MNQ%s, the target unchanged [mentor_stop_size_ladder / mentor_wide_stop_contracts; OctD2.3-R47 @48:12 \"40 điểm… Trade vẫn được. 1 MNQ\"; OctD2.2-R49 @40:47]",
+			in.StopPts, rangeNote, limit, capNote)
+	}
+	if limit > maxContracts {
+		limit = maxContracts
+	}
+	if choice.Contracts <= limit {
+		return choice // the ladder only LOWERS — the setup's own tier is already at or under it
+	}
+	return mentorSizeChoice{Contracts: limit, Tier: tier, Why: fmt.Sprintf("%s (the setup earned %d, tier %s)", why, choice.Contracts, choice.Tier)}
+}
+
+// mentorTierFor is the tier table BEFORE the stop-to-size ladder (the
+// pre-ladder mentorContractsFor body, unchanged).
+func mentorTierFor(in mentorTierInputs, base, conf, big, reduced, swing4h, spentCap, maxContracts int) (mentorSizeChoice, error) {
 	if maxContracts <= 0 {
 		return mentorSizeChoice{}, fmt.Errorf("mentor size: mentor_max_contracts not set (max=%d)", maxContracts)
 	}
@@ -104,21 +247,46 @@ func mentorContractsFor(in mentorTierInputs, base, conf, big, reduced, swing4h, 
 	// (mentorSpentDayRunnerCap) in the exit drive. spentCap remains the
 	// spent-day knob value for DS-103's split redesign.
 	_ = spentCap
-	// ISB at an old high/low → the reduced tier (4 under owner order
-	// 2026-10-16; owner ruling 00:1x CT, written rule 2, D4.1 p1 @04:37–05:04:
-	// "ở ngay đỉnh hoặc đáy cũ… giảm size… là cái thứ 2"). The flag comes from
-	// DS-103's evaluator and is only ever set for ISB setups. It beats
-	// big/confluence — the location REDUCES whatever the setup would otherwise
-	// earn.
+	// ISB at an old high/low → the reduced tier 3 (owner ruling 00:1x CT,
+	// written rule 2, D4.1 p1 @04:37–05:04: "ở ngay đỉnh hoặc đáy cũ… giảm size…
+	// là cái thứ 2"). The flag comes from DS-103's evaluator and is only ever
+	// set for ISB setups. It beats big/confluence — the location REDUCES
+	// whatever the setup would otherwise earn. m186 reverts the 2026-10-16
+	// "no longer cuts below 4" flatten: reduced is 3 again.
 	if in.ISBOldExtreme {
-		return mentorSizeChoice{Contracts: clamp(reduced), Tier: "isb_old_extreme", Why: "ISB at an old high/low → the reduced tier (owner order 2026-10-16: 4, the band no longer cuts below 4) [D4.1 p1 @04:37–05:04 written rule 2]"}, nil
+		return mentorSizeChoice{Contracts: clamp(reduced), Tier: "isb_old_extreme", Why: "ISB at an old high/low → the reduced tier 3 [D4.1 p1 @04:37–05:04 written rule 2]"}, nil
 	}
-	// ISB traded inside a range → the reduced tier (written rule 3, D4.1 p1
-	// @04:37–05:04: "Khi trade isb in-range bắt buộc giảm size"). Owner order
-	// 2026-10-16: the reduced band no longer cuts below 4. Ranks the same as
-	// the old-extreme reduction; strong day and spent day (2) win.
+	// ISB traded inside a range → the reduced tier 3 (written rule 3, D4.1 p1
+	// @04:37–05:04: "Khi trade isb in-range bắt buộc giảm size"). Ranks the same
+	// as the old-extreme reduction; strong day and spent day (2) win.
 	if in.ISBInRange {
-		return mentorSizeChoice{Contracts: clamp(reduced), Tier: "isb_in_range", Why: "ISB traded inside a range → the reduced tier (owner order 2026-10-16: 4) [D4.1 p1 @04:37–05:04 written rule 3]"}, nil
+		return mentorSizeChoice{Contracts: clamp(reduced), Tier: "isb_in_range", Why: "ISB traded inside a range → the reduced tier 3 [D4.1 p1 @04:37–05:04 written rule 3]"}, nil
+	}
+	// X11 pullback warning: a 5m candle broke the prior 5m low in a 5m uptrend
+	// (mirror for a downtrend; the flag is already side-aware, C52-W10 B20) →
+	// size down ("giảm size lại cũng được") [X11 @13:21–15:02, quote @14:50–15:00].
+	if in.PullbackWarn {
+		return mentorSizeChoice{Contracts: clamp(reduced), Tier: "pullback_warn", Why: "5m pullback warning → the reduced tier (size down) [X11 @13:21–15:02]"}, nil
+	}
+	// D5.4-SCALP (oct round 2, OctD5.4-R11 @04:47 "giảm size lại", R13 @05:00 "ăn
+	// ít lại"): a counter-5m entry sizes down. The course names no count — the
+	// reduced tier is the course's "giảm size" tier. The evaluator only stamps the
+	// flag while counter_5m_reduce_size is on, so off = today's table.
+	if in.Counter5m {
+		return mentorSizeChoice{Contracts: clamp(reduced), Tier: "counter_5m", Why: "entry against the 5m trigger (the 1m scalp) → the reduced tier [OctD5.4-R11 @04:47 \"giảm size lại\", R13 @05:00 \"ăn ít lại\"; counter_5m_reduce_size]"}, nil
+	}
+	// m465 P4 (D3.1-R30): an ISB/PHL/PLH entry READ on the 2m (or the slow-
+	// evening 5m) has a bigger stop than the 1m, so it sizes DOWN — "khi anh
+	// chị vô lệnh khung 2 phút, stop loss lớn hơn khung 1 phút… Mình phải giảm
+	// size" [D3.1 p1 @14:09–14:35] (his 2m entry candle: 15.50 pts / 62 ticks).
+	// The course names no count; the cut is the bot's reduced tier (3, the
+	// course's "giảm size" tier [D4.1 p1 @04:37–05:04]) — the exact number is
+	// an open mentor question. SWING4H (the 4h line, its own tier) and BOX are
+	// untouched. Knob mentor_2m_reduce_size (nil → ON; OFF → the 1m tiers).
+	if in.ExecTFMin >= 2 && !in.Exec2mReduceOff && mentorIs2mReduceSetup(in.Setup) {
+		return mentorSizeChoice{Contracts: clamp(reduced), Tier: "exec_2m_reduce", Why: fmt.Sprintf(
+			"%s entry read on the %dm (stop %.1f pts) → a bigger stop than the 1m, the reduced tier [D3.1 p1 @14:09–14:35 \"Mình phải giảm size\"; mentor_2m_reduce_size]",
+			in.Setup, in.ExecTFMin, in.StopPts)}, nil
 	}
 	// SWING4H ranks BEFORE the reduced stop band (P1-5): a swing stop sits AT
 	// the 4h line (swing4h.go:606-608) and can be any size under 100, so a
@@ -137,37 +305,110 @@ func mentorContractsFor(in mentorTierInputs, base, conf, big, reduced, swing4h, 
 			return mentorSizeChoice{Contracts: clamp(strong), Tier: "strong_day", Why: fmt.Sprintf(
 				"strong day — the SWING sizes min(2, base %d) = %d, never above the base [D5.2 p2 @05:21–05:57]", swing4h, strong)}, nil
 		}
+		// B5 (#45 review): the ~100-pt SIZING ceiling. A swing whose stop
+		// reaches SwingMaxStopPts goes out at min(base, 2) MNQ — "anh chị có
+		// thể lấy 1 hay 2 contract" [D5.2 p2 @21:25-21:43] — whatever the
+		// owner's swing knob says. One number: mentorSwingWideStopCap. m463: a
+		// stop ABOVE mentor_swing_max_stop_pts (default 80) never gets here —
+		// the rule gate refuses it (D5.2-R31); this tier only bites when the
+		// owner raises that ceiling to >= this one.
+		if wide := mentorSwingWideStopCap(in); wide > 0 {
+			n := swing4h
+			if n > wide {
+				n = wide
+			}
+			return mentorSizeChoice{Contracts: clamp(n), Tier: "swing4h_wide_stop", Why: fmt.Sprintf(
+				"SWING4H stop %.1f pts >= the %.0f-pt sizing ceiling -> min(base %d, %d) = %d MNQ, sized down [D5.2 p2 @21:25-21:43]",
+				in.StopPts, mentorSwingCeiling(in), swing4h, wide, n)}, nil
+		}
 		return mentorSizeChoice{Contracts: clamp(swing4h), Tier: "swing4h", Why: fmt.Sprintf(
 			"SWING4H setup — %d MNQ (course 2: 'Nhưng đừng vô 1 MNQ / Vô Addict là 2 của MNQ để có đường bắn bớt' [D5.2 p2 @06:08–06:23])", swing4h)}, nil
 	}
-	// B12 (CTO 1791041016051): a stop in the 20–<ceiling band cuts to the
-	// reduced tier (4 under owner order 2026-10-16) and wins over confluence
-	// sizing — "reduce size or don't trade" [D3.3 p1 @ 01:09] is a rule about
-	// the STOP, so it outranks the confluence tier. The band top is the
-	// mentor_isb_max_pts knob (kernel CourseExits.ISBMaxStopPts, default 30) —
-	// one number, not two (P2-1).
-	bandTop := in.ISBMaxStopPts
-	if bandTop <= 0 {
-		bandTop = mentor.DefaultConfig().CourseExits.ISBMaxStopPts
-	}
-	if in.StopPts >= mentorStopTwentiesMinPts && in.StopPts < bandTop {
+	// B12 (CTO 1791041016051): a stop in the 20–25 band cuts to the reduced
+	// tier (3, the course's tier) and wins over confluence — "reduce size or
+	// don't trade" [D3.3 p1 @ 01:09] is a rule about the STOP, so it outranks
+	// the confluence tier. The band top is the mentor_isb_max_pts knob (kernel
+	// CourseExits.ISBMaxStopPts, default 20 since m466) — one number, not two (P2-1).
+	// W-MENTOR-EXACT: the skip is "trên nữa thì thôi" (> 25), so the reduce
+	// band is (20, 25] and the evaluator refuses > 25 before sizing.
+	// m466 G23 (D4.1-R12 "inside bar mà nó hai mươi mấy điểm… đừng vô" [D4.1
+	// p1 @05:41–06:08]): the band top is the setup's own ceiling
+	// (mentorStopCeilingFor) — for an ISB the ceiling is 20 at default, so the
+	// ISB 20–25 band is UNREACHABLE at default (the kernel and R8 refuse > 20
+	// first); it is reached only with a stored mentor_isb_max_pts above 20.
+	// PHL/PLH/BOX keep the (20, 25] band (D3.3-R1/R4).
+	bandTop := mentorStopCeilingFor(in.Setup, in.ISBMaxStopPts)
+	if in.StopPts > mentorStopTwentiesMinPts && in.StopPts <= bandTop {
+		note := ""
+		if mentorIsISBSetup(in.Setup) {
+			note = " (ISB: reachable only with a stored mentor_isb_max_pts above 20 — D4.1 p1 @05:41–06:08)"
+		}
 		return mentorSizeChoice{Contracts: clamp(reduced), Tier: "reduced", Why: fmt.Sprintf(
-			"stop %.1f pts in the 20–<%.0f band → reduce size or don't trade [D3.3 p1 @ 01:09]", in.StopPts, bandTop)}, nil
-	}
-	if in.Confluence && in.HTFAgree && in.RoomMultiple >= mentorRoomBigMultiple && in.TargetPts >= mentorTargetBigPts {
-		n := clamp(big)
-		return mentorSizeChoice{Contracts: n, Tier: "big", Why: fmt.Sprintf(
-			"confluence + 4h&1h agree + room %.1fx ≥ %.0fx + target %.1f pts ≥ %.0f — size stays %d (tier count; owner default 4 MNQ, order 2026-10-16%s)",
-			in.RoomMultiple, mentorRoomBigMultiple, in.TargetPts, mentorTargetBigPts, n, mentorSizeKnobOverrideNote(big, mentorBigContractsDefault))}, nil
+			"stop %.1f pts in the 20–25 band → reduce size or don't trade [D3.3 p1 @ 01:09]%s", in.StopPts, note)}, nil
 	}
 	if in.Confluence {
 		n := clamp(conf)
 		return mentorSizeChoice{Contracts: n, Tier: "confluence", Why: fmt.Sprintf(
-			"confluence (hold ≥ 1:2, size stays %d — tier count; owner default 4 MNQ, order 2026-10-16%s) [3.4 p3 L531]",
+			"confluence (hold ≥ 1:2, does not buy contracts — size %d%s) [D3.4 p3 @07:52]",
 			n, mentorSizeKnobOverrideNote(conf, mentorConfluenceContractsDefault))}, nil
 	}
 	return mentorSizeChoice{Contracts: clamp(base), Tier: "base", Why: fmt.Sprintf(
 		"base setup at a location (setup %s, stop %.1f pts)", in.Setup, in.StopPts)}, nil
+}
+
+// mentorIsISBSetup reports the setups the ISB ceiling (mentor_isb_max_pts)
+// governs at the trader: the "ISB" tag (the 1m/2m inside bar and the reverse
+// ISB when it is not re-tagged PHL/PLH — the kernel refuses a reverse ISB over
+// the ISB ceiling before it is tagged, ISBStopVerdict).
+func mentorIsISBSetup(setup string) bool {
+	return strings.EqualFold(strings.TrimSpace(setup), "ISB")
+}
+
+// mentorStopCeilingFor is the trader's non-swing stop ceiling for one setup —
+// the R8 skip and the top of the B12 reduced band. ISB → the resolved
+// mentor_isb_max_pts (unset/0 → the kernel default 20, m466 G23 D4.1-R12).
+// Every other non-swing setup (PHL/PLH/BOX) → the D3.3-R1 25 (the kernel's
+// Config.StopCeilingPts, the ceiling phl.go/box_trade.go refuse at), or the
+// ISB knob when the owner stored one ABOVE it — before #61 the ISB knob was
+// the ceiling for every setup, so a raised knob still raises them all and
+// nothing a stored value allowed is narrowed.
+func mentorStopCeilingFor(setup string, isbMax float64) float64 {
+	if isbMax <= 0 {
+		isbMax = mentor.DefaultConfig().CourseExits.ISBMaxStopPts
+	}
+	if mentorIsISBSetup(setup) {
+		return isbMax
+	}
+	general := mentor.DefaultConfig().StopCeilingPts
+	if isbMax > general {
+		return isbMax
+	}
+	return general
+}
+
+// mentorStopLadderRefuseCeiling is the R8 skip ceiling with the stop-to-size
+// ladder applied: the kernel's own mentor.StopLadderCeiling on the resolved
+// knobs (ladder OFF → ceiling unchanged; ON with wide max 0 → +Inf, no
+// stop-size cap, owner order 2026-11-15; ON with a stored positive wide max →
+// max(ceiling, wide max); ON with a negative/NaN/±Inf wide max → fails closed
+// to the kernel's WideStopMaxFailClosedPts 40). The +Inf is only ever COMPARED (R8 `stop > wide`),
+// never formatted, logged or stored.
+func mentorStopLadderRefuseCeiling(ceiling float64, in mentorTierInputs) float64 {
+	var cfg mentor.Config
+	cfg.CourseExits.StopSizeLadder = !in.StopLadderOff
+	cfg.CourseExits.WideStopMaxPts = in.WideStopMaxPts // 0 = no cap, the kernel default
+	return mentor.StopLadderCeiling(cfg, ceiling)
+}
+
+// mentorIs2mReduceSetup — the setups the D3.1-R30 2m size cut applies to:
+// the ISB pair and PHL/PLH, the two setups the X5-10 exec-2m schedule reads on
+// the 2m ("Mình trade khung 2 phút … potential high low" [X8 @15:52–15:57]).
+func mentorIs2mReduceSetup(setup string) bool {
+	switch strings.ToUpper(setup) {
+	case "ISB", "PHL", "PLH":
+		return true
+	}
+	return false
 }
 
 // mentorSizeKnobOverrideNote reports whether a tier count came from an owner
@@ -363,9 +604,31 @@ func (at *AutoTrader) mentorStaleDataBlockBootLine() string {
 // other mentor knobs. Each resolver is the single defaults site, and
 // mentorEvaluatorConfig applies every one of them to the evaluator.
 
-// mentorLegBudgetEnabled — G1 leg budget: nil → ON (default).
+// mentorLegBudgetEnabled — G1 leg budget.
+// OCT-EXACT A1 row 9: nil → OFF. D3.1 E1 shows ~10 orders in a row [Oct D3.1-R24
+// @08:14-08:47 (11-01, 17:00-18:00)], so the 2-per-leg budget (X15) is contrary;
+// a stored true reverts.
 func mentorLegBudgetEnabled(rc *store.RiskControlConfig) bool {
-	return rc == nil || rc.MentorLegBudgetEnabled == nil || *rc.MentorLegBudgetEnabled
+	return rc != nil && rc.MentorLegBudgetEnabled != nil && *rc.MentorLegBudgetEnabled
+}
+
+// mentorNewsHoldEnabled — OCT-EXACT A1 row 7: mentor_news_hold_enabled (mentor_tuning),
+// nil → OFF; a stored true reverts to the 07:20–07:35 hold + news flatten.
+func (at *AutoTrader) mentorNewsHoldEnabled() bool {
+	rc := at.mentorRiskControl()
+	return rc != nil && rc.MentorTuning != nil && rc.MentorTuning.MentorNewsHoldEnabled != nil && *rc.MentorTuning.MentorNewsHoldEnabled
+}
+
+// mentorNewsFlattenEnabled — review fix (fidelity P2): the cancel + flatten at print -10m is the
+// safety half of the news window and stays ON by default ("safety stays"), independent of the
+// entry hold. mentor_news_flatten_enabled=false is the explicit owner acceptance of holding through
+// a print. October has no news rule either way (silence is not a reason to drop a safety flatten).
+func (at *AutoTrader) mentorNewsFlattenEnabled() bool {
+	rc := at.mentorRiskControl()
+	if rc != nil && rc.MentorTuning != nil && rc.MentorTuning.MentorNewsFlattenEnabled != nil {
+		return *rc.MentorTuning.MentorNewsFlattenEnabled
+	}
+	return true
 }
 
 // mentorLegResetOn — G1 parity knob: "close" default; a bad value fails
@@ -394,15 +657,15 @@ func mentorLvlRevisitMinPts(rc *store.RiskControlConfig) float64 {
 
 // mentorEmaMaxCross30m — E4 knob: refuse the EMA34 setup when the close
 // crossed the line this many times over the last 30 closed 1m candles.
-// Default ON (item 16, CTO 23:49Z): 2 — the most conservative of the replay
-// rows v5_ema_cross2/4. MENTOR QUESTION OPEN: the course states no count
-// (frame D4.2 p1 @22:28 shows the indicator OFF); nil → 2, &0 = OFF (W32 F-5:
-// the documented OFF is now reachable).
+// REMOVED default (#45 — the mentor gives no count: D4.2 p1 @22:27-22:30 is
+// qualitative "xien len xien xuong", and the "not respected → off" rule is
+// E2's loss relock). nil → 0 (OFF); an explicit 2-4 re-enables the numeric
+// gate; &0 = OFF (W32 F-5).
 func mentorEmaMaxCross30m(rc *store.RiskControlConfig) int {
 	if rc != nil && rc.MentorEmaMaxCross30m != nil {
 		return *rc.MentorEmaMaxCross30m
 	}
-	return 2
+	return 0
 }
 
 // mentorLocationTriggerFilter — the 5m trigger filter at locations (L3: kept
@@ -502,8 +765,21 @@ func (at *AutoTrader) mentorAdmitRefusal(in admitIntent) string {
 // mentorPastDailyHaltCutoff (B3 N6) is the mentor's one hard last-entry: no new
 // mentor entry after 15:45 CT — the 15-minute lead into the 16:00 CT daily
 // maintenance break (which CMEClosedReason then refuses 16:00–17:00).
+//
+// m471 L1-1: on a SHORTENED day the halt is the early close (12:15 on 11-27 and
+// 12-24), and the 15:45 rule never fired — a mentor arm was admitted up to
+// 12:14:59, inside the minutes before the halt. The same 15-minute lead now applies to
+// the early close (12:00 on a 12:15 day), which is before the shortened-day
+// flat (early close − earlyCloseFlatMarginMin), so nothing is opened only to
+// be flattened or carried over the holiday.
 func (at *AutoTrader) mentorPastDailyHaltCutoff(now time.Time) (string, bool) {
 	ct := now.In(kernel.CTLocation())
+	if closeMin, early, ok := earlyCloseOfTradingDay(now); ok {
+		cut := closeMin - mentorEarlyCloseLeadMin
+		if ctMinutesNow(now) >= cut {
+			return fmt.Sprintf("past %02d:%02d CT (shortened day: CME early close %s CT) — no new mentor entries until the next reopen", cut/60, cut%60, early), true
+		}
+	}
 	if ct.Hour() == 15 && ct.Minute() >= 45 {
 		return "past 15:45 CT (CME daily halt) — no new mentor entries until the 17:00 reopen", true
 	}
@@ -626,23 +902,44 @@ func mentorRuleGate(in mentor.Intent, extra mentorTierInputs) string {
 	stop := mentorIntentRisk(in)
 	target := mentorIntentTargetPts(in)
 	if swing {
-		swingMax := extra.SwingMaxStopPts
-		if swingMax <= 0 {
-			swingMax = mentor.DefaultSwingCfg().MaxStopPts
+		// m463 D5.2-R31 — REVERSES m186 (owner order 2026-11-01 "full of it",
+		// after being shown the quote): "mà stop loss ở level gần cả trăm điểm
+		// thì không ngon nữa… 100 điểm quá nhiều rủi ro" [D5.2 p2 @19:34–21:43]
+		// (his example 91.75). A swing stop ABOVE mentor_swing_max_stop_pts
+		// (default 80 since answers-1112 Q13: "7-80 điểm … cứ vô 1-2" [Sept
+		// D5.2 p2 @05:25-05:33]; 90 reverts) is refused. The kernel refuses first (swing_max_stop);
+		// this is the trader's backstop on the SAME resolved number. The B5
+		// sizing ceiling (extra.SwingMaxStopPts, 100) only matters when the
+		// owner raises this one above it.
+		skip := extra.SwingSkipStopPts
+		if skip <= 0 {
+			skip = mentor.DefaultSwingCfg().SkipStopPts
 		}
-		if stop >= swingMax {
-			return fmt.Sprintf("R8: SWING4H stop %.1f pts — a stop at or over %.0f is skipped [D5.2; owner ruling 2026-10-04 R-D] (the ISB stop ceiling does not apply to the swing)", stop, swingMax)
+		if stop > skip+1e-6 { // float noise only, never a tick
+			return fmt.Sprintf("R31: swing stop %.2f pts above the %.0f-pt ceiling (mentor_swing_max_stop_pts) — \"7-80 điểm … cứ vô 1-2 cũng được\" is the most the course allows [D5.2 p2 @05:25-05:33]; \"100 điểm quá nhiều rủi ro\", đừng vô [D5.2 p2 @19:34–21:43]", stop, skip)
 		}
 	} else {
 		// R8 reads the SAME knob as the kernel — mentor_isb_max_pts
-		// (CourseExits.ISBMaxStopPts, default 30). One number, not two (P2-1):
-		// a raised knob must also raise the trader's own ceiling.
-		isbMax := extra.ISBMaxStopPts
-		if isbMax <= 0 {
-			isbMax = mentor.DefaultConfig().CourseExits.ISBMaxStopPts
-		}
-		if stop >= isbMax {
-			return fmt.Sprintf("R8: stop %.1f pts at/over the %.0f-pt ceiling — skip (the swing is the only exemption)", stop, isbMax)
+		// (CourseExits.ISBMaxStopPts). One number, not two (P2-1): a raised
+		// knob must also raise the trader's own ceiling. Only ABOVE the
+		// ceiling is skipped. m466 G23: the ISB ceiling is 20 at default
+		// ("hai mươi mấy điểm, làm ơn giúp em đừng vô" [D4.1 p1 @05:41–06:08]);
+		// PHL/PLH/BOX keep the D3.3-R1 25 ("hơn 20, 25 đổ lại ok, chứ mà trên
+		// nữa thì thôi" [D3.3 p1 @01:59–02:09]) — mentorStopCeilingFor.
+		ceiling := mentorStopCeilingFor(in.Setup, extra.ISBMaxStopPts)
+		// Stop-to-size ladder (owner order 2026-11-10): ON lifts the skip —
+		// to NO stop-size cap by default (mentor_wide_stop_max_pts 0, owner
+		// order 2026-11-15 "tarde all isb or any thing just need adjust
+		// contact"), or to a stored positive mentor_wide_stop_max_pts (revert
+		// 40) — the SAME kernel function (mentor.StopLadderCeiling) the
+		// evaluator refuses at; the size table then sizes the stop DOWN
+		// [OctD2.2-R73 @01:12:32, OctD2.3-R47 @48:12]. OFF = unchanged. The
+		// +Inf no-cap ceiling is never formatted: `stop > +Inf` is false.
+		if wide := mentorStopLadderRefuseCeiling(ceiling, extra); stop > wide {
+			if wide > ceiling {
+				return fmt.Sprintf("R8: stop %.1f pts above the %g-pt mentor_wide_stop_max_pts ceiling — skip, \"40 điểm thì mình làm gì? Mình không trade\" [OctD2.3-R47 @48:12, R48 @49:38] (the swing is the only exemption)", stop, wide)
+			}
+			return fmt.Sprintf("R8: stop %.1f pts above the %.0f-pt ceiling — skip (the swing is the only exemption)", stop, ceiling)
 		}
 	}
 	if target > 0 && target < stop {
@@ -652,7 +949,7 @@ func mentorRuleGate(in mentor.Intent, extra mentorTierInputs) string {
 	if spentCap <= 0 {
 		spentCap = mentor.DefaultConfig().DayGateTargetCapPts
 	}
-	// R13 [D5.2 §6]: DayOff does not stop the swing, so the spent-day stop cap
+	// R13 [D5.2 p1 @06:03–06:20] (course section 6): DayOff does not stop the swing, so the spent-day stop cap
 	// must not either — the overnight SWING4H is exempt from the R9 cap.
 	if extra.SpentDay && !swing && stop > spentCap {
 		return fmt.Sprintf("R9: spent day cap %.0f — stop %.1f pts skips", spentCap, stop)
@@ -675,11 +972,20 @@ func (at *AutoTrader) mentorSizeFor(in mentor.Intent, extra mentorTierInputs) (m
 	extra.Setup = in.Setup
 	// ISB size rules 2 and 3 (D4.1 p1 @04:37–05:04, written): the evaluator
 	// stamps Intent.Flag on an ISB at an old high/low or inside a range; here
-	// the flags reach the size table, which cuts both to the reduced tier
-	// (4 under owner order 2026-10-16). Set at the ONE sizing call site so no
-	// caller can forget them.
+	// the flags reach the size table, which cuts both to the reduced tier 3
+	// (the course's tier). Set at the ONE sizing call site so no caller can
+	// forget them.
 	extra.ISBOldExtreme = extra.ISBOldExtreme || mentor.HasFlag(in.Flag, mentor.FlagISBAtOldExtreme)
 	extra.ISBInRange = extra.ISBInRange || mentor.HasFlag(in.Flag, mentor.FlagISBInRange)
+	extra.PullbackWarn = extra.PullbackWarn || mentor.HasFlag(in.Flag, mentor.FlagPullbackWarn)
+	extra.Counter5m = extra.Counter5m || mentor.HasFlag(in.Flag, mentor.FlagCounter5m)
+	// m465 P4 (D3.1-R30): the frame the entry was read on reaches the table —
+	// set HERE, the one sizing call site, so no caller can forget it.
+	extra.ExecTFMin = in.ExecTFMin
+	extra.Exec2mReduceOff = !mentor2mReduceSizeOn(at.mentorRiskControl())
+	// Stop-to-size ladder (owner order 2026-11-10): set HERE too, the one
+	// sizing call site, so no caller can size without the resolved knobs.
+	mentorStopLadderInputs(mentorCourseExitsResolve(at, at.mentorRiskControl()), &extra)
 	// Defence in depth (CTO 1791058442006): the tier inputs are the GEOMETRY
 	// (abs(Price−Stop), abs(Target−Price)), never a bare intent field an
 	// emit site forgot to set — a swing sized as a base trade is the bug this
@@ -703,8 +1009,10 @@ func (at *AutoTrader) mentorSizeFor(in mentor.Intent, extra mentorTierInputs) (m
 	if loc := mentor.LocationOf(in.AnchorKey); loc != "" {
 		where = "at a location: " + loc
 	}
+	// The stop on the line is the GEOMETRY the table read (extra.StopPts) —
+	// in.StopPts is 0 whenever the emit site did not stamp it.
 	at.logInfof("🧑‍🏫 mentor size: %d contracts (tier %s) — %s [setup %s, stop %.1f pts, %s]",
-		choice.Contracts, choice.Tier, choice.Why, in.Setup, in.StopPts, where)
+		choice.Contracts, choice.Tier, choice.Why, in.Setup, extra.StopPts, where)
 	return choice, nil
 }
 
@@ -769,7 +1077,8 @@ type mentorPosition struct {
 
 // mentorSplitLegs splits n into leg 1 (ceil(n/2)) and leg 2 (the runner).
 // runnerCap (spent day: 2) caps the runner so at most that many contracts run
-// after leg 1. Parity: ceil(n/2) equals DS-108's replay half.
+// after leg 1. Parity: ceil(n/2) equals DS-108's replay half. Leg 1 is the 1:1
+// partial — "anh làm gì anh cũng phải bán bớt ở 1:1" [D2.2 p3 @12:13–12:26].
 func mentorSplitLegs(n, runnerCap int) (leg1, leg2 int) {
 	if n <= 0 {
 		return 0, 0
@@ -792,6 +1101,39 @@ const mentorSpentDayRunnerCap = 2
 // forkTP is the exit fork leg-1 target (non-zero only for mode C, >=2R);
 // 0 -> the +1R default (entry +/- R). Spent day caps the runner at 2 (D).
 func mentorLeg1ForFrame(in mentor.Intent, n int, forkMode string, forkTP float64) (leg1Qty int, leg1TP float64) {
+	return mentorLeg1ForFrameFixed(in, n, forkMode, forkTP, 0)
+}
+
+// mentorLeg1FixedApplies reports whether the D2 fixed partial governs this entry:
+// a NORMAL (fork B, no confluence TP) PHL/PLH - the setup gong-loi's trade [Oct
+// D4.2 @12:16 R14]. ISB keeps its own first target (the fill-candle close, Oct
+// D2.2 @28:37), BOX and SWING4H are not in the rule, confluence (C) keeps 2R.
+func mentorLeg1FixedApplies(in mentor.Intent, forkMode string, forkTP, fixedPts float64) bool {
+	return fixedPts > 0 && forkMode == "B" && forkTP == 0 && (in.Setup == "PHL" || in.Setup == "PLH")
+}
+
+// mentorLeg1FixedDist is the D2 leg-1 distance in points: the fixed N, but never
+// under 1R ("anh lam gi anh cung phai ban bot o 1:1" [D2.2 p3 @12:13-12:26], the
+// 1:1 floor stands) and only while the trade target lies beyond it (a target
+// closer than N + 1 pt keeps the +1R partial, leg 1 never sits past the runner's
+// target). 0 = the +1R default.
+func mentorLeg1FixedDist(in mentor.Intent, fixedPts float64) float64 {
+	r := mentorIntentRisk(in)
+	if fixedPts <= r {
+		return 0 // the 1:1 floor is already at or beyond N
+	}
+	if in.Target > 0 && math.Abs(in.Target-in.Price) < fixedPts+1 {
+		return 0
+	}
+	return fixedPts
+}
+
+// mentorLeg1ForFrameFixed is mentorLeg1ForFrame with oct-exact D2 (knob
+// mentor_leg1_fixed_pts, fixedPts 0 = off = today): a normal PHL/PLH sells leg 1
+// at +fixedPts and leaves ONE contract as the runner, then break-even - "bán 15
+// hay 20 điểm, rồi kéo stop ... free run" [Oct D4.2 @12:16 R14], "bán ở 20 điểm
+// và để lại đúng 1 MNQ" [@14:18 R18; the 11-02 28,152.25 buy stop, partial at +15/20].
+func mentorLeg1ForFrameFixed(in mentor.Intent, n int, forkMode string, forkTP, fixedPts float64) (leg1Qty int, leg1TP float64) {
 	if forkMode == "swing" || n <= 1 {
 		return 0, 0
 	}
@@ -807,9 +1149,21 @@ func mentorLeg1ForFrame(in mentor.Intent, n int, forkMode string, forkTP float64
 	// n - runner: with the spent-day cap (D) the contracts the cap takes off
 	// the runner go to leg 1 — never a runner above the cap on the wire.
 	leg1 := n - leg2
+	dist := 0.0
+	if mentorLeg1FixedApplies(in, forkMode, forkTP, fixedPts) {
+		if d := mentorLeg1FixedDist(in, fixedPts); d > 0 {
+			dist = d
+			// one runner: every contract but one goes at the fixed partial
+			// (the spent-day cap D is already <= 1 here).
+			leg1, leg2 = n-1, 1
+		}
+	}
 	tp := forkTP
 	if tp == 0 {
 		r := mentorIntentRisk(in)
+		if dist > 0 {
+			r = dist / mentor.Leg1RiskMultiple(false) // dist in R units of the 1R multiple
+		}
 		if in.Side == mentor.SideShort {
 			tp = in.Price - r*mentor.Leg1RiskMultiple(false)
 		} else {
@@ -831,9 +1185,9 @@ func mentorLeg1TPForC(entry, r float64, side string) float64 {
 
 // mentorConfluenceForIntent is the R2 seam (CTO 1791029620038: "use a stub
 // flag until DS-106's lands"): reports whether the intent carries the
-// confluence flag (box edge + key level inside the box or within 2 pts of its
-// edge + 5m trigger agrees). Wired by mentorWiring to the evaluator's tagged
-// in.Confluence; nil → false — C (size 4) never fires with no wiring.
+// confluence flag (box entry + the 5m trigger agrees at the real entry price,
+// or the 15m/5m/1m ISBs aligned — C52 W1 A1/B9). Wired by mentorWiring to the evaluator's tagged
+// in.Confluence; nil → false — C (size 5) never fires with no wiring.
 var mentorConfluenceForIntent func(in mentor.Intent) bool
 
 // mentorConfluenceFlag resolves the stub seam for one intent.
@@ -883,14 +1237,15 @@ func mentorIntentTargetPts(in mentor.Intent) float64 {
 // loop lands):
 //
 //	swing — SWING4H: hold by the 4h (DS-106's rules).
-//	C     — the confluence flag: hold ≥ 1:2, stop never moves up, size 4
-//	        (4 with 4h+1h agree + room ≥ 2× + target ≥ 30 — owner order
-//	        2026-10-16; the course default 5 MNQ, 1.1 p2 L1103, is superseded).
+//	C     — the confluence flag: hold ≥ 1:2, stop never moves up, size 5
+//	        (the course's fixed 5 — 1.1 p2 L1103; the confluence/big tiers
+//	        report WHY a trade qualified but no longer ADD contracts).
 //	        Leg 1's TP at 2× risk is set AT ENTRY (mentorLeg1TPForC).
 //	B     — normal: leg 1 exits at its +1R TP; the runner's stop follows
 //	        mentor_trail_mode (R3, release #22): candle (default) = break-even
-//	        once leg 1's partial is CONFIRMED filled at NT8, then 1 tick beyond
-//	        each closed candle; off = BE at half the distance to the TRADE's
+//	        once leg 1's partial is CONFIRMED filled at NT8, then one tick
+//	        beyond each closed candle's low/high; off = BE at half the distance
+//	        to the TRADE's
 //	        target, live 1:1, trail after the 1:1 point. A PHL/PLH fill starts
 //	        as B with the resonance watch armed: a same-direction ISB within 3
 //	        candles flips it to A (mentorMaybeArmResonance).
@@ -908,7 +1263,7 @@ func mentorExitFork(in mentor.Intent, confluence bool) (mode string, leg1TP floa
 	case in.Setup == "PHL" || in.Setup == "PLH":
 		return "B", 0, "PHL/PLH: B at entry, resonance watch armed — a same-direction ISB within 3 candles flips to A (BE, no trail; the 1:1 partial still fires)"
 	default:
-		return "B", 0, "normal: leg 1 TP +1R; runner per mentor_trail_mode — candle (default): BE once leg 1's partial FILLS at NT8, then 1 tick beyond each closed 1m candle; off: BE at half the distance to the TRADE's target"
+		return "B", 0, "normal: leg 1 TP +1R; runner per mentor_trail_mode — candle (default): BE once leg 1's partial FILLS at NT8, then one tick beyond each closed 1m candle's low/high; off: BE at half the distance to the TRADE's target"
 	}
 }
 
@@ -1104,32 +1459,54 @@ func mentorExitB(pos mentorPosition, c, h, l float64, trail bool) mentorExitResu
 	return res
 }
 
-// mentorResonanceMaxCandles is the A window: the resonance ISB must appear
-// within 3 candles of the PHL/PLH fill [D2.4 p1 @01:36–02:59].
-const mentorResonanceMaxCandles = 3
+// mentorResonanceMinCandles / mentorResonanceMaxCandles are the A window: the
+// resonance ISB must appear within 3 candles AFTER the PHL/PLH fill — "sau khi
+// nó fill ... trong vòng 3 cây nến sau đó. Đếm 1, 2, 3" [D2.4 p1 @01:36–02:59,
+// @04:44–04:53]. c52 W2 B18: the candles are those of the frame the ENTRY was
+// read on ("nếu mình trade khung nào thì mình gồng theo khung đó" [X8 @18:02–
+// 18:14] — the mentor trades the 2m), not always closed 1m bars, and the count
+// starts at the first candle AFTER the fill candle (mentorLivePos.candlesAfterFill).
+// October D4.2 supersedes the "course is silent" reading: the mentor counts
+// the green candles "1, 2, 3" [Oct D4.2 @ 10:00-10:09] and says "3 toi 4 ...
+// khong co cay thu 5 ... du di lam 4 cay" [Oct D4.2 @ 13:40-13:54], so 3 after
+// the fill candle is the outer bound; keep the value 3. Counting: 3 AFTER the
+// fill candle = 4 counting the fill candle = the R17 outer bound ("3 to 4,
+// never a 5th"); R10's main rule is 3 counting the fill candle from the green
+// candle itself [Oct D4.2 @ 10:00-10:09]. Mentor confirmation pending (B18).
+const (
+	mentorResonanceMinCandles = 1
+	mentorResonanceMaxCandles = 3
+)
 
 // mentorMaybeArmResonance flips an open PHL/PLH position into mode A the
-// moment an ISB in the SAME direction appears within 3 candles of the fill:
-// the REST's stop goes to BREAK-EVEN immediately, NO candle trail. R-RES
+// moment an ISB in the SAME direction appears within 3 entry-frame candles
+// after the fill: the REST's stop goes to BREAK-EVEN immediately, NO candle
+// trail. R-RES
 // (CTO 1791040643329, D2.4 p1 @02:17-02:29 "@03:36-03:45"): the resonance
 // STILL takes the 1:1 partial — "RISK REWARD 1-1 toi van se ban bot" — so
 // leg 1's +1R TP STAYS (no modify).
 //
 // D2-49 (D2.4 p1 @01:56 "resonance breaks the old high 70–80%"): in mode A
-// the RUNNER's target goes BEYOND the old high. runnerTarget is the next
-// level beyond the old extreme (stamped by the evaluator as Intent.RunnerTarget).
-// > 0 → the runner's native TP moves there; 0 → the runner's native TP is
-// REMOVED (the exit is the BE stop or EOD flat, never a near-old-high cap).
+// the RUNNER is not capped at the old high. runnerTarget is the next level
+// beyond the old extreme (stamped by the evaluator as Intent.RunnerTarget);
+// pos.Target keeps it as a belief. Default (knob
+// mentor_resonance_runner_tp_old_high OFF, c52 W2 A3): the caller
+// (mentorResonanceRunnerTP → mentorResonanceRunnerUncap) pushes the runner's
+// native TP far out of reach — the exit is the BE stop, X8 or the EOD flat,
+// never a near-old-high cap; knob ON: the TP moves to runnerTarget instead.
 // Returns (armed, modifyLeg1TP, modifyLeg2TP): leg 1's TP modify is always 0;
-// the runner's TP modify is the third value (0 = remove).
-func mentorMaybeArmResonance(at *AutoTrader, pos *mentorPosition, isbSide string, barsSinceFill int, runnerTarget float64) (armed bool, modifyLeg1TP, modifyLeg2TP float64) {
+// the runner's TP target is the third value (belief only — the wire move is
+// the caller's).
+// candlesAfterFill is mentorLivePos.candlesAfterFill (entry-frame candles after
+// the fill candle).
+func mentorMaybeArmResonance(at *AutoTrader, pos *mentorPosition, isbSide string, candlesAfterFill int, runnerTarget float64) (armed bool, modifyLeg1TP, modifyLeg2TP float64) {
 	if pos == nil || pos.Mode == "A-resonance" {
 		return false, 0, 0
 	}
 	if pos.Origin != "PHL" && pos.Origin != "PLH" {
 		return false, 0, 0 // only a PHL/PLH fill can resonate
 	}
-	if barsSinceFill < 1 || barsSinceFill > mentorResonanceMaxCandles {
+	if candlesAfterFill < mentorResonanceMinCandles || candlesAfterFill > mentorResonanceMaxCandles {
 		return false, 0, 0
 	}
 	if !strings.EqualFold(pos.Side, isbSide) {
@@ -1142,9 +1519,8 @@ func mentorMaybeArmResonance(at *AutoTrader, pos *mentorPosition, isbSide string
 	// confirmed, or once price is on the profit side — and the belief is written
 	// only after the broker applied the move. [D2.4 p1 @03:36–03:45 "mình bán bớt
 	// rồi… thì cứ để break even cho nó chạy".]
-	// D2-49: the runner aims past the old high — move its TP beyond, or remove
-	// it when no level sits beyond (fail-closed: the runner then exits only via
-	// the BE stop or EOD flat, never capped at the near-old-high).
+	// D2-49: the runner aims past the old high (the caller uncaps its TP, or —
+	// knob ON — moves it to the level beyond the old high).
 	pos.Target = runnerTarget
 	at.mentorCount("resonance_armed")
 	// R-RES: leg 1's +1R take-profit STAYS resting — no leg-1 TP modify.
@@ -1168,9 +1544,11 @@ func mentorExitHold(pos mentorPosition, l, h float64, reason string) (exitPrice 
 	return 0, "", false
 }
 
-// mentorExitC applies the confluence hold (C): the stop NEVER moves and there
-// is NO scale-out — hold to at least 1:2. Leg 1's TP at 2× risk is set AT
-// ENTRY (mentorLeg1TPForC); the driver never modifies it.
+// mentorExitC applies the confluence hold (C): the stop NEVER moves and leg 1
+// does not leave at 1R — hold to at least 1:2. Leg 1's TP at 2× risk is set AT
+// ENTRY for a confluence entry (mentorLeg1TPForC); a trade that became C AFTER
+// its entry (mentorConfluenceUpgrade) has that TP moved out to 2× by
+// mentorLeg1TPToC (C52 W1 A2), which the mode-C drive case also re-checks.
 func mentorExitC(pos mentorPosition, l, h float64) (exitPrice float64, exitReason string, exited bool) {
 	return mentorExitHold(pos, l, h, "stop")
 }
@@ -1288,16 +1666,16 @@ func mentorSpentDayClamp(contracts, spentCap int) int {
 	return contracts
 }
 
-// mentorNeverWiden is the pure guard (owner ruling (c), D2.3 p1 @18:08
+// mentorNeverWiden is the pure guard (owner ruling (c), D1.2 p2 @00:08–00:24
 // "Không bao giờ được dời lệnh buy stop của mình xuống cây nến kế tiếp"): a
 // stop amendment that increases open risk is refused — a long stop may only
 // move UP, a short stop only DOWN. Equal is not a widen.
 func mentorNeverWiden(side string, curStop, newStop float64) (refuse bool, why string) {
 	switch {
 	case side == "long" && newStop < curStop:
-		return true, fmt.Sprintf("stop widen refused: long stop %.2f → %.2f increases open risk [D2.3 p1 @18:08]", curStop, newStop)
+		return true, fmt.Sprintf("stop widen refused: long stop %.2f → %.2f increases open risk [D1.2 p2 @00:08–00:24]", curStop, newStop)
 	case side == "short" && newStop > curStop:
-		return true, fmt.Sprintf("stop widen refused: short stop %.2f → %.2f increases open risk [D2.3 p1 @18:08]", curStop, newStop)
+		return true, fmt.Sprintf("stop widen refused: short stop %.2f → %.2f increases open risk [D1.2 p2 @00:08–00:24]", curStop, newStop)
 	}
 	return false, ""
 }

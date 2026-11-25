@@ -1,16 +1,43 @@
 // Dispatch 102 freezes load-bearing identifiers, including their surrounding guards.
+// Wire baseline advanced 2026-10-26 for m433 (fix/m433-install-gate-broker-down), Go-only:
+//   provider/ninjatrader/tcp_server.go  sha256 f5d05417… — the FramePositions case hands an
+//     optional persistence hook (SetPositionsSink) the account and its non-flat count, after
+//     the cache write and outside the lock. ADDITIVE: no wire schema change, no guard removed.
+// Wire baseline advanced 2026-10-23 for m416 (fix/m416-sonnet-final-bar-persist), Go-only:
+//   provider/ninjatrader/tcp_server.go  sha256 d399f97d… — enqueueBarUpdate eviction now spares
+//     final-carrying frames (evictForIngest, ingestEnqMu). No wire schema change.
 // Wire baselines advanced 2026-10-21 for release #43 re-integration:
-//   ninjascript/VLTraderTCPClient.cs sha256 803329a0… — reconnect backoff resets
+//   ninjascript/VLTraderTCPClient.cs sha256 65b120fa… — reconnect backoff resets
 //     only on the server hello, hello-first write gate, unreadable connect.json
 //     classified corrupt, empty-key error (fix/addon-reconnect-json 9639e2e5b,
 //     DS-103) and VL_BUILD_ID advances to 2026-10-21-c; the order name / account
-//     / signal-id contract is untouched.
-//   provider/ninjatrader/tcp_server.go  sha256 63ce7337… — connect-key auth gate
+//     / signal-id contract is untouched. #45: bug-hunt #4 (m227 25e3743dc, DS-103)
+//     re-keys the order_update de-dupe to state:filled so each larger PartFilled
+//     partial is sent — the order-name / account / signal-id contract is untouched.
+//     #46: m337 (f9dfe5e14, DS-103) bumps VL_BUILD_ID to 2026-10-22-a and adds a
+//     sha256 guard over all 6 ninjascript/*.cs files (trader/addon_source_snapshot_test.go);
+//     the wire / order-name / account / signal-id contract is untouched.
+//     #46: m373 (P0, DS-103) fixes order_update FormatException — e.Filled is an
+//     int so ToString("R") throws on every order_update (47× in NT8 log since
+//     #45 boot); drops "R", bumps VL_BUILD_ID to 2026-10-22-b. Contract untouched.
+//     #48: m387 (DS-102) CancelBracketsFor cancels EVERY (account,root)-matched
+//     bracket and retires each key only after its own orders were cancelled
+//     (QUEUE-47); adds the anchored VL_BUILD_ID_ANCHOR marker and bumps
+//     VL_BUILD_ID to 2026-10-22-c. Wire / order-name / account / signal-id
+//     contract untouched.
+//     #48.2: m400 (DS-102) makes VL_BUILD_ID_ANCHOR static readonly (not const)
+//     so the folded marker is a #US user string with a terminal byte instead of
+//     a #Blob const blob that the INSTALLED older reader misread as a trailing
+//     '0'; bumps VL_BUILD_ID to 2026-10-22-d. Wire / order-name / account /
+//     signal-id contract untouched.
+//   provider/ninjatrader/tcp_server.go  sha256 a59169a4… — connect-key auth gate
 //     root fix (fix/connect-key-auth-gate e64281dca, DS-104) + m188 keyed-conn
 //     deadline fix (7f1a89133, CTO): a pre-auth dial is held as a pending conn
 //     and published as s.conn only after a matching hello; the first-hello
 //     deadline is cleared on auth and connGone runs in a closure so a close frees
-//     the slot. Additive; no frame/order/position path changed.
+//     the slot. Additive; no frame/order/position path changed. #45: m220 #36
+//     (ecc0053ea, DS-104) makes sampleIngestDepth session-day aware (CMESessionDayStart)
+//     and CAS against the previously stored day — additive; no wire change.
 // Wire baselines advanced 2026-10-19 for P0 feed-freshness (release #40,
 // C# fix/p0-addon-feed-freshness 52a88a004 + Go/UI fix/p0-feed-freshness-status
 // f5ff7e0ae): the additive feed_status freshness field is added to the TCP wire
@@ -19,6 +46,13 @@
 //   ninjascript/VLTraderTCPClient.cs    sha256 7aae2529… — additive feed_status.
 //   provider/ninjatrader/tcp_framing.go sha256 9b5c00cf… — decode feed_status mode.
 //   provider/ninjatrader/tcp_server.go  sha256 bdd96a75… — session-scope feed mode.
+// go.mod baseline advanced 2026-11-11 for GO-2026-6859 (net/http): the go
+//   directive 1.26.10 -> 1.26.11; no require line changed. sha256 2b9fea8a…
+// go.mod baseline advanced 2026-10-22 for m391 (release #48): the friend app
+//   (cmd/vl-friend) merged from friend/build63 @2ebcd2ee0 promotes
+//   golang.org/x/sys v0.48.0 and golang.org/x/term v0.46.0 from indirect to
+//   direct (cmd/vl-friend/run_windows.go imports both). No wire/identifier
+//   change; the app exe remains byte-identical (fb20c28a).
 // go.mod baseline advanced 2026-10-20 for GO-2026-6809 (release #42): the go
 //   directive 1.26.9 -> 1.26.10 (crypto/x509 fix); no require line changed.
 // go.mod baseline advanced 2026-10-13 for GO-VULN-1026 (owner order 2026-10-13):
@@ -368,6 +402,10 @@ import { expect, it } from 'vitest'
 // ADDON-CLOSE-ROUTING (owner orders 2026-10-14 "recheck verify everything then fix all"; release #24 lane fix/addon-close-routing): ninjascript/VLTraderTCPClient.cs re-pinned 2026-10-14 — close_position honours its `account` field (one by-name resolver shared with the entry path; a named account that cannot be resolved is REFUSED, never another account), the position-owner map is keyed by (root, account), every close refusal sends position_close_rejected, and the 4.3 limit exit is sized to the account's whole position; VL_BUILD_ID 2026-10-13-a -> 2026-10-14-a (owner copy + F5 + NT8 restart). No wire shape change.
 // REL31 LEG-3 BRACKET (owner order 2026-10-16 "release #31"; DS-107 fix/leg3-bracket): ninjascript/VLTraderTCPClient.cs + provider/ninjatrader/tcp_framing.go re-pinned 2026-10-16 — an optional THIRD OCO pair (leg2_qty/leg2_tp) so the runner sells half at the first line beyond the leg-1 exit; ADDITIVE wire fields, VL_BUILD_ID 2026-10-16-a (owner copy + F5 + NT8 restart), old AddOn builds get the 2-leg plan.
 // REL31 FOLD #563 (gate fold, DS-108): ninjascript/VLTraderTCPClient.cs re-pinned 2026-10-16 — both strip chains test -sl3/-tp3 before -sl/-tp (D2), the PlacedBracket record keeps the frame's Leg2Qty/Leg2Tp on every branch so AmendBracketQuantity can build leg 3 on a later fill (D3), and leg 2 is never created/amended to a zero qty after its exit (D10). Same build id 2026-10-16-a.
+// DATA-TRUTH m446 (owner principle 2026-10-29 "nothing related to data loss or incorrect data can continue to trade"; release #54 lane fix/m446-data-truth-checks): provider/ninjatrader/tcp_server.go re-pinned 2026-10-29 (f5d05417… -> 76c0ec3e…) — 8 ADDITIVE lines: the ingest drop sites (evictForIngest x5, enqueueBarHistorical timeout) call noteIngestLoss(msg) so a dropped FINAL or HISTORICAL bar is recorded by identity (symbol, frame, open time) in the data-truth ledger, and drainBarIngest notes the live frame's contract. No counter, no eviction decision, no frame, no identifier changed; the m416 final-sparing eviction order is byte-for-byte as it was.
+// DATA-TRUTH m446 round 1 (review BACK on e4c04d616, D3): provider/ninjatrader/tcp_server.go re-pinned 2026-10-29 (76c0ec3e… -> d74795e6…) — ADDITIVE: enqueueBarHistorical now delegates to enqueueBarHistoricalContract, which carries BarsHistoricalPayload.Contract (parsed since 2026-09-11, dropped here until now) through barIngestMsg, and the drain records it in histContracts after the seed so the contract-roll guard can compare the history the ring was built from with the live contract. No behaviour change on the cache write path.
+// M456 MAINACK (release #56, fix/m456-mainack be7e27c4b): provider/ninjatrader/tcp_server.go re-pinned 2026-10-30 (d74795e6… -> f8a9c10d…) — the connection record is now begun INSIDE the connMu critical section that publishes s.conn, at both publication sites (no-key accept, authenticateKeyHello), so IsConnected() and ConnectionRecord() appear together (lock order connMu -> maint.mu, already the established order); the accept instant is read before connMu; acceptClock becomes an atomic.Pointer (test seam only). No frame, no wire schema, no guard, no identifier changed.
+// LOOK TWICE (incident 11-19 06:47:30; fix/protection-look-twice-1124, owner order 2026-11-24): provider/ninjatrader/tcp_server.go re-pinned 2026-11-24 (f8a9c10d… -> 31402789… -> ebdd7654… after review -> 6c2b2ab9… after the second review (notePositionLevelsLocked at the positions frame and its test seeder: late_frame.go, evidence only) -> 4f5880c3… after the third review (the order_snapshot case files the book with its connection, putFrom: late_book.go, evidence only): SendClosePosition / SendPlaceProtectiveStop delegate to their guarded forms in link_probe.go with a nil guard, closeConn split so one connection can be closed by identity) — evidence hooks only: the receive instants of order_snapshot / positions go through ReceiptNow (time.Now in production), exit-fill stamps at order_update and (before verifyInbound) position_close, heartbeats counted per connection with their acks, a positions-on-this-connection mark, and a record of our own close / protective-stop sends; no wire-schema change, no gate removed
 import baseline from './test/brand-scope-baseline.json'
 
 function verifyScope(path: string, bytes: Buffer, expected: string) {

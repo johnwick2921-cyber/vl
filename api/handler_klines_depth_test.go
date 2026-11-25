@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"vl/kernel"
 	"vl/market"
 	"vl/store"
 )
@@ -13,15 +14,17 @@ import (
 // aggregated from a deep finer rung, capped at the ask, and a ring the finer
 // rung cannot extend passes through unchanged.
 func TestKlinesAggregatedDepthPrependsOlderClosedBuckets(t *testing.T) {
-	now := time.Date(2026, 9, 14, 18, 0, 0, 0, time.UTC)
+	loc := kernel.CTLocation()
+	now := time.Date(2026, 10, 20, 13, 0, 0, 0, loc) // 13:00 CDT
 	base := []market.Kline{
-		{OpenTime: now.Add(-6 * time.Hour).UnixMilli(), Open: 10, High: 11, Low: 9, Close: 10.5},
-		{OpenTime: now.Add(-2 * time.Hour).UnixMilli(), Open: 11, High: 12, Low: 10, Close: 11.5},
+		{OpenTime: time.Date(2026, 10, 20, 9, 0, 0, 0, loc).UnixMilli(), Open: 10, High: 11, Low: 9, Close: 10.5},
+		{OpenTime: time.Date(2026, 10, 20, 13, 0, 0, 0, loc).UnixMilli(), Open: 11, High: 12, Low: 10, Close: 11.5},
 	}
 	one := func(h int) market.Kline {
-		return market.Kline{OpenTime: now.Add(-time.Duration(h) * time.Hour).UnixMilli(), Open: float64(h), High: float64(h) + 1, Low: float64(h) - 1, Close: float64(h) + 0.5, Volume: 1}
+		return market.Kline{OpenTime: time.Date(2026, 10, 20, h, 0, 0, 0, loc).UnixMilli(), Open: float64(h), High: float64(h) + 1, Low: float64(h) - 1, Close: float64(h) + 0.5, Volume: 1}
 	}
-	ring1h := []market.Kline{one(10), one(9), one(8), one(7), one(6), one(5)}
+	// 1h rung 01:00..04:00 CDT — all in the 01:00-05:00 session bucket.
+	ring1h := []market.Kline{one(1), one(2), one(3), one(4)}
 	provider := func(symbol, tf string, count int) []market.Kline {
 		if tf == "1h" {
 			return ring1h
@@ -32,9 +35,9 @@ func TestKlinesAggregatedDepthPrependsOlderClosedBuckets(t *testing.T) {
 	if len(out) != 3 {
 		t.Fatalf("served %d bars, want 3 (1 aggregated closed 4h bucket + 2 base)", len(out))
 	}
-	wantOldest := now.Add(-10 * time.Hour).Truncate(4 * time.Hour).UnixMilli()
+	wantOldest := time.Date(2026, 10, 20, 1, 0, 0, 0, loc).UnixMilli()
 	if out[0].OpenTime != wantOldest {
-		t.Fatalf("oldest served %d, want the 08:00-12:00 aggregated bucket %d", out[0].OpenTime, wantOldest)
+		t.Fatalf("oldest served %d, want the 01:00-05:00 session bucket %d", out[0].OpenTime, wantOldest)
 	}
 	// The AGGREGATED prefix must be closed (the base's own tail may hold the
 	// forming bucket — the chart shows it, the splice never ADDS one).
@@ -53,7 +56,7 @@ func TestKlinesAggregatedDepthFallsBackWhenNoOlder(t *testing.T) {
 		if tf == "1h" {
 			return []market.Kline{{OpenTime: now.Add(-1 * time.Hour).UnixMilli(), Close: 5}}
 		}
-		return base
+		return nil
 	}
 	out := klinesWithAggregatedDepth(base, provider, "MNQ", "4h", 10, now)
 	if len(out) != 1 {
@@ -159,13 +162,14 @@ func TestKlinesNinjaTraderStoreDepthContractFiltered(t *testing.T) {
 // from the finer live rung (closed buckets only). Measured live: after a
 // re-subscribe NT8 returned zero 2h/4h bars while the 1h ring held 1,500.
 func TestKlinesAggregatedDepthFillsEmptyBase(t *testing.T) {
-	now := time.Date(2026, 9, 14, 18, 0, 0, 0, time.UTC)
+	loc := kernel.CTLocation()
+	now := time.Date(2026, 10, 20, 13, 0, 0, 0, loc) // 13:00 CDT
 	one := func(h int) market.Kline {
-		return market.Kline{OpenTime: now.Add(-time.Duration(h) * time.Hour).UnixMilli(), Open: float64(h), High: float64(h) + 1, Low: float64(h) - 1, Close: float64(h) + 0.5, Volume: 1}
+		return market.Kline{OpenTime: time.Date(2026, 10, 20, h, 0, 0, 0, loc).UnixMilli(), Open: float64(h), High: float64(h) + 1, Low: float64(h) - 1, Close: float64(h) + 0.5, Volume: 1}
 	}
-	// 1h rung: 09:00,10:00,11:00,12:00 → one closed 4h bucket (08:00-12:00) and
-	// one bucket (12:00-16:00, closed too). At 18:00 both are closed.
-	ring1h := []market.Kline{one(9), one(8), one(7), one(6)}
+	// 1h rung 01:00..08:00 CDT → two closed 4h session buckets (01:00-05:00 and
+	// 05:00-09:00). At 13:00 both are closed.
+	ring1h := []market.Kline{one(1), one(2), one(3), one(4), one(5), one(6), one(7), one(8)}
 	provider := func(symbol, tf string, count int) []market.Kline {
 		if tf == "1h" {
 			return ring1h
@@ -176,8 +180,8 @@ func TestKlinesAggregatedDepthFillsEmptyBase(t *testing.T) {
 	if len(out) != 2 {
 		t.Fatalf("empty base + deep finer rung must aggregate: got %d 4h bars, want 2", len(out))
 	}
-	if out[0].OpenTime != now.Add(-10*time.Hour).Truncate(4*time.Hour).UnixMilli() {
-		t.Fatalf("oldest aggregated bucket %d, want 08:00", out[0].OpenTime)
+	if out[0].OpenTime != time.Date(2026, 10, 20, 1, 0, 0, 0, loc).UnixMilli() {
+		t.Fatalf("oldest aggregated bucket %d, want 01:00 CDT", out[0].OpenTime)
 	}
 	for _, k := range out {
 		if k.OpenTime+4*3600_000 > now.UnixMilli() {

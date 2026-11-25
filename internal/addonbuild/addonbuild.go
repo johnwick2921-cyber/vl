@@ -74,9 +74,16 @@ var (
 	ErrNoCustomDll     = errors.New("addonbuild: no NinjaTrader.Custom.dll to rebuild")
 )
 
-// nt8DocsGlob is the WSL glob Detect scans. A package var so tests can point it
-// at a temp dir.
+// nt8DocsGlob is the WSL glob Detect scans (the plain Documents path). A
+// package var so tests can point it at a temp dir.
 var nt8DocsGlob = "/mnt/c/Users/*/Documents/NinjaTrader 8"
+
+// nt8OneDriveGlob is the OneDrive-redirected Documents path (m385): Windows
+// folder redirection moves Documents under /mnt/c/Users/<u>/OneDrive/<folder>/,
+// and the redirected folder's name is LOCALIZED (e.g. "Tài liệu" = Documents),
+// so the middle component is a wildcard. A package var so tests can point it at
+// a temp dir.
+var nt8OneDriveGlob = "/mnt/c/Users/*/OneDrive/*/NinjaTrader 8"
 
 // Windows tool locations (W-UPDATER-WINPATH). The vl-updater user unit's PATH
 // has no /mnt/c entries (systemd does not inherit WSL's appendWindowsPath), so
@@ -109,19 +116,22 @@ func resolveWindowsExe(name, fixedWSL string) (string, error) {
 }
 
 // Detect returns the single Documents/NinjaTrader 8 directory (WSL path) that
-// has a bin/Custom folder. More than one candidate is an error naming them;
-// zero is an error.
+// has a bin/Custom folder, scanning BOTH the plain Documents path and the
+// OneDrive-redirected path (m385). More than one candidate is an error naming
+// them; zero is an error.
 func Detect() (docsDir string, err error) {
-	matches, _ := filepath.Glob(nt8DocsGlob)
 	var candidates []string
-	for _, m := range matches {
-		if isDir(filepath.Join(m, "bin", "Custom")) {
-			candidates = append(candidates, m)
+	for _, glob := range []string{nt8DocsGlob, nt8OneDriveGlob} {
+		matches, _ := filepath.Glob(glob)
+		for _, m := range matches {
+			if isDir(filepath.Join(m, "bin", "Custom")) {
+				candidates = append(candidates, m)
+			}
 		}
 	}
 	switch len(candidates) {
 	case 0:
-		return "", fmt.Errorf("%w: glob %q matched %d dir(s), none with bin/Custom", ErrNoNT8Dirs, nt8DocsGlob, len(matches))
+		return "", fmt.Errorf("%w: globs %q + %q matched no dir with bin/Custom", ErrNoNT8Dirs, nt8DocsGlob, nt8OneDriveGlob)
 	case 1:
 		return candidates[0], nil
 	default:
@@ -568,6 +578,12 @@ func clipBuildOut(out []byte) string {
 // returns the backup directory it created (or "" when there was nothing to back
 // up). On a sha mismatch the old DLL stays safe in the backup dir; the worker
 // must not let NT8 start until it restores or replaces the dest DLL.
+//
+// m343 (2026-10-22) — the backup is RECORDED, not just moved: Place writes a
+// sidecar meta (AddonBackupMetaName) next to the backed-up DLL with its sha256
+// and embedded build id, read at the moment it was moved out, so a later
+// restore can refuse a backup whose bytes no longer match what was recorded
+// (verify-on-restore).
 func Place(c Config, dll, sha, jobID string) (backupDir string, err error) {
 	destDir := filepath.Join(c.DocsDir, "bin", "Custom")
 	if !isDir(destDir) {
@@ -581,8 +597,12 @@ func Place(c Config, dll, sha, jobID string) (backupDir string, err error) {
 		if err := os.MkdirAll(backupDir, 0o755); err != nil {
 			return "", fmt.Errorf("addonbuild: mkdir backup: %w", err)
 		}
-		if err := os.Rename(destDll, filepath.Join(backupDir, "VL.AddOn.dll")); err != nil {
+		backupDll := filepath.Join(backupDir, "VL.AddOn.dll")
+		if err := os.Rename(destDll, backupDll); err != nil {
 			return "", fmt.Errorf("addonbuild: move old dll: %w", err)
+		}
+		if err := WriteAddonBackupMeta(backupDir, backupDll); err != nil {
+			return "", fmt.Errorf("addonbuild: record backup meta: %w", err)
 		}
 	}
 

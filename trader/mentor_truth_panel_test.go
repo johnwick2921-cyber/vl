@@ -53,11 +53,12 @@ func TestMentorTruthSnapshotReflectsSeededEvaluator(t *testing.T) {
 	if p.Trigger5m.Dir != "long" || p.Trigger5m.Price != 30000 || p.Trigger5m.Since != 3000 {
 		t.Fatalf("5m trigger = %+v, want long @30000 since 3000", p.Trigger5m)
 	}
-	if len(p.Levels) != 1 || p.Levels[0].Kind != "key_level" || p.Levels[0].Price != 30000 || p.Levels[0].VisitsToday != 2 {
+	if p.Levels == nil || len(*p.Levels) != 1 || (*p.Levels)[0].Kind != "key_level" || (*p.Levels)[0].Price != 30000 || (*p.Levels)[0].VisitsToday != 2 {
 		t.Fatalf("levels = %+v, want one key_level @30000 visited 2x today", p.Levels)
 	}
-	if p.Window.Start != "08:30" || p.Window.Minutes != 60 {
-		t.Fatalf("window = %q/%d, want the default 08:30/60", p.Window.Start, p.Window.Minutes)
+	if p.Window.Start != "08:30" || p.Window.Minutes != 405 {
+		// m472 A6: unset = the RTH band 08:30+405 = 15:15 CT [Oct D5.2 @ 01:00-01:20]; was 08:30/60 [D1.2 p1 @23:49-24:21]
+		t.Fatalf("window = %q/%d, want the default 08:30/405", p.Window.Start, p.Window.Minutes)
 	}
 	if p.DoneAfterWin || p.StopAfterLoss {
 		t.Fatalf("unwired day-stop seams must read not-tripped, got daw=%v sal=%v", p.DoneAfterWin, p.StopAfterLoss)
@@ -80,9 +81,9 @@ func TestMentorTruthSnapshotDisabledWhenMentorOff(t *testing.T) {
 // half of "every reader moves together". Mutant: drop the Enabled early-return
 // in mentorDoneAfterWinTripped (or make the card read the day net directly) →
 // RED.
-func TestMentorTruthSnapshotDoneAfterWinOffWithWonDay(t *testing.T) {
-	at, st := doneAfterWinRig(t, "") // explicit true, then nil below
-	at.config.StrategyConfig.RiskControl.MentorDoneAfterWin = nil
+func TestMentorTruthSnapshotDoneAfterWinOnWithWonDay(t *testing.T) {
+	at, st := doneAfterWinRig(t, "")                                     // explicit true, then nil below
+	at.config.StrategyConfig.RiskControl.MentorDoneAfterWin = bp(true)   // OCT-EXACT A1 row 8: nil is OFF now; the stored true (the revert) is what this pin exercises
 	seedClosedWin(t, st, at.id, nyDayClock(8, 11, 2).UnixMilli(), 31.50) // the 10-16 #660 shape
 
 	pinDoneAfterWinClock(t, 8, 11, 3)
@@ -90,8 +91,8 @@ func TestMentorTruthSnapshotDoneAfterWinOffWithWonDay(t *testing.T) {
 	if !ok || !p.Enabled {
 		t.Fatalf("snapshot must be enabled, got ok=%v enabled=%v", ok, p.Enabled)
 	}
-	if p.DoneAfterWin {
-		t.Fatalf("switch OFF (nil) + a won day: the truth card must NOT show done-after-win, got why=%q", p.DoneAfterWinWhy)
+	if !p.DoneAfterWin {
+		t.Fatalf("switch ON (nil, the course default) + a won day: the truth card must show done-after-win, got why=%q", p.DoneAfterWinWhy)
 	}
 }
 

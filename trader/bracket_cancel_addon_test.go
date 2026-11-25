@@ -269,3 +269,23 @@ func TestRejectedLimitExitDoesNotCancelTheBracket(t *testing.T) {
 			strings.TrimSpace(branch))
 	}
 }
+
+// TestCancelBracketsForCancelsEveryMatchedBracket — QUEUE-47 (DS-104). The
+// (account,instrument) fallback loop used to keep ONLY the LAST matched bracket
+// (`pb = cand` overwrote it) while retiring EVERY matched key, so a second
+// bracket on the same instrument was dropped from tracking with its orders still
+// live. The fix must collect EVERY match and retire each key only after that
+// bracket's own orders were cancelled (a failed cancel leaves the key so a retry
+// can still find it). MUTANT: restore `pb = cand` → RED.
+func TestCancelBracketsForCancelsEveryMatchedBracket(t *testing.T) {
+	body := csharpMethodBody(t, addonSource(t), "private void CancelBracketsFor(")
+	if strings.Contains(body, "pb = cand;") {
+		t.Error("CancelBracketsFor still overwrites pb in the fallback loop — only the last matched bracket is cancelled")
+	}
+	if !strings.Contains(body, "victims.Add(kv)") {
+		t.Error("CancelBracketsFor no longer collects EVERY (account,root)-matched bracket")
+	}
+	if !strings.Contains(body, "placedBrackets.Remove(v.Key)") {
+		t.Error("CancelBracketsFor must retire each key after its own bracket was cancelled (per-key, not a shared keysToRemove list)")
+	}
+}

@@ -40,7 +40,7 @@ func TestClosedBucketsTFKeepsJustCompletedAtPlusOne(t *testing.T) {
 // TestClosedBucketsKeepsJustCompletedAtPlusOne — the 5m variant holds the same
 // contract.
 func TestClosedBucketsKeepsJustCompletedAtPlusOne(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	bars := tfTape(auditMs(2026, 9, 15, 9, 0, 0), 10) // two full 5m buckets
 	last := bars[len(bars)-1]

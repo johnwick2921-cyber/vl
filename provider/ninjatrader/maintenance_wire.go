@@ -127,14 +127,20 @@ func (s *TCPServer) ConnectionRecord() (ConnectionRecord, bool) {
 // time.Now otherwise (DEADMAN-ACCEPT-NS: a test states its own accept instant
 // so a snapshot received in the same millisecond but BEFORE it is deterministic).
 func (s *TCPServer) acceptNow() time.Time {
-	if s.acceptClock != nil {
-		return s.acceptClock()
+	if fn := s.acceptClock.Load(); fn != nil {
+		return (*fn)()
 	}
 	return time.Now()
 }
 
 // SetAcceptClockForTest installs the accept-instant seam (tests only).
-func (s *TCPServer) SetAcceptClockForTest(fn func() time.Time) { s.acceptClock = fn }
+func (s *TCPServer) SetAcceptClockForTest(fn func() time.Time) {
+	if fn == nil {
+		s.acceptClock.Store(nil)
+		return
+	}
+	s.acceptClock.Store(&fn)
+}
 
 // beginConnectionRecord starts a fresh record for an accepted connection.
 func (s *TCPServer) beginConnectionRecord(c net.Conn, now time.Time) {

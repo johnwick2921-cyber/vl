@@ -81,11 +81,21 @@ func (at *AutoTrader) withdrawEntriesIfDue(now time.Time) {
 		return
 	}
 	why := at.withdrawDueReason(now)
+	// m445: missing bars withdraw resting entries too (named in the ledger row).
+	// swingOnly = only the deep window is blocked, so only SWING4H rows go: an
+	// intraday arm placed on a clean intraday window must not be cancelled and
+	// re-authored every beat.
+	var keep func(store.ArmedOrderDB) bool
 	if why == "" {
-		return
+		var swingOnly bool
+		if why, swingOnly = at.integrityWithdrawReason(now); why == "" {
+			return
+		} else if swingOnly {
+			keep = isSwingRow
+		}
 	}
 	ledger := at.store.ArmedOrders()
-	if n := at.withdrawRestingEntries(ledger, why, now); n > 0 {
+	if n := at.withdrawRestingEntriesWhere(ledger, why, now, keep); n > 0 {
 		at.logWarnf("🧹 withdraw (%s): %d resting entry order(s) sent a cancel — each stays cancel_pending until the broker confirms", why, n)
 	}
 	var resend func(string) error
@@ -105,6 +115,12 @@ func (at *AutoTrader) withdrawEntriesIfDue(now time.Time) {
 // withdrawRestingEntries sends the entry-only cancel for every resting entry
 // of this trader and moves it to cancel_pending. Returns how many it asked.
 func (at *AutoTrader) withdrawRestingEntries(ledger *store.ArmedOrderStore, why string, now time.Time) int {
+	return at.withdrawRestingEntriesWhere(ledger, why, now, nil)
+}
+
+// withdrawRestingEntriesWhere is withdrawRestingEntries limited to the rows
+// `only` accepts (nil = every resting entry).
+func (at *AutoTrader) withdrawRestingEntriesWhere(ledger *store.ArmedOrderStore, why string, now time.Time, only func(store.ArmedOrderDB) bool) int {
 	rows, err := ledger.ListNonTerminal(at.id)
 	if err != nil {
 		at.logWarnf("🧹 withdraw (%s): ledger read failed — nothing withdrawn this beat: %v", why, err)
@@ -124,6 +140,9 @@ func (at *AutoTrader) withdrawRestingEntries(ledger *store.ArmedOrderStore, why 
 	for _, r := range rows {
 		if r.TraderID != at.id || strings.TrimSpace(r.SignalID) == "" ||
 			store.IsTerminalArmState(r.State) || r.State == store.StateCancelPending {
+			continue
+		}
+		if only != nil && !only(r) {
 			continue
 		}
 		// The filled-arm guard: a row the ledger still calls working may have

@@ -60,6 +60,10 @@ type contractVerdict struct {
 	Why            string
 	WorkingEntries int
 	OpenPositions  int
+	// OrphanExits (m471 L2-3) counts working "-lx" limit exits while the
+	// account holds NO position: an exit that outlived its position opens one
+	// when it fills, so it commits the account like an entry does.
+	OrphanExits int
 	// FirstOrderID / FirstName name ONE blocking order so the refusal can be
 	// checked against the book by hand (A21: a claim names what it rests on).
 	FirstOrderID string
@@ -83,6 +87,10 @@ func (v contractVerdict) Refusal() string {
 			return fmt.Sprintf("refused: account already committed — %d open position(s) (snapshot %d, book age %s); one contract per account",
 				v.OpenPositions, v.SnapshotID, v.BookAge.Round(time.Second))
 		}
+		if v.WorkingEntries == 0 && v.OrphanExits > 0 {
+			return fmt.Sprintf("refused: account already committed — %d limit exit(s) still working at the broker with NO open position (first %s / %s, snapshot %d, book age %s); it opens a position when it fills — no entry until the book stops listing it",
+				v.OrphanExits, shortID(v.FirstName), shortID(v.FirstOrderID), v.SnapshotID, v.BookAge.Round(time.Second))
+		}
 		return fmt.Sprintf("refused: account already committed — %d working entry order(s) at the broker (first %s / %s, snapshot %d, book age %s); one contract per account",
 			v.WorkingEntries, shortID(v.FirstName), shortID(v.FirstOrderID), v.SnapshotID, v.BookAge.Round(time.Second))
 	case contractUnverifiable:
@@ -102,6 +110,11 @@ func isBracketChild(name string) bool {
 	return strings.HasSuffix(n, "-sl") || strings.HasSuffix(n, "-tp") || strings.HasSuffix(n, "-lx") ||
 		strings.HasSuffix(n, "-sl2") || strings.HasSuffix(n, "-tp2") ||
 		strings.HasSuffix(n, "-sl3") || strings.HasSuffix(n, "-tp3") // release #31: leg-3 bracket
+}
+
+// isLimitExit reports a "<signal>-lx" limit exit (VLTraderTCPClient.cs).
+func isLimitExit(name string) bool {
+	return strings.HasSuffix(strings.ToLower(strings.TrimSpace(name)), "-lx")
 }
 
 // adjudicateAccountContract is the whole decision as a PURE function: book in,
@@ -138,15 +151,23 @@ func adjudicateAccountContract(
 			continue
 		}
 		if isBracketChild(o.Name) {
+			// m471 L2-3: a -lx limit exit protects only while there is a
+			// position to exit. With none it is an order that OPENS one.
+			if openPositions <= 0 && isLimitExit(o.Name) {
+				v.OrphanExits++
+				if v.FirstOrderID == "" {
+					v.FirstOrderID, v.FirstName = o.OrderID, o.Name
+				}
+			}
 			continue
 		}
 		v.WorkingEntries++
-		if v.FirstOrderID == "" {
+		if v.FirstOrderID == "" || v.WorkingEntries == 1 {
 			v.FirstOrderID, v.FirstName = o.OrderID, o.Name
 		}
 	}
 
-	if v.WorkingEntries > 0 || v.OpenPositions > 0 {
+	if v.WorkingEntries > 0 || v.OpenPositions > 0 || v.OrphanExits > 0 {
 		v.Action = contractLive
 		return v
 	}

@@ -23,6 +23,11 @@ func TestResolveBreakerHaltPrecedence(t *testing.T) {
 		c.RiskControl.ConsecutiveLossHalt = v
 		return c
 	}
+	mentorHalt := func(v *int) *StrategyConfig {
+		c := withHalt(v)
+		c.RiskControl.MentorMode = true
+		return c
+	}
 	cases := []struct {
 		name   string
 		cfg    *StrategyConfig
@@ -33,6 +38,10 @@ func TestResolveBreakerHaltPrecedence(t *testing.T) {
 	}{
 		{"nil config, no env → shipped 8", nil, nil, 8, "[I]", SourceShippedDefault},
 		{"absent, no env → shipped 8 (inherit is ON)", withHalt(nil), nil, 8, "[I]", SourceShippedDefault},
+		// [Oct D4.1 @ 14:40] OctD4.1-R28: mentor-mode default is 4; saved/env still win.
+		{"M472 A4 mentor, absent, no env -> 4 [I]", mentorHalt(nil), nil, 4, "[I]", SourceShippedDefault},
+		{"M472 A4 mentor + saved 6 -> 6 [O]", mentorHalt(IntPtr(6)), nil, 6, "[O]", SourceSaved},
+		{"M472 A4 mentor + env 6 -> 6 [E]", mentorHalt(nil), map[string]string{"BREAKER_HALT_N": "6"}, 6, "[E]", "env BREAKER_HALT_N"},
 		{"saved 3", withHalt(IntPtr(3)), nil, 3, "[O]", SourceSaved},
 		{"saved 0 is OFF", withHalt(IntPtr(0)), nil, 0, "[O]", SourceSaved},
 		{"absent + env 3 → 3 [E]", withHalt(nil), map[string]string{"BREAKER_HALT_N": "3"}, 3, "[E]", "env BREAKER_HALT_N"},

@@ -45,6 +45,14 @@ func ClockCT(t time.Time) string {
 	return t.In(CTLocation()).Format("15:04") + " CT"
 }
 
+// WeekdayClockCT renders t as "Mon 15:04 CT" — a weekday-prefixed clock for the
+// session open/close lines (m150): "CLOSED (Friday close); reopens Sun 17:00 CT".
+// The "Mon 15:04" layout carries an explicit weekday prefix + CT suffix, so it is
+// not a bare clock layout (the TZ guard's single-source rule still holds).
+func WeekdayClockCT(t time.Time) string {
+	return t.In(CTLocation()).Format("Mon 15:04") + " CT"
+}
+
 // ClockCTAndUTC renders the single labelled dual read the prompts carry:
 // "07:06 CT (12:06 UTC)" — one labelled zone per view, no ambiguity.
 func ClockCTAndUTC(t time.Time) string {

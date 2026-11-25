@@ -1,7 +1,9 @@
 package trader
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -475,6 +477,47 @@ var protectionFlattenRetries sync.Map // trader id + symbol + side → int64
 // the verdict leaves flatten.
 var protectionFlattenEpisode sync.Map // trader id + symbol + side → int64
 
+// protectionPlaceEpisode is the same thing for the PLACE verdict (m438, #53):
+// the episode start (Unix ms) stamped on the transition INTO protectionPlace.
+// The P0 event id used to carry now.UnixMilli() — a NEW id every 1-minute pass —
+// so a stop that stayed refused / unconfirmed wrote a new in-app P0 row and a
+// new owner push every minute (8 Telegram messages in 8 minutes, then the hourly
+// budget was gone for FEED DOWN too). One id per episode now; the placement
+// attempt itself still runs every pass. Cleared when the verdict leaves place.
+var protectionPlaceEpisode sync.Map // trader id + symbol + side → int64
+
+// protectionSends is what the owner was told, and what went out, in the current
+// place / flatten episode.
+type protectionSends struct {
+	// told: a P0 of this episode really said its order could NOT be sent. Only the
+	// FIRST P0 of an episode is raised (its event id is the episode's), so a refusal
+	// after a send is silent: "now SENT" would then answer a message nobody got.
+	told bool
+	sent bool // an order of this episode was sent
+}
+
+// protectionSendState: trader id + symbol + side → protectionSends. When a retry
+// sends an order the owner was told could not be sent, he must hear that too: told
+// to set a stop (or close) by hand, he would otherwise add one beside the bot's.
+var protectionSendState sync.Map
+
+func sendsSoFar(key string) protectionSends {
+	if v, ok := protectionSendState.Load(key); ok {
+		return v.(protectionSends)
+	}
+	return protectionSends{}
+}
+
+// noteSendOutcome records one pass of an episode. told = a P0 that says its order
+// could NOT be sent was raised by this pass; nowSent = this pass sent one the
+// owner was told could not be, and answered it (once).
+func noteSendOutcome(key string, failed, told, nowSent bool) {
+	s := sendsSoFar(key)
+	s.told = told || (s.told && !nowSent)
+	s.sent = s.sent || !failed
+	protectionSendState.Store(key, s)
+}
+
 // UnprotectedFound is the boot line's figure — READ from the counter (A11).
 func UnprotectedFound(traderID string) int64 {
 	if v, ok := protectionUnprotected.Load(traderID); ok {
@@ -627,7 +670,7 @@ func (at *AutoTrader) knownBrokerStopFor(signalID, side string, now time.Time) (
 }
 
 // sweepStaleProtectionState deletes this trader's per-(symbol, side) protection
-// state — protectionLastAction, protectionFlattenEpisode, protectionFlattenRetries —
+// state — protectionLastAction, protectionFlattenEpisode, protectionPlaceEpisode, protectionFlattenRetries, protectionSendState —
 // for every key whose (symbol, side) is NOT in the positions just read. It runs
 // only on a successful positions read, so a read error never forgets state (A24).
 func (at *AutoTrader) sweepStaleProtectionState(positions []map[string]interface{}) {
@@ -656,7 +699,9 @@ func (at *AutoTrader) sweepStaleProtectionState(positions []map[string]interface
 	}
 	sweep(&protectionLastAction)
 	sweep(&protectionFlattenEpisode)
+	sweep(&protectionPlaceEpisode)
 	sweep(&protectionFlattenRetries)
+	sweep(&protectionSendState)
 }
 
 // reconcileProtectionAt is the D5 pass. It runs on the 1-minute monitor beat and
@@ -666,20 +711,72 @@ func (at *AutoTrader) sweepStaleProtectionState(positions []map[string]interface
 // unless day_plan is enabled (armed_executor.go), and a position is unprotected
 // regardless of day_plan. A safety check that a config flag can silence is not
 // a safety check.
+//
+// LOOK TWICE (2026-11-24): a verdict that would place, flatten or alert is only
+// a HOLD on the first look; protection_look_twice.go decides when it may act.
 func (at *AutoTrader) reconcileProtectionAt(now time.Time, trigger string) {
-	if at == nil || at.trader == nil || at.exchange != "ninjatrader" {
-		return
+	at.protectionPass(now, trigger, nil)
+}
+
+// protectionPass is one look. relook is nil on a beat (monitor / reconnect) and
+// the Run's stop context on the background re-look, which only serves the open
+// holds: it leaves every per-beat bookkeeping (the m217 pending-SL counter, the
+// m469 UNVERIFIED spell, the over-covered counter) to the beats. more reports
+// whether a hold is still open.
+func (at *AutoTrader) protectionPass(now time.Time, trigger string, relook context.Context) (more bool) {
+	if at == nil || at.exchange != "ninjatrader" {
+		return false
 	}
 	defer func() {
 		if rec := recover(); rec != nil {
 			at.logWarnf("🧷 protection reconcile panicked and was contained: %v", rec)
 		}
 	}()
+	at.protMu.Lock() // one pass at a time: a beat and a re-look never judge together
+	defer at.protMu.Unlock()
+	if at.trader == nil {
+		return false
+	}
+	if relook != nil && relook.Err() != nil {
+		return false // stopped while waiting for the lock
+	}
+	confirm := protectionConfirm()
+	if confirm == 0 {
+		at.protHolds = nil
+		if relook != nil {
+			return false
+		}
+	}
+	srv := at.protectionServer()
+	if relook != nil && srv == nil {
+		return false // no wire to look at
+	}
+	passStart := at.beginProtectionLookLocked(srv, confirm)
+	if relook != nil {
+		now = passStart // the re-look has no clock of its own
+	}
+	defer func() {
+		at.expireProtectionHoldsLocked(srv)
+		if relook != nil && len(at.protHolds) == 0 && at.protRelookRun == relook {
+			at.protRelookRun, at.protRelookWake = nil, nil // under protMu: a beat that opens a hold now starts a new one
+		}
+		more = len(at.protHolds) > 0
+		if relook == nil {
+			at.armProtectionRelookLocked()
+		}
+	}()
 
 	positions, err := at.trader.GetPositions()
 	if err != nil {
+		at.restartProtectionHoldsLocked()
+		if relook != nil {
+			return // the beat says it; this is not a look
+		}
 		// A24: a read failure is not "flat". Say so and do nothing.
 		at.logWarnf("🧷 protection UNVERIFIED (%s): positions unreadable: %v — no action taken", trigger, err)
+		// m469: the broker cannot be read, so whether a position is open comes
+		// from the bot's own table; with one open, a long spell is a P0.
+		at.noteProtectionUnverified(now, at.holdingOpenPosition, "NinjaTrader's positions cannot be read")
 		return
 	}
 	// P1-c (REL17-F4): after a SUCCESSFUL positions read (including the empty
@@ -690,11 +787,14 @@ func (at *AutoTrader) reconcileProtectionAt(now time.Time, trigger string) {
 	// changed=false and flattens SILENTLY (no P0, no episode stamp). A read error
 	// changes nothing (A24: an unreadable book is not a licence to forget state).
 	at.sweepStaleProtectionState(positions)
+	at.dropStaleProtectionHoldsLocked(positions)
 	if len(positions) == 0 {
+		protectionUnverifiedSince.Delete(at.id) // flat: nothing left to verify
 		return
 	}
+	unverified := "" // m469: the first position this pass could not verify
 
-	book, have, age := at.liveBook(now)
+	book, have, age, bookAt, bookLate, account := at.protectionBook(now)
 	if have && snapshotMaxAge() > 0 && age > snapshotMaxAge() {
 		// A book older than the bound answers about the past. The reconnect
 		// edge in particular fires BEFORE any fresh snapshot: the AddOn sends
@@ -708,7 +808,7 @@ func (at *AutoTrader) reconcileProtectionAt(now time.Time, trigger string) {
 	// Without this, a later same-named order would read a stale sighting as
 	// stuck. Only with a FRESH book (a stale/absent book must not forget state,
 	// A24).
-	if have {
+	if have && relook == nil {
 		bookNames := make(map[string]bool, len(book))
 		for i := range book {
 			bookNames[book[i].Name] = true
@@ -726,13 +826,26 @@ func (at *AutoTrader) reconcileProtectionAt(now time.Time, trigger string) {
 		})
 	}
 
-	for _, p := range positions {
+	stuckID := at.id
+	if relook != nil {
+		stuckID = "" // m217 counts consecutive BEATS
+	}
+	holdKeys := protectionHoldKeys(positions)
+	twoRows := protectionTwoRows(positions)
+	if relook == nil {
+		defer at.alertTwoRowsLocked(twoRows, now) // last: a database write must not delay a look
+	}
+	for i, p := range positions {
 		symbol, _ := p["symbol"].(string)
 		side, _ := p["side"].(string)
 		qtyF, _ := p["quantity"].(float64)
 		qty := int(math.Round(qtyF))
 		if qty <= 0 || symbol == "" || side == "" {
 			continue
+		}
+		holdKey := holdKeys[i]
+		if relook != nil && at.protHolds[holdKey] == nil {
+			continue // a re-look serves the open holds only
 		}
 		signalID, acceptedStop, planStop := at.protectionPricesFor(symbol, side)
 		// REL17-F4: the registered mentor live position's CURRENT driver stop
@@ -749,29 +862,191 @@ func (at *AutoTrader) reconcileProtectionAt(now time.Time, trigger string) {
 			freshPriceP = &fp
 		}
 		var ksPtr *knownBrokerStop
-		v := adjudicateProtectionWith(symbol, side, qty, book, have, acceptedStop, planStop, mentorStopP, nil, freshPriceP, at.id, now)
+		v := adjudicateProtectionWith(symbol, side, qty, book, have, acceptedStop, planStop, mentorStopP, nil, freshPriceP, stuckID, now)
 		// P2-1: only a verdict that would PLACE a non-mentor stop asks for the
 		// tightest stop the broker is known to have held (the book-history read
 		// is a database scan; a protected position never pays for it).
 		if (v.Action == protectionPlace || (v.Action == protectionAlertOnly && v.HaveQty == 0)) && v.Source != "mentor_driver" && !hasMentorStop {
 			if ks, ok := at.knownBrokerStopFor(signalID, side, now); ok {
 				ksPtr = &ks
-				v = adjudicateProtectionWith(symbol, side, qty, book, have, acceptedStop, planStop, mentorStopP, ksPtr, freshPriceP, at.id, now)
+				v = adjudicateProtectionWith(symbol, side, qty, book, have, acceptedStop, planStop, mentorStopP, ksPtr, freshPriceP, stuckID, now)
+			}
+		}
+		if v.Action == protectionUnknown && unverified == "" {
+			unverified = fmt.Sprintf("%s %s ×%d — %s", side, symbol, qty, v.Why)
+		}
+		if confirm > 0 {
+			switch v.Action {
+			case protectionOK:
+				if h := at.protHolds[holdKey]; h != nil && bookLate {
+					at.holdOnLateCoverLocked(h, symbol, side, qty, positionAvg(p), passStart, trigger)
+				} else {
+					at.dropProtectionHoldLocked(holdKey, "a stop covers it")
+				}
+				if relook != nil {
+					at.noteProtectionCovered(symbol, side)
+				}
+			case protectionUnknown:
+				if h := at.protHolds[holdKey]; h != nil {
+					h.restart() // cover could not be read: not a look (and not one for the 70 s either)
+				}
+			default:
+				if v.Action == protectionAlertOnly && at.protHolds[holdKey] == nil && at.lastProtectionAction(symbol, side) == v.Action.String() {
+					break // already raised and still standing: actOnProtection stays silent, no look to take
+				}
+				if srv == nil {
+					continue
+				}
+				var own protRowSum // read before the evidence, like every database read of the pass
+				if v.Action == protectionPlace && len(twoRows[symbol+"|"+side]) > 1 {
+					own = at.ownOpenRow(account, symbol, side)
+				}
+				proof := at.protectionMayActLocked(v, holdKey, symbol, side, qty, positionAvg(p), srv, account, bookAt, bookLate, passStart, confirm, trigger)
+				if proof == nil {
+					continue // a hold sends nothing
+				}
+				stopQty := qty
+				if rows := twoRows[symbol+"|"+side]; v.Action == protectionPlace && len(rows) > 1 {
+					stopQty = protectionOwnStopQty(qty, rows, own.qty, own.avg, protectionTick(symbol))
+				}
+				at.actOnConfirmed(v, symbol, side, stopQty, signalID, trigger, age, now, proof.check)
+				at.finishProtectionActLocked(holdKey, v, proof)
+				continue
+			}
+			if relook != nil && (v.Action == protectionOK || v.Action == protectionUnknown) {
+				continue // the beat's bookkeeping
 			}
 		}
 		at.actOnProtection(v, symbol, side, qty, signalID, trigger, age, now)
 	}
+	if relook != nil {
+		return
+	}
+	if unverified != "" {
+		// the broker reports this position open, so a position IS open.
+		at.noteProtectionUnverified(now, func() bool { return true }, unverified)
+	} else {
+		protectionUnverifiedSince.Delete(at.id) // every open position verified
+	}
+	return
 }
 
+// protectionBook is liveBook plus the receive instant, whether the book was written
+// late, and the account it came from (look-twice compares receive instants, never
+// ages).
+func (at *AutoTrader) protectionBook(now time.Time) (orders []nt.NT8Order, have bool, age time.Duration, bookAt time.Time, late bool, account string) {
+	cache, account, _ := at.brokerBook()
+	if cache == nil {
+		return nil, false, 0, time.Time{}, false, account
+	}
+	snap, at0, late, ok := cache.LatestOrder(account)
+	if !ok || at0.IsZero() {
+		return nil, false, 0, time.Time{}, false, account
+	}
+	return snap.Orders, true, now.Sub(at0), at0, late, account
+}
+
+// protectionUnverifiedAlertAfter (m469) is how long the reconciler may go
+// without being able to verify protection, while a position is open, before
+// the owner gets a P0. Evidence (bot logs 10-03..11-06, the 1-minute "protection
+// UNVERIFIED" lines, grouped into spells): the short spells - a reconnect, the
+// book's first snapshot after it - lasted 1, 2, 2, 4, 6, 6 and 7 minutes; the
+// rest were hours long (NinjaTrader closed). 10 minutes is above every short
+// spell, and a position whose stop nobody can see for 10 minutes is news.
+const protectionUnverifiedAlertAfter = 10 * time.Minute
+
+// protectionUnverifiedSince: trader id -> Unix ms of the first pass of the
+// current UNVERIFIED spell. A pass that verifies every open position, or reads
+// the book flat, ends the spell; the next one is a new episode (new event id).
+var protectionUnverifiedSince sync.Map
+
+// noteProtectionUnverified records one UNVERIFIED pass and raises ONE P0 per
+// spell once it has lasted protectionUnverifiedAlertAfter with a position open.
+// It never acts on the position: an unreadable book is still not a licence to
+// place or flatten (A24) - it only tells the owner to look. positionOpen is
+// asked only once the spell is long enough (it is a store read, and NT8 closed
+// overnight is an hours-long spell read every minute).
+func (at *AutoTrader) noteProtectionUnverified(now time.Time, positionOpen func() bool, what string) {
+	startMs := now.UnixMilli()
+	if v, loaded := protectionUnverifiedSince.LoadOrStore(at.id, startMs); loaded {
+		startMs = v.(int64)
+	}
+	since := time.UnixMilli(startMs)
+	if now.Sub(since) < protectionUnverifiedAlertAfter || !positionOpen() {
+		return
+	}
+	at.emitAlert("P0", alertKindProtectionUnverified,
+		fmt.Sprintf("unverified:%d", startMs),
+		"Open position — its stop cannot be verified",
+		fmt.Sprintf("Since %s CT (%s) the bot cannot tell whether the open position is protected: %s. Nothing is placed or closed while it cannot see. Check NinjaTrader on Windows (connection, the position and its stop) now.",
+			kernel.TableTimeCT(since), spanHM(now.Sub(since)), what))
+}
+
+// lastProtectionAction is the verdict this (symbol, side) was last acted on with.
+func (at *AutoTrader) lastProtectionAction(symbol, side string) string {
+	if prev, ok := protectionLastAction.Load(at.id + "|" + symbol + "|" + side); ok {
+		return prev.(string)
+	}
+	return ""
+}
+
+// noteProtectionCovered records that a re-look found the position covered: the
+// place / flatten / alert episode ends there, as it does on a beat. Without it a
+// stop lost again before the next beat would read as the SAME episode and the
+// second emergency order would go out with no P0.
+func (at *AutoTrader) noteProtectionCovered(symbol, side string) {
+	if at.lastProtectionAction(symbol, side) == "" {
+		return // nothing was ever acted on
+	}
+	key := at.id + "|" + symbol + "|" + side
+	protectionLastAction.Store(key, protectionOK.String())
+	protectionFlattenEpisode.Delete(key)
+	protectionFlattenRetries.Delete(key)
+	protectionPlaceEpisode.Delete(key)
+}
+
+// actOnProtection acts on a verdict with nothing between it and the send (a
+// verdict that sends nothing, or the PROTECTION_CONFIRM_MS=0 single look).
 func (at *AutoTrader) actOnProtection(v protectionVerdict, symbol, side string, qty int,
 	signalID, trigger string, bookAge time.Duration, now time.Time) {
+	at.actOnConfirmed(v, symbol, side, qty, signalID, trigger, bookAge, now, nil)
+}
+
+// actOnConfirmed sends FIRST and records, counts and alerts after: an alert is a
+// database write (busy timeout 5 s) and must not stand between the evidence and
+// the order. guard is the last step before the order frame; when it says no,
+// nothing is written and nothing is recorded.
+func (at *AutoTrader) actOnConfirmed(v protectionVerdict, symbol, side string, qty int,
+	signalID, trigger string, bookAge time.Duration, now time.Time, guard func() error) {
+
+	var placeErr error
+	var flatOutcome marketFlatOutcome
+	stopSignal := signalID
+	switch v.Action {
+	case protectionPlace:
+		if stopSignal == "" {
+			stopSignal = fmt.Sprintf("recon-%s-%d", strings.ToLower(symbol), now.UnixMilli())
+		}
+		placeErr = at.placeProtectiveStopIf(symbol, side, qty, v.StopPx, stopSignal, "d5-reconciler:"+trigger, guard)
+		if errors.Is(placeErr, nt.ErrSendWithheld) {
+			return
+		}
+	case protectionFlatten:
+		// m471 L2-2: an emergency close is a MARKET close (CloseLong/CloseShort +
+		// bracket cancel), never the limit ladder — a favorable-side limit above a
+		// falling market never fills, and this synthesized position has no
+		// durable identity for the ladder's market fallback. It goes through the
+		// L2-1 in-flight guard, so a pass inside the hold of an earlier market
+		// close sends nothing and a resting limit exit is escalated, not stacked.
+		flatOutcome = at.flattenPositionAtMarket(&store.TraderPosition{TraderID: at.id, Symbol: symbol, Side: side},
+			"protection-through-stop", now, guard)
+		if flatOutcome == marketFlatWithheld {
+			return
+		}
+	}
 
 	key := at.id + "|" + symbol + "|" + side
-	prev, _ := protectionLastAction.Load(key)
-	prevAction := ""
-	if prev != nil {
-		prevAction = prev.(string)
-	}
+	prevAction := at.lastProtectionAction(symbol, side)
 	changed := prevAction != v.Action.String()
 	protectionLastAction.Store(key, v.Action.String())
 
@@ -782,6 +1057,14 @@ func (at *AutoTrader) actOnProtection(v protectionVerdict, symbol, side string, 
 	if v.Action != protectionFlatten && prevAction == "flatten" {
 		protectionFlattenEpisode.Delete(key)
 		protectionFlattenRetries.Delete(key)
+	}
+	// m438: the place episode ends when the verdict LEAVES place; the next
+	// naked spell is a new episode with a new id (and so a new alert + push).
+	if v.Action != protectionPlace {
+		protectionPlaceEpisode.Delete(key)
+	}
+	if changed { // another verdict: another episode, no outcome yet
+		protectionSendState.Delete(key)
 	}
 
 	// m217: a pending -sl has been UNCHANGED (same name, stopPrice, qty) for 3
@@ -850,26 +1133,53 @@ func (at *AutoTrader) actOnProtection(v protectionVerdict, symbol, side string, 
 
 	case protectionPlace:
 		incUnprotected(at.id)
-		at.emitAlert("P0", "unprotected_position",
-			fmt.Sprintf("unprotected:%s:%s:%d", symbol, side, now.UnixMilli()),
-			"Open position had NO stop — one is being placed",
-			fmt.Sprintf("%s %s ×%d had no protective order at the broker. Placing a stop at %.2f from %s. %s",
-				side, symbol, qty, v.StopPx, v.Source, v.Why))
-		at.logErrorf("🚨 UNPROTECTED POSITION (%s): %s %s ×%d — placing stop %.2f from %s",
-			trigger, side, symbol, qty, v.StopPx, v.Source)
-
-		placer, ok := at.trader.(interface {
-			PlaceProtectiveStop(symbol, positionSide string, quantity int, stopPrice float64, signalID, reason string) error
-		})
-		if !ok {
+		// m438: ONE event id per place EPISODE (see protectionPlaceEpisode). The
+		// first pass of an episode stamps its start; the repeats re-emit the SAME
+		// id, which the store dedupes silently (no new row, no new push).
+		placeEpisode := now.UnixMilli()
+		prevStart, repeat := protectionPlaceEpisode.Load(key)
+		if repeat {
+			placeEpisode = prevStart.(int64)
+		} else {
+			protectionPlaceEpisode.Store(key, placeEpisode)
+		}
+		// The alert follows the send and says what happened (look twice 2026-11-24).
+		so := sendsSoFar(key)
+		earlier := ""
+		if so.sent {
+			earlier = " An earlier stop of this episode was already sent, so there may be two: check the working stops in NinjaTrader before you add one, and keep one."
+		}
+		title := "Open position had NO stop — a protective stop was sent"
+		what := fmt.Sprintf("A stop at %.2f (%s) was SENT to NinjaTrader. Sent is not confirmed: check in NinjaTrader that it is working.", v.StopPx, v.Source)
+		if placeErr != nil {
+			title = "Open position had NO stop — a protective stop could NOT be sent"
+			what = fmt.Sprintf("The stop at %.2f (%s) could NOT be sent; the bot tries again on its next check. Set a stop by hand now.", v.StopPx, v.Source)
+			if so.sent {
+				what = fmt.Sprintf("The stop at %.2f (%s) could NOT be sent; the bot tries again on its next check.", v.StopPx, v.Source)
+			}
+			what += earlier
+		}
+		created, emitErr := at.emitAlert("P0", "unprotected_position",
+			fmt.Sprintf("unprotected:%s:%s:%d", symbol, side, placeEpisode), title,
+			fmt.Sprintf("%s %s ×%d had no protective order at the broker. %s %s",
+				side, symbol, qty, what, v.Why))
+		// A P0 whose row was refused still goes to the phone, once per event id: the
+		// first pass of the episode only.
+		told := placeErr != nil && (created || (emitErr != nil && !repeat))
+		nowSent := placeErr == nil && so.told
+		noteSendOutcome(key, placeErr != nil, told, nowSent)
+		if nowSent {
+			title = "The protective stop that could NOT be sent is now SENT — do not add another"
+			at.emitAlert("P0", "unprotected_position",
+				fmt.Sprintf("unprotected:%s:%s:%d:sent", symbol, side, placeEpisode), title,
+				fmt.Sprintf("%s %s ×%d: %s If you already set a stop by hand, cancel one of the two.%s %s", side, symbol, qty, what, earlier, v.Why))
+		}
+		at.logErrorf("🚨 UNPROTECTED POSITION (%s): %s %s ×%d — stop %.2f from %s: %s",
+			trigger, side, symbol, qty, v.StopPx, v.Source, title)
+		switch {
+		case errors.Is(placeErr, errNoStandaloneStop):
 			at.logErrorf("🚨 protection NOT placed: this broker cannot place a standalone protective stop — %s %s ×%d stays unprotected", side, symbol, qty)
-			return
-		}
-		if signalID == "" {
-			signalID = fmt.Sprintf("recon-%s-%d", strings.ToLower(symbol), now.UnixMilli())
-		}
-		if err := placer.PlaceProtectiveStop(symbol, side, qty, v.StopPx, signalID,
-			"d5-reconciler:"+trigger); err != nil {
+		case placeErr != nil:
 			// The build gate lives behind this error. Naming it is the point:
 			// an old AddOn cannot honour the frame, and pretending otherwise
 			// would record a protection that does not exist (class 81).
@@ -879,11 +1189,11 @@ func (at *AutoTrader) actOnProtection(v protectionVerdict, symbol, side string, 
 			// trail. The NEXT 1-minute pass re-attempts once the reconnect hello
 			// re-proves the far-side build (FIX-P1A).
 			at.logWarnf("🧷 protection PLACEMENT REFUSED: trader=%s %s %s ×%d stop=%.2f — %v",
-				at.id, side, symbol, qty, v.StopPx, err)
-			return
+				at.id, side, symbol, qty, v.StopPx, placeErr)
+		default:
+			at.logWarnf("🧷 protective stop SENT: %s %s ×%d stop=%.2f source=%s signal=%s — SENT is not CONFIRMED; the next pass reads the book",
+				side, symbol, qty, v.StopPx, v.Source, shortID(stopSignal))
 		}
-		at.logWarnf("🧷 protective stop SENT: %s %s ×%d stop=%.2f source=%s signal=%s — SENT is not CONFIRMED; the next pass reads the book",
-			side, symbol, qty, v.StopPx, v.Source, shortID(signalID))
 
 	case protectionFlatten:
 		incUnprotected(at.id)
@@ -892,29 +1202,84 @@ func (at *AutoTrader) actOnProtection(v protectionVerdict, symbol, side string, 
 		// carries into the event id, so a later episode raises a NEW P0 while
 		// repeats inside one episode stay silent. The close retry still runs
 		// every pass, with its count logged; the count resets per episode.
-		if changed {
-			episodeStart := now.UnixMilli()
-			protectionFlattenEpisode.Store(key, episodeStart)
-			protectionFlattenRetries.Delete(key)
-			at.emitAlert("P0", "unprotected_position",
-				fmt.Sprintf("flatten:%s:%s:%d", symbol, side, episodeStart),
-				"Open position was naked and the stop is already behind the market — flattening",
-				fmt.Sprintf("%s %s ×%d. %s Closing the position at market now.", side, symbol, qty, v.Why))
-			at.logErrorf("🧷 protection: price already through the intended stop %.2f — flattened (%s %s ×%d): %s",
-				v.StopPx, side, symbol, qty, v.Why)
-		}
 		retries := int64(0)
-		if prevN, ok := protectionFlattenRetries.Load(key); ok {
+		if changed {
+			protectionFlattenEpisode.Store(key, now.UnixMilli())
+			protectionFlattenRetries.Delete(key)
+		} else if prevN, ok := protectionFlattenRetries.Load(key); ok {
 			retries = prevN.(int64)
 		}
 		retries++
 		protectionFlattenRetries.Store(key, retries)
 		if retries > 1 {
-			at.logWarnf("🧷 protection flatten retry #%d: %s %s ×%d — close re-sent (P0 alert deduped, not re-raised)",
+			at.logWarnf("🧷 protection flatten retry #%d: %s %s ×%d — market close retried through the in-flight guard (P0 alert deduped, not re-raised)",
 				retries, side, symbol, qty)
 		}
-		at.flattenPosition(&store.TraderPosition{Symbol: symbol, Side: side}, "protection-through-stop")
+		// LOOK TWICE (2026-11-24): the alert follows the send and says what went
+		// out. It used to be raised BEFORE the close and read "flattening",
+		// whether or not a close was written (11-19: the owner read it as done).
+		failed, told := flatOutcome == marketFlatFailed, false
+		nowSent := !failed && sendsSoFar(key).told
+		if changed || nowSent {
+			what, title := "A market close was SENT to NinjaTrader. Sent is not filled: check NinjaTrader that the position is flat.", "a market close was sent"
+			switch flatOutcome {
+			case marketFlatInFlight:
+				what, title = "A market close sent earlier is still in flight, so no second one was sent. Check NinjaTrader that the position is flat.", "a market close is already in flight"
+			case marketFlatFailed:
+				what, title = "The market close could NOT be sent to NinjaTrader; the bot tries again on its next check. Close the position by hand now.", "the market close could NOT be sent"
+			}
+			eventID := fmt.Sprintf("flatten:%s:%s:%d", symbol, side, now.UnixMilli())
+			full := "Open position was naked and the stop is already behind the market — " + title
+			if nowSent {
+				title = "a retry of the market close is now SENT"
+				if flatOutcome == marketFlatInFlight {
+					title = "a market close is now in flight"
+				}
+				title += ", do not close it again"
+				full = "Open position was naked and the stop is already behind the market — " + title
+				eventID = fmt.Sprintf("flatten:%s:%s:%d:sent", symbol, side, protectionFlattenStart(key))
+			}
+			created, emitErr := at.emitAlert("P0", "unprotected_position", eventID, full,
+				fmt.Sprintf("%s %s ×%d. %s %s", side, symbol, qty, v.Why, what))
+			told = failed && (created || emitErr != nil) // changed: the episode's first P0
+			at.logErrorf("🧷 protection: price already through the intended stop %.2f — %s (%s %s ×%d): %s",
+				v.StopPx, title, side, symbol, qty, v.Why)
+		}
+		noteSendOutcome(key, failed, told, nowSent)
 	}
+}
+
+// protectionFlattenStart is the start of the current flatten episode.
+func protectionFlattenStart(key string) int64 {
+	if v, ok := protectionFlattenEpisode.Load(key); ok {
+		return v.(int64)
+	}
+	return 0
+}
+
+// errNoStandaloneStop: this broker has no standalone protective stop.
+var errNoStandaloneStop = errors.New("this broker cannot place a standalone protective stop")
+
+// placeProtectiveStopIf sends the stop; guard (nil = always) is asked immediately
+// before the frame is written.
+func (at *AutoTrader) placeProtectiveStopIf(symbol, side string, qty int, stopPx float64, signalID, reason string, guard func() error) error {
+	if p, ok := at.trader.(interface {
+		PlaceProtectiveStopIf(symbol, positionSide string, quantity int, stopPrice float64, signalID, reason string, guard func() error) error
+	}); ok {
+		return p.PlaceProtectiveStopIf(symbol, side, qty, stopPx, signalID, reason, guard)
+	}
+	p, ok := at.trader.(interface {
+		PlaceProtectiveStop(symbol, positionSide string, quantity int, stopPrice float64, signalID, reason string) error
+	})
+	if !ok {
+		return errNoStandaloneStop
+	}
+	if guard != nil {
+		if err := guard(); err != nil {
+			return err
+		}
+	}
+	return p.PlaceProtectiveStop(symbol, side, qty, stopPx, signalID, reason)
 }
 
 // ── D7 — THE BOOT LINE ───────────────────────────────────────────────────────

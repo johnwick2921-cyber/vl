@@ -40,8 +40,13 @@ func (at *AutoTrader) saveDecision(record *store.DecisionRecord) error {
 		return nil
 	}
 
+	// PEP MODE: the pep entry saves its decision row from the event-loop goroutine
+	// while the cycle saves its own; the counter is bumped under cycleMu.
+	at.cycleMu.Lock()
 	at.cycleNumber++
-	record.CycleNumber = at.cycleNumber
+	cycleNo := at.cycleNumber
+	at.cycleMu.Unlock()
+	record.CycleNumber = cycleNo
 	record.TraderID = at.id
 	record.Account = at.currentAccountName() // ITEM 2 per-account attribution
 
@@ -65,7 +70,7 @@ func (at *AutoTrader) saveDecision(record *store.DecisionRecord) error {
 		return err
 	}
 
-	logger.Infof("📝 Decision record saved: trader=%s, cycle=%d", at.id, at.cycleNumber)
+	logger.Infof("📝 Decision record saved: trader=%s, cycle=%d", at.id, cycleNo)
 	return nil
 }
 
@@ -302,7 +307,7 @@ func (at *AutoTrader) GetPositions() ([]map[string]interface{}, error) {
 		// Calculate P&L percentage (based on margin)
 		pnlPct := calculatePnLPercentage(unrealizedPnl, marginUsed)
 
-		result = append(result, map[string]interface{}{
+		row := map[string]interface{}{
 			"symbol":             symbol,
 			"side":               side,
 			"entry_price":        entryPrice,
@@ -313,11 +318,36 @@ func (at *AutoTrader) GetPositions() ([]map[string]interface{}, error) {
 			"unrealized_pnl_pct": pnlPct,
 			"liquidation_price":  liquidationPrice,
 			"margin_used":        marginUsed,
-		})
+		}
+		// m421a C1 — pass the broker's UI-only keys through when PRESENT (the
+		// fixed key list above used to drop them, so the chart never drew the
+		// open position's SL/TP lines): the working bracket, the contract point
+		// value and the notional value. Absent upstream stays absent.
+		for _, k := range []string{"bracket", "point_value", "position_value"} {
+			if v, ok := pos[k]; ok && v != nil {
+				row[k] = v
+			}
+		}
+		// entry_time (ms) is the position's REAL open time from the trader_positions
+		// row; absent when the store has no OPEN row (never fabricated from
+		// "first seen", which a restart resets).
+		if at.store != nil {
+			if dbPos, derr := at.store.Position().GetOpenPositionBySymbol(at.id, symbol, side); derr == nil && dbPos != nil && dbPos.EntryTime > 0 {
+				row["entry_time"] = dbPos.EntryTime
+			}
+		}
+		result = append(result, row)
 	}
 
 	return result, nil
 }
+
+// orderFillPollInterval is the gap between the looks for an order's fill: once
+// before the first of five and after each (3 s in all). A var only so tests that
+// pin what the poll finds need not wait 3 s for it.
+var orderFillPollInterval = orderFillPollDefault
+
+const orderFillPollDefault = 500 * time.Millisecond
 
 // recordAndConfirmOrder polls order status for actual fill data and records position
 // action: open_long, open_short, close_long, close_short
@@ -416,7 +446,7 @@ func (at *AutoTrader) recordAndConfirmOrderAs(orderResult map[string]interface{}
 			return
 		}
 		filled := false
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(orderFillPollInterval)
 		for i := 0; i < 5 && !filled; i++ {
 			if reason, rejected := ev.RecentRejectFor(orderID); rejected {
 				if strings.TrimSpace(reason) == "" {
@@ -441,7 +471,7 @@ func (at *AutoTrader) recordAndConfirmOrderAs(orderResult map[string]interface{}
 				at.recordOrderFill(orderRecord.ID, orderID, symbol, action, actualPrice, actualQty, fee)
 				break
 			}
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(orderFillPollInterval)
 		}
 		if !filled {
 			logger.Warnf("  ⚠️ %s %s SUBMITTED, UNCONFIRMED — no fill for signal %s within the confirmation window; the order row stays unresolved and NO position is recorded (a later fill is materialized from NT8's position by the reconciler)", action, symbol, orderID)
@@ -451,7 +481,7 @@ func (at *AutoTrader) recordAndConfirmOrderAs(orderResult map[string]interface{}
 
 	// Wait for order to be filled and get actual fill data
 	if !ntSignalKeyed {
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(orderFillPollInterval)
 	}
 	for i := 0; i < 5 && !ntSignalKeyed; i++ {
 		status, err := at.trader.GetOrderStatus(symbol, orderID)
@@ -489,7 +519,7 @@ func (at *AutoTrader) recordAndConfirmOrderAs(orderResult map[string]interface{}
 				return
 			}
 		}
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(orderFillPollInterval)
 	}
 
 	// Normalize symbol for position record consistency
@@ -608,8 +638,8 @@ func (at *AutoTrader) recordPositionChangeAs(orderID, symbol, side, action strin
 			default:
 				at.logWarnf("📐 excursion NOT opened for chat position pos=%d %s %s: its own stop/target unknown (stop=%.2f target=%.2f) — never resolved from an AI decision", pos.ID, symbol, side, manual.stop, manual.target)
 			}
-			// W6 — P0 fill alert.
-			at.emitAlert("P0", "fill", fmt.Sprintf("fill:%d", pos.ID),
+			// W6 — fill alert (P1 informational: m420b/B2).
+			at.emitAlert("P1", "fill", fmt.Sprintf("fill:%d", pos.ID),
 				fmt.Sprintf("Filled %s %s @ %.2f", side, symbol, price), "")
 		}
 

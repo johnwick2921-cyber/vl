@@ -6,10 +6,19 @@ package telegram
 // plan's exact plain words.
 
 import (
+	"errors"
+	"fmt"
+	"net/http"
+	"regexp"
+	"strings"
+	"time"
+
+	"vl/internal/ownerpush"
 	"vl/logger"
 	"vl/store"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"gorm.io/gorm"
 )
 
 // UpdateResultMessage renders the owner-facing result of an update job in the
@@ -41,31 +50,92 @@ func UpdateResultMessage(state, newTag, oldTag, reason string) string {
 	}
 }
 
+// ownerSendTimeout bounds EVERY Telegram call the owner/update sender makes
+// (getMe at construction and the sendMessage): tgbotapi.NewBotAPI uses an
+// http.Client with no timeout, so a peer that accepts and then says nothing
+// would hold the single owner-push worker forever (m438). A var so the pin can
+// shorten it.
+var ownerSendTimeout = 12 * time.Second
+
+// ownerBotEndpoint is the Bot API URL template; a var so the pins can aim the
+// REAL sender at a local server.
+var ownerBotEndpoint = tgbotapi.APIEndpoint
+
+// botTokenInURL matches the "bot<id>:<secret>" path segment a *url.Error carries
+// in its text.
+var botTokenInURL = regexp.MustCompile(`bot\d+:[A-Za-z0-9_\-]+`)
+
+// redactTelegramErr renders err for the log with the bot token removed. The
+// library returns a *url.Error whose text is the full request URL —
+// `Post "https://api.telegram.org/bot<token>/getMe": dial tcp …` — so a plain
+// %v of a network failure wrote the live token into the journal (m438).
+func redactTelegramErr(err error, token string) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	if token != "" {
+		msg = strings.ReplaceAll(msg, token, "[redacted]")
+	}
+	return botTokenInURL.ReplaceAllString(msg, "bot[redacted]")
+}
+
 // NotifyUpdateResult sends one owner-facing update result to the owner's bound
 // Telegram chat (the bot's existing sender). Unbound, no token, or no text is
 // a no-op — the message is advisory; the page banner is the authoritative
 // surface. It resolves the token and the bound chat from the store at call
-// time, never caches them.
+// time, never caches them. Every call is time-bounded (ownerSendTimeout) and
+// every logged error has the bot token removed.
 func NotifyUpdateResult(st *store.Store, text string) {
+	_ = SendOwnerText(st, text) // advisory: the update page banner is authoritative
+}
+
+// SendOwnerText is the sender behind NotifyUpdateResult and NotifyOwner, and it
+// RETURNS the outcome (m442 N4: the old void sender made a failed getMe /
+// sendMessage / timeout indistinguishable from a delivery, so a lost owner push
+// was never retried). nil = delivered; ownerpush.ErrNotBound = no token, no
+// bound chat or no text (nothing to send, nothing to retry); any other error =
+// the send failed and is token-free (redactTelegramErr).
+//
+// m471 L3-1: ErrNotBound is ONLY the real "not configured" state - no config
+// row, an empty token, chat id 0. A store READ ERROR (a closed handle, disk
+// I/O, a moved or corrupt DB) says nothing about the binding: it used to be
+// returned as ErrNotBound, which ownerpush counts as skipped_unbound and never
+// retries, so a P0 sent during it was lost for good. It is now a retryable
+// failure: the message is held and re-sent once the read works again.
+func SendOwnerText(st *store.Store, text string) error {
 	if text == "" {
-		return
+		return ownerpush.ErrNotBound
 	}
 	dbCfg, err := st.TelegramConfig().Get()
-	if err != nil || dbCfg.BotToken == "" {
-		logger.Debugf("telegram update result: bot disabled (no token) — not sent")
-		return
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound), err == nil && dbCfg.BotToken == "":
+		logger.Debugf("telegram update result: bot disabled (no token) - not sent")
+		return ownerpush.ErrNotBound
+	case err != nil:
+		logger.Warnf("telegram owner push: telegram config read failed (%v) - held for retry", err)
+		return fmt.Errorf("telegram config read: %w", err)
 	}
 	chatID, err := st.TelegramConfig().GetBoundChatID()
-	if err != nil || chatID == 0 {
-		logger.Debugf("telegram update result: no bound chat — not sent")
-		return
-	}
-	bot, err := tgbotapi.NewBotAPI(dbCfg.BotToken)
 	if err != nil {
-		logger.Errorf("telegram update result: bot api: %v", err)
-		return
+		logger.Warnf("telegram owner push: bound chat read failed (%v) - held for retry", err)
+		return fmt.Errorf("telegram bound chat read: %w", err)
+	}
+	if chatID == 0 {
+		logger.Debugf("telegram update result: no bound chat - not sent")
+		return ownerpush.ErrNotBound
+	}
+	token := dbCfg.BotToken
+	bot, err := tgbotapi.NewBotAPIWithClient(token, ownerBotEndpoint, &http.Client{Timeout: ownerSendTimeout})
+	if err != nil {
+		msg := redactTelegramErr(err, token)
+		logger.Errorf("telegram update result: bot api: %s", msg)
+		return fmt.Errorf("telegram bot api: %s", msg)
 	}
 	if _, err := bot.Send(tgbotapi.NewMessage(chatID, text)); err != nil {
-		logger.Errorf("telegram update result: send: %v", err)
+		msg := redactTelegramErr(err, token)
+		logger.Errorf("telegram update result: send: %s", msg)
+		return fmt.Errorf("telegram send: %s", msg)
 	}
+	return nil
 }

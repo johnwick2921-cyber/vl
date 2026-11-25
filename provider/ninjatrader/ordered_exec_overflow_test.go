@@ -114,13 +114,36 @@ func TestOrderedOverflowEnqueuerReleasedByUnregister(t *testing.T) {
 	defer unreg()
 
 	const total = orderedQueueCap + 2
+	writeFill := func(i int) error {
+		return WriteFrame(w.conn, FrameFill, FillPayload{
+			SignalID: fmt.Sprintf("sig-%03d", i), Symbol: "MNQ", Account: "Sim101",
+			Side: "long", Quantity: 1, Status: "filled",
+		})
+	}
+
+	// PRECONDITION, established not assumed: sig-000 is dequeued by the worker
+	// and parked inside the blocked handler BEFORE the flood. Without this the
+	// worker goroutine can be scheduled late (`go runOrderedOwner` is only
+	// woken, never awaited), the read loop then fills the queue to cap with
+	// sig-000..sig-255 and sig-256 trips overflowCount while nothing was
+	// dequeued; the unreg() below then closes the owner and only cap (256)
+	// frames ever reach the worker, never cap+1 (257): a 30 s waitEvents
+	// timeout under load (m456).
+	if err := writeFill(0); err != nil {
+		t.Fatalf("wire write sig-000: %v", err)
+	}
+	parkDeadline := time.Now().Add(30 * time.Second)
+	for rec.snapshotLen() < 1 {
+		if time.Now().After(parkDeadline) {
+			t.Fatal("sig-000 never reached the handler: worker not parked")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
 	writerDone := make(chan error, 1)
 	go func() {
-		for i := 0; i < total; i++ {
-			if err := WriteFrame(w.conn, FrameFill, FillPayload{
-				SignalID: fmt.Sprintf("sig-%03d", i), Symbol: "MNQ", Account: "Sim101",
-				Side: "long", Quantity: 1, Status: "filled",
-			}); err != nil {
+		for i := 1; i < total; i++ {
+			if err := writeFill(i); err != nil {
 				writerDone <- err
 				return
 			}

@@ -36,7 +36,7 @@ func TestSeedDepthRecheckClearsWithoutRestart(t *testing.T) {
 	j0 := seedRecheckBase(t, tape, 94)
 	seedNow := tape[j0].OpenTime
 
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	e := New(cfg)
 	missing := Seed(e, tape[:j0], seedNow)
@@ -87,7 +87,7 @@ func TestSeedDepthRecheckClearsWithoutRestart(t *testing.T) {
 func TestSeedDepthRecheckNeverLowersTheWarmup(t *testing.T) {
 	tape := minuteTape(t, 30)
 	j0 := seedRecheckBase(t, tape, 93)
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	e := New(cfg)
 	if m := Seed(e, tape[:j0], tape[j0].OpenTime); len(m) != 1 {

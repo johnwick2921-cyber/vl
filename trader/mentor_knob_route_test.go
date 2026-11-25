@@ -47,8 +47,9 @@ func TestMentorStoreKnobsReachTheEvaluator(t *testing.T) {
 		"naked": {id: "t-naked"},
 	} {
 		cfg := a.mentorEvaluatorConfig()
-		if !cfg.LegBudgetEnabled || cfg.LegResetOn != "close" || !cfg.LocTriggerFilter {
-			t.Errorf("%s: defaults changed: budget=%v reset=%q trigger_filter=%v — want true/close/true",
+		// OCT-EXACT A1 row 9: the leg budget now defaults OFF (a stored true reverts).
+		if cfg.LegBudgetEnabled || cfg.LegResetOn != "close" || !cfg.LocTriggerFilter {
+			t.Errorf("%s: defaults changed: budget=%v reset=%q trigger_filter=%v — want false/close/true",
 				name, cfg.LegBudgetEnabled, cfg.LegResetOn, cfg.LocTriggerFilter)
 		}
 	}

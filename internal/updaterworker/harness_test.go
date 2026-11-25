@@ -15,6 +15,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"vl/internal/installpath"
 	"vl/internal/safepath"
 
 	"vl/internal/updaterjob"
@@ -78,6 +79,8 @@ type box struct {
 	clock *fakeClock
 
 	inst, data, relDir, backupRoot string
+	releaseRoot                    string // VL_RELEASE_DIR (the root b.relDir and the verified running release live under)
+	runningReleaseBuild            string // the build id the VERIFIED running release declares (m355 catch-up source)
 	nt8docs                        string // fake Documents/NinjaTrader 8 (bin/Custom), for the one-click AddOn seam
 
 	binName    string // the install binary basename (vl-bin or vl-bin — R5 removes the vl form)
@@ -95,52 +98,56 @@ type box struct {
 	lockAcquireErr      error
 
 	// knobs
-	flat                    bool
-	addonConnected          bool
-	pollHook                func()          // run at every fake-host sleep boundary (planner-wait tests)
-	driveCtx                context.Context // non-nil overrides the drive context (cancellation pins)
-	addonBuild              string          // what the running AddOn reports
-	manifestBuild           string          // the signed manifest's addon.build_id
-	refuseBoot              map[string]bool
-	watchFail               map[string]bool
-	rollbackFail            bool
-	rollbackDistFail        bool   // RollbackTo restores binary+RELEASE, fails at dist, no kill of its own
-	addonRestoreFail        bool   // fakeHost.AddonRestore returns an error
-	noReconnect             bool   // the AddOn never reconnects after the NT8 restart (guard #3 timeout)
-	reconnectSameSeq        bool   // the AddOn reconnects on the SAME accept_seq after restart (#5a)
-	reconnectOldBuild       bool   // the AddOn reconnects reporting the OLD build after restart (#5b)
-	noRollbackReconnect     bool   // F2: the AddOn does NOT come back after the rollback's second restart
-	addonBuildBeforeRestart string // the build the AddOn ran before the FORWARD restart (captured at Start-Process)
-	addonRestored           bool   // fakeHost.AddonRestore ran: the OLD DLL is back in bin/Custom
-	nt8Running              bool   // the fake NT8 process is alive (tasklist sees it)
-	nt8HangsOnClose         bool   // TOCTOU: CloseMainWindow does NOT exit NT8 (a dialog/hang)
-	startDoesNotBringUp     bool   // Start-Process returns success but NT8 never comes up (restart-evidence gap)
-	startDelayPolls         int    // Start-Process launches, but tasklist does not see NT8 for this many polls (delayed healthy start)
-	startDelayRemaining     int    // runtime countdown for startDelayPolls
-	startProbeError         bool   // tasklist errors once after Start-Process (process probe error)
-	startProbeFails         bool   // runtime one-shot for startProbeError
-	startFails              bool   // Start-Process itself returns an error (start command fails)
-	exitWaitProbeError      bool   // tasklist errors once during the exit-wait linger (after the stop)
-	nt8ExitLinger           int    // W-UPDATER-WINPATH (d): after a stop, tasklist keeps reporting NT8 for this many polls (the old process fully exiting)
-	nt8LingerLeft           int    // the remaining linger polls
-	flipSimOnClose          bool   // TOCTOU: the sim_accounts leg flips FAIL when the graceful close runs
-	catchupBuild            string // feat/addon-catchup: the install's own AddOn build (the fake reports it after the catch-up restart, instead of manifestBuild)
-	omitLeg                 string // the fake gate omits this leg entirely (guard #1 missing-leg pin)
-	badToken                bool   // the app refuses the token (401)
-	verdictMissing          bool
-	holdWriteLies           bool          // the hold write lands on disk, then errs (U1 item 9)
-	holdWriteFails          bool          // the hold write errs before anything lands
-	ackStale                bool          // the AddOn's last ack is 20 s old
-	ackJob                  string        // the AddOn acks this job id instead of the hold's
-	addonSeq                uint64        // the AddOn's connection accept_seq (a reconnect = a new seq)
-	exe                     string        // /proc/<MainPID>/exe, when not the install's binary
-	healthRev               string        // /api/health serves this revision instead of the running sha
-	ackLag                  time.Duration // the AddOn's last ack is this much older than the 5 s tick (age stays consistent)
-	wallStep                time.Duration // a wall-clock step: shifts the RENDERED received time only; AgeMs stays monotonic
-	maintJob                string        // /api/maintenance names this job instead of the hold's
-	echo500                 bool          // the authed endpoints answer 500 echoing the request's Authorization header
-	noCS                    bool          // the signed manifest lists no ninjascript/*.cs
-	reverifyTamper          func(*ReleaseFacts)
+	flat                         bool
+	addonConnected               bool
+	pollHook                     func()          // run at every fake-host sleep boundary (planner-wait tests)
+	driveCtx                     context.Context // non-nil overrides the drive context (cancellation pins)
+	addonBuild                   string          // what the running AddOn reports
+	manifestBuild                string          // the signed manifest's addon.build_id
+	refuseBoot                   map[string]bool
+	watchFail                    map[string]bool
+	rollbackFail                 bool
+	rollbackDistFail             bool   // RollbackTo restores binary+RELEASE, fails at dist, no kill of its own
+	addonRestoreFail             bool   // fakeHost.AddonRestore returns an error
+	noReconnect                  bool   // the AddOn never reconnects after the NT8 restart (guard #3 timeout)
+	reconnectSameSeq             bool   // the AddOn reconnects on the SAME accept_seq after restart (#5a)
+	reconnectOldBuild            bool   // the AddOn reconnects reporting the OLD build after restart (#5b)
+	noRollbackReconnect          bool   // F2: the AddOn does NOT come back after the rollback's second restart
+	addonBuildBeforeRestart      string // the build the AddOn ran before the FORWARD restart (captured at Start-Process)
+	addonRestored                bool   // fakeHost.AddonRestore ran: the OLD DLL is back in bin/Custom
+	nt8Running                   bool   // the fake NT8 process is alive (tasklist sees it)
+	nt8HangsOnClose              bool   // TOCTOU: CloseMainWindow does NOT exit NT8 (a dialog/hang)
+	startDoesNotBringUp          bool   // Start-Process returns success but NT8 never comes up (restart-evidence gap)
+	startDelayPolls              int    // Start-Process launches, but tasklist does not see NT8 for this many polls (delayed healthy start)
+	startDelayRemaining          int    // runtime countdown for startDelayPolls
+	startProbeError              bool   // tasklist errors once after Start-Process (process probe error)
+	startProbeErrorCount         int    // tasklist errors this many times after Start-Process (m246 transient retry)
+	startProbeErrorPersistent    bool   // tasklist errors on EVERY call after Start-Process (m246 deadline-fail)
+	startProbeFailsLeft          int    // runtime countdown for startProbeError / startProbeErrorCount
+	startProbePersist            bool   // runtime persistent for startProbeErrorPersistent
+	startFails                   bool   // Start-Process itself returns an error (start command fails)
+	exitWaitProbeError           bool   // tasklist errors once during the exit-wait linger (after the stop)
+	exitWaitProbeErrorPersistent bool   // tasklist errors on EVERY call during the exit-wait linger
+	nt8ExitLinger                int    // W-UPDATER-WINPATH (d): after a stop, tasklist keeps reporting NT8 for this many polls (the old process fully exiting)
+	nt8LingerLeft                int    // the remaining linger polls
+	flipSimOnClose               bool   // TOCTOU: the sim_accounts leg flips FAIL when the graceful close runs
+	catchupBuild                 string // feat/addon-catchup: the install's own AddOn build (the fake reports it after the catch-up restart, instead of manifestBuild)
+	omitLeg                      string // the fake gate omits this leg entirely (guard #1 missing-leg pin)
+	badToken                     bool   // the app refuses the token (401)
+	verdictMissing               bool
+	holdWriteLies                bool          // the hold write lands on disk, then errs (U1 item 9)
+	holdWriteFails               bool          // the hold write errs before anything lands
+	ackStale                     bool          // the AddOn's last ack is 20 s old
+	ackJob                       string        // the AddOn acks this job id instead of the hold's
+	addonSeq                     uint64        // the AddOn's connection accept_seq (a reconnect = a new seq)
+	exe                          string        // /proc/<MainPID>/exe, when not the install's binary
+	healthRev                    string        // /api/health serves this revision instead of the running sha
+	ackLag                       time.Duration // the AddOn's last ack is this much older than the 5 s tick (age stays consistent)
+	wallStep                     time.Duration // a wall-clock step: shifts the RENDERED received time only; AgeMs stays monotonic
+	maintJob                     string        // /api/maintenance names this job instead of the hold's
+	echo500                      bool          // the authed endpoints answer 500 echoing the request's Authorization header
+	noCS                         bool          // the signed manifest lists no ninjascript/*.cs
+	reverifyTamper               func(*ReleaseFacts)
 
 	// UPDATER-NT8-CLOSED knobs
 	addonDownSince time.Duration // >0: the AddOn is disconnected this long (stamped on the fake server's record); the ack is nil and the fake gate attaches its nt8_absent view
@@ -238,13 +245,66 @@ func withCSChanged() rigOpt {
 	}
 }
 
-// withStaleAddon (feat/addon-catchup) makes the INSTALLED release ship the NEW
-// AddOn build while NT8 still runs the OLD one — the state the catch-up exists
-// to fix. The fake reports the install's build after the catch-up restart.
+// withVerifiedRunningRelease materializes the VERIFIED installed release for
+// the RUNNING binary (boxOld) under VL_RELEASE_DIR — the artifact a catch-up
+// compiles from (m355). build is the build id its ninjascript declares ("" =
+// boxOldBuild). It also writes the verdict that names it, so catchupAddonFacts
+// can re-prove it. Without this, no verified artifact exists and a catch-up
+// SKIPS (never InstallDir/ninjascript).
+func withVerifiedRunningRelease(build string) rigOpt {
+	return func(b *box) {
+		if build == "" {
+			build = boxOldBuild
+		}
+		b.runningReleaseBuild = build
+		dir := filepath.Join(b.releaseRoot, boxOld)
+		writeFile(b.t, filepath.Join(dir, b.binName), binaryBody(boxOld))
+		writeFile(b.t, filepath.Join(dir, "RELEASE"), boxOld+"\n")
+		writeFile(b.t, filepath.Join(dir, "web", "dist", "index.html"), "<html>running</html>\n")
+		writeFile(b.t, filepath.Join(dir, calendarFile), "[]\n")
+		writeFile(b.t, filepath.Join(dir, "ninjascript", "VLTrader.cs"), "// C# running\n")
+		writeFile(b.t, filepath.Join(dir, "ninjascript", "VLTraderTCPClient.cs"),
+			"// C# running\nprivate const string VL_BUILD_ID = \""+build+"\";\n")
+		writeFile(b.t, filepath.Join(dir, "manifest.json"),
+			fmt.Sprintf(`{"source_sha":%q,"binary_md5":"","signature_verdict":"sshsig:release:SHA256:fake"}`, boxOld))
+		writeRunningVerdict(b.t, b, boxOld, dir)
+	}
+}
+
+// writeRunningVerdict writes the verdict file naming the verified running
+// release (source_sha → release_dir) under <data>/updater/verdicts/, so
+// verdictForSourceSHA finds it. 0600 — ReadVerdict refuses a group/other-
+// readable file.
+func writeRunningVerdict(t *testing.T, b *box, sha, dir string) {
+	t.Helper()
+	releaseID := "vr-" + sha[:12] // one verdict per source sha (never collides)
+	vdir := filepath.Join(b.data, "updater", "verdicts")
+	if err := os.MkdirAll(vdir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	body := fmt.Sprintf(`{"schema":1,"release_id":%q,"source_sha":%q,"release_dir":%q,"signer":"release","signer_fingerprint":%q,"hashalg":"sha512","manifest_sha256":%q,"artifacts":5,"verified_at":"2026-10-21T00:00:00Z"}`+"\n",
+		releaseID, sha, dir, "SHA256:"+strings.Repeat("A", 42)+"0", strings.Repeat("ab", 32))
+	if err := os.WriteFile(filepath.Join(vdir, releaseID+".json"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// withInstalledReleaseVerdict writes the verdict file naming the release being
+// installed (boxNew → relDir), so AFTER an install the running build's verified
+// artifact is resolvable by the catch-up (m355).
+func withInstalledReleaseVerdict() rigOpt {
+	return func(b *box) {
+		writeRunningVerdict(b.t, b, boxNew, b.relDir)
+	}
+}
+
+// withStaleAddon (feat/addon-catchup) makes the VERIFIED installed release
+// (the running binary's own release dir) ship the NEW AddOn build while NT8
+// still runs the OLD one — the state the catch-up exists to fix (m355). The
+// fake reports the install's build after the catch-up restart.
 func withStaleAddon() rigOpt {
 	return func(b *box) {
-		writeFile(b.t, filepath.Join(b.inst, "ninjascript", "VLTraderTCPClient.cs"),
-			"// C#\nprivate const string VL_BUILD_ID = \""+boxNewBuild+"\";\n")
+		withVerifiedRunningRelease(boxNewBuild)(b)
 		b.addonBuild = boxOldBuild // NT8 still runs the OLD AddOn
 		b.catchupBuild = boxNewBuild
 	}
@@ -271,7 +331,18 @@ func newRig(t *testing.T, opts ...rigOpt) *rig {
 		refuseBoot:   map[string]bool{}, watchFail: map[string]bool{},
 	}
 	b.data = filepath.Join(b.inst, "data")
-	b.relDir = filepath.Join(root, "releases", boxNew)
+	// m355: the release root is configured NOW (the one resolver), so the
+	// catch-up can resolve the VERIFIED installed release the same way the
+	// worker does on the box (<VL_RELEASE_DIR>/<running revision>).
+	b.releaseRoot = filepath.Join(root, "releases")
+	if err := os.MkdirAll(b.releaseRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VL_RELEASE_DIR", b.releaseRoot)
+	installpath.ResetReleaseDirForTest()
+	t.Cleanup(installpath.ResetReleaseDirForTest)
+	b.runningReleaseBuild = boxOldBuild
+	b.relDir = filepath.Join(b.releaseRoot, boxNew)
 	// the one-click AddOn build/place/restart seam: a fake NT8 docs dir with
 	// bin/Custom, so addonbuild never touches the real /mnt/c tree.
 	b.nt8docs = filepath.Join(root, "nt8docs")
@@ -381,6 +452,24 @@ func (r *rig) newWorker() *Worker {
 	return w
 }
 
+// expectedAddonBuild is the build id the box's build step produces (m357 A:
+// the fake DLL must embed a build id so verify-on-place does not refuse it) —
+// the catch-up's running release when one is set, else the manifest build.
+func (b *box) expectedAddonBuild() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.catchupBuild != "" {
+		return b.catchupBuild
+	}
+	return b.manifestBuild
+}
+
+// fakeAddonDLLText renders a fake compiled DLL whose bytes embed exactly ONE
+// build id (ASCII), the shape addonbuild.BuildIDFromDLL scans.
+func fakeAddonDLLText(id string) string {
+	return "fake AddOn DLL: type " + addonTypeName + "\nVL_BUILD_ID=\"" + id + "\"\n"
+}
+
 // fakeRunWin plays powershell.exe, dotnet.exe and tasklist.exe on Linux
 // (W-ADDON-ONE-CLICK): the no-SDK ps1 build "compiles" by writing a
 // VL.AddOn.dll carrying the AddOn type into the -Out dir; a dotnet build does
@@ -403,7 +492,7 @@ func (b *box) fakeRunWin(ctx context.Context, name string, args ...string) ([]by
 			writeFile(b.t, filepath.Join(wsl, "NinjaTrader.Custom.dll"), "fake rebuilt Custom.dll: no AddOn type\n")
 			return []byte("VL_CUSTOM_TYPES_OK\nVL_CUSTOM_DLL=" + out + "\\NinjaTrader.Custom.dll\nVL_CUSTOM_SHA256=fake\n"), nil
 		}
-		writeFile(b.t, filepath.Join(wsl, "VL.AddOn.dll"), "fake AddOn DLL: type "+addonTypeName+"\n")
+		writeFile(b.t, filepath.Join(wsl, "VL.AddOn.dll"), fakeAddonDLLText(b.expectedAddonBuild()))
 		return []byte("VL_ADDON_DLL=" + out + "\nVL_ADDON_SHA256=fake\n"), nil
 	}
 	if strings.Contains(name, "dotnet") {
@@ -412,18 +501,20 @@ func (b *box) fakeRunWin(ctx context.Context, name string, args ...string) ([]by
 		if err := os.MkdirAll(wsl, 0o755); err != nil {
 			return nil, err
 		}
-		writeFile(b.t, filepath.Join(wsl, "VL.AddOn.dll"), "fake AddOn DLL: type "+addonTypeName+"\n")
+		writeFile(b.t, filepath.Join(wsl, "VL.AddOn.dll"), fakeAddonDLLText(b.expectedAddonBuild()))
 		return []byte("Build succeeded.\n    0 Warning(s)\n    0 Error(s)\n"), nil
 	}
 	if strings.Contains(name, "tasklist") {
 		b.mu.Lock()
-		if b.startProbeFails {
-			b.startProbeFails = false
+		if b.startProbePersist || b.startProbeFailsLeft > 0 {
+			if b.startProbeFailsLeft > 0 {
+				b.startProbeFailsLeft--
+			}
 			b.mu.Unlock()
 			return nil, errors.New("fake tasklist probe error")
 		}
-		if !b.nt8Running && b.nt8LingerLeft > 0 && b.exitWaitProbeError {
-			b.exitWaitProbeError = false // one-shot
+		if !b.nt8Running && b.nt8LingerLeft > 0 && (b.exitWaitProbeError || b.exitWaitProbeErrorPersistent) {
+			b.exitWaitProbeError = false // one-shot consumed
 			b.mu.Unlock()
 			return nil, errors.New("fake tasklist probe error during exit wait")
 		}
@@ -486,7 +577,15 @@ func (b *box) fakeRunWin(ctx context.Context, name string, args ...string) ([]by
 			}
 			b.nt8Running = true
 			b.startDelayRemaining = b.startDelayPolls
-			b.startProbeFails = b.startProbeError
+			b.startProbeFailsLeft = 0
+			b.startProbePersist = b.startProbeErrorPersistent
+			if !b.startProbePersist {
+				if b.startProbeErrorCount > 0 {
+					b.startProbeFailsLeft = b.startProbeErrorCount
+				} else if b.startProbeError {
+					b.startProbeFailsLeft = 1
+				}
+			}
 			if !b.addonRestored {
 				// FORWARD restart: remember what it was running, then bring up
 				// the NEW build on a NEW connection.
@@ -891,19 +990,27 @@ func (f *fakeRel) Rehash(v Verdict) (int, error) {
 }
 
 func (f *fakeRel) Reverify(v Verdict) (ReleaseFacts, error) {
+	dir := v.ReleaseDir
 	arts := map[string]string{}
+	// The signed manifest's build id: the NEXT release's for the install path,
+	// the RUNNING release's for a catch-up re-proof (m355 — the catch-up must
+	// expect the verified running release's build, not the next release's).
+	build := f.b.manifestBuild
+	if filepath.Clean(dir) != filepath.Clean(f.b.relDir) {
+		build = f.b.runningReleaseBuild
+	}
 	for _, rel := range []string{"web/dist/index.html", "ninjascript/VLTrader.cs", "ninjascript/VLTraderTCPClient.cs", calendarFile, f.b.relBinName} {
 		if f.b.noCS && strings.HasPrefix(rel, "ninjascript/") {
 			continue
 		}
-		sum, err := sha256File(filepath.Join(f.b.relDir, filepath.FromSlash(rel)))
+		sum, err := sha256File(filepath.Join(dir, filepath.FromSlash(rel)))
 		if err != nil {
 			return ReleaseFacts{}, err
 		}
 		arts[rel] = sum
 	}
 	facts := ReleaseFacts{ReleaseID: v.ReleaseID, SourceSHA: v.SourceSHA, ManifestSHA256: v.ManifestSHA256,
-		SignerFingerprint: v.SignerFingerprint, AddonBuildID: f.b.manifestBuild, Artifacts: arts}
+		SignerFingerprint: v.SignerFingerprint, AddonBuildID: build, Artifacts: arts}
 	if f.b.reverifyTamper != nil {
 		f.b.reverifyTamper(&facts)
 	}
@@ -989,7 +1096,7 @@ func (h *fakeHost) ExeOf(pid int) (string, error) {
 // records the backup dir and fails when the test asks it to (the real OSHost
 // MOVE-back is covered by its own unit test; the rig never touches real files
 // here, because tests use fake backup paths).
-func (h *fakeHost) AddonRestore(docsDir, backupDir string) error {
+func (h *fakeHost) AddonRestore(docsDir, backupDir, preJobBuild string) error {
 	h.b.mu.Lock()
 	h.b.addonRestoreCalls = append(h.b.addonRestoreCalls, backupDir)
 	err := h.b.addonRestoreErr

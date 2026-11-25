@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"vl/internal/ownerpush"
 	"vl/kernel"
 	"vl/logger"
 	"vl/market"
@@ -54,8 +55,11 @@ func (at *AutoTrader) monitorTick(now time.Time) {
 	// per-trader 60 s beat too. runCycle can block for minutes inside a
 	// planner call (402.5 s on 10-14) and a trader holding a position may not
 	// cycle at all; the link check must not depend on either.
-	wd := at.driveDeadManWatchdog()
+	wd := at.driveDeadManWatchdogAt(now) // m456: the beat's own clock, so a link-up edge seen HERE anchors the FEED DOWN grace at `now`, never after it
 	at.checkFeedDown(now)
+	ownerpush.Retry()         // m438: re-offer owner pushes a budget / full queue dropped (bounded, stale ones discarded)
+	at.checkUnfilledHole(now) // m432: a hole NT8 has no history for -> P1 + owner push (reload it)
+	at.feedLagAlarmTick(now)  // m134 DS-108 (c): soft lag band under FEED DOWN held > 3 min → WARN
 	at.checkPositionDrawdown()
 	// Release #25 PK-2 — exit a planner position whose own thesis died
 	// (day_plan.planner_exit_on_thesis_death; OFF → returns at once).
@@ -97,12 +101,22 @@ func (at *AutoTrader) monitorTick(now time.Time) {
 	// flatten could be up to 2 minutes late. enforceEODFlatAt is idempotent and
 	// gated on day_plan/mentor, so a no-position trader no-ops every beat.
 	at.enforceEODFlat()
+	// PEP MODE: pep's OWN time exit (default 15:00 CT) on the same wall-clock
+	// beat - the session flat above never acts on a pep trader.
+	at.pepFlatBeat(now)
 	// MENTOR-NY item 8 (rescan P2-N5): the mentor news cancel/flatten and the
 	// day-stop sweep also run on this wall-clock beat — before, their only
 	// callers were inside mentorEvalOnce, i.e. only on a NEW closed bar, so a
 	// feed outage or an NT8 lag across the 07:30 print skipped the −10 m
 	// cancel/flatten (10-14: FEED DOWN 03:44–07:49 spanned the CPI print).
 	at.mentorSweepsOnBeat()
+	// m452: the two data-gate episode beats run LAST, after every guard above
+	// (protection, daily-loss flatten, EOD flat, mentor sweeps), and bounded: they
+	// read the bar store (storeSwingInputs ~100 ms warm, seconds on a contended
+	// DB) and must never delay an exit-side action. They advance an ENTRY-pause
+	// episode only (one WARN + push each) and act on nothing.
+	// trader/data_beats_bounded.go; pinned by TestMonitorTickRunsTheDataBeatsLastAndBounded.
+	at.runDataGateBeats(now)
 }
 
 // positionPnLPct computes a position's leveraged P&L percent. Side is normalized:
@@ -191,7 +205,7 @@ func (at *AutoTrader) checkPositionDrawdown() {
 			// with mentor mode ON, a mentor trade follows ONLY the mentor's
 			// exits — the AI-era drawdown emergency close must not close a
 			// mentor-owned position. Log ONCE per position + a visible counter.
-			if at.mentorEnabled() {
+			if at.modeOwnsExits() { // PEP MODE: mentor or pep
 				at.drawdownMentorBlockedOnce(symbol, side, currentPnLPct, peakPnLPct, drawdownPct)
 				continue
 			}

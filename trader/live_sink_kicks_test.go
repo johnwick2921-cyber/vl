@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"vl/store"
 	ntwire "vl/provider/ninjatrader"
+	"vl/store"
 )
 
 // TestLiveSinkKicksFireBeforePictureEval — FIX-LIVE-SINK-KICKS. The one sink

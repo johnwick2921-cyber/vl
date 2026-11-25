@@ -119,7 +119,8 @@ func (at *AutoTrader) maybeTrailStop(symbol, side string, entryPrice, markPrice 
 	// FIX-AUTOBE-OFF-IN-MENTOR (owner ruling 2026-10-09): trailing is an AI-mode
 	// stop mover. With mentor mode ON, mentor trades follow ONLY the mentor's
 	// exits — the AI-era trail must not move a mentor-owned stop.
-	if at.mentorEnabled() {
+	// PEP MODE: trailing is an AI-mode stop mover; pep has none (modeOwnsExits).
+	if at.modeOwnsExits() {
 		return
 	}
 	enabled, mult, period, arm, armPts := trailingConfig(at.config.StrategyConfig.RiskControl)

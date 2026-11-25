@@ -65,9 +65,18 @@ func (OSHost) Now() time.Time { return time.Now() }
 // AddonRestore MOVES a placed AddOn's backup DLL back into bin/Custom, without
 // ever deleting the current one (THE ONE RULE): the current DLL is moved aside
 // inside the backup dir first, then the backup takes its place.
-func (OSHost) AddonRestore(docsDir, backupDir string) error {
+//
+// m343 — verify-on-restore: the backup must carry the proof addonbuild.Place
+// recorded (sha256 + build id) and still hash to it, or the restore is refused
+// (an unverified backup is never moved back over a placed DLL). A LEGACY backup
+// with no sidecar (m357 D) is accepted only when its embedded build id equals
+// preJobBuild — the build the box ran before the job.
+func (OSHost) AddonRestore(docsDir, backupDir, preJobBuild string) error {
 	if backupDir == "" {
 		return nil // nothing was backed up, nothing to restore
+	}
+	if err := verifyAddonBackup(backupDir, preJobBuild); err != nil {
+		return err
 	}
 	dest := filepath.Join(docsDir, "bin", "Custom", "VL.AddOn.dll")
 	if _, err := os.Stat(dest); err == nil {

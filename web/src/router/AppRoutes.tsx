@@ -24,6 +24,7 @@ import { StrategyStudioPage } from '../pages/StrategyStudioPage'
 import { TraderDashboardPage } from '../pages/TraderDashboardPage'
 import { GuidePage } from '../guide/GuidePage'
 import { useAuth } from '../contexts/AuthContext'
+import { useFriendsPageEnabled } from '../hooks/useFriendsPageEnabled'
 import {
   usePollResume,
   REFRESH_TRADERS_MS,
@@ -444,6 +445,9 @@ export function AppRoutes() {
   const { user, token, isLoading } = useAuth()
   const { config: systemConfig, loading: configLoading } = useSystemConfig()
   const isAuthenticated = !!user && !!token
+  // m386: the /friends route is hidden (falls to the catch-all → home) unless
+  // VL_FRIENDS_PAGE=1; the flag comes from /api/health.
+  const friendsPageEnabled = useFriendsPageEnabled()
 
   if (isLoading || configLoading) {
     return <LoadingScreen />
@@ -564,18 +568,20 @@ export function AppRoutes() {
             )
           }
         />
-        <Route
-          path={ROUTES.friends}
-          element={
-            isAuthenticated ? (
-              <AppChrome currentPage="friends" showFooter={false}>
-                <FriendsPage />
-              </AppChrome>
-            ) : (
-              <Navigate to={ROUTES.login} replace />
-            )
-          }
-        />
+        {friendsPageEnabled && (
+          <Route
+            path={ROUTES.friends}
+            element={
+              isAuthenticated ? (
+                <AppChrome currentPage="friends" showFooter={false}>
+                  <FriendsPage />
+                </AppChrome>
+              ) : (
+                <Navigate to={ROUTES.login} replace />
+              )
+            }
+          />
+        )}
         <Route path="*" element={<Navigate to={ROUTES.home} replace />} />
       </Routes>
     </>

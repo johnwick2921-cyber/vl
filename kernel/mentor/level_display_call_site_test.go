@@ -53,6 +53,10 @@ func seededMentorEval(cfg Config, keyPrice, emaPrice float64, bars []market.Klin
 	// between the entry and the old extreme and steal the target (this test
 	// pins the OLD-EXTREME read, not the EMA-location ladder).
 	cfg.EMALocationTFMinutes = 0
+	// m465 P1: the synthetic churn would read as a forming 15m inside bar (the
+	// early read, D4.2-R2) and the CE-1 rule would then want a 5m ISB — these
+	// pins test the old-extreme read, not the 15m box.
+	cfg.Early15mRead = false
 	e := New(cfg)
 	e.seeded = true
 	e.State.SeedLevels = []Level{{Key: fmt.Sprintf("key:%.2f", keyPrice), Kind: KindKeyLevel, Price: keyPrice, AtTime: 1}}
@@ -79,8 +83,9 @@ func seededMentorEval(cfg Config, keyPrice, emaPrice float64, bars []market.Klin
 // AT it, no candle traded above it) carries the isb_at_old_extreme size-3 flag
 // [D4.1 p1 @08:05 written rule 2].
 func TestISBFlagAtTheNearestUnbrokenOldHighCallSite(t *testing.T) {
-	cfg := DefaultConfig()
-	cfg.Exec2mAfter30m = false // release #31: the default is ON (2m after 09:00); these pins test the 1m read
+	cfg := preOctCfg()
+	cfg.BoxSwingBothRoles = false // oct round 2 D3-G2: this synthetic tape's outside bars predate the both-roles swing read (the box premise is the one-role switch)
+	cfg.Exec2mAfter30m = false    // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 	cfg.Enabled = true
 
 	swing := swingHighTape5m(101.5)             // swing high 101.5
@@ -110,7 +115,7 @@ func TestISBFlagAtTheNearestUnbrokenOldHighCallSite(t *testing.T) {
 // pivot is no longer an old high, so the inside bar is not "at an old high" and
 // is not size-cut. The pre-r22 12-pivot list still flagged it.
 func TestISBFlagIgnoresABrokenOldHighCallSite(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Exec2mAfter30m = false // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 	cfg.Enabled = true
 
@@ -141,8 +146,9 @@ func TestISBFlagIgnoresABrokenOldHighCallSite(t *testing.T) {
 // obstacle, ahead of the key level at 130 [§6 "nearest old high → EMA 34 → the
 // next level", D3.3 p1 @04:11].
 func TestTargetIsTheNearestUnbrokenOldHighCallSite(t *testing.T) {
-	cfg := DefaultConfig()
-	cfg.Exec2mAfter30m = false // release #31: the default is ON (2m after 09:00); these pins test the 1m read
+	cfg := preOctCfg()
+	cfg.BoxSwingBothRoles = false // oct round 2 D3-G2: this synthetic tape's outside bars predate the both-roles swing read (the box premise is the one-role switch)
+	cfg.Exec2mAfter30m = false    // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 	cfg.Enabled = true
 
 	swing := swingHighTape5m(125)              // swing high 125, within 20 of key 130

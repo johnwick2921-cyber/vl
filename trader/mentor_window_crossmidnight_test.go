@@ -53,16 +53,17 @@ func TestMentorWindowCrossesMidnight(t *testing.T) {
 }
 
 // Production call site: a saved "no window" (-1) lets an entry through at 10:00
-// CT, while the unset default (0 → 60) still refuses it; SWING stays exempt.
+// CT; m472 A6: the unset default is now window-off too [Oct D5.2 @ 01:00-01:20],
+// so the refusing control is an explicit stored 60; SWING stays exempt.
 func TestMentorWindowGateNoWindowStoredValue(t *testing.T) {
 	ct := kernel.CTLocation()
 	setMentorNowSource(func() time.Time { return time.Date(2026, 10, 2, 10, 0, 0, 0, ct) })
 	t.Cleanup(func() { setMentorNowSource(nil) })
 	in := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong, Setup: "ISB"}
 
-	unset := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
+	unset := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorWindowMinutes: 60})
 	if refuse, _ := unset.mentorWindowGate(in); !refuse {
-		t.Fatal("unset window (default 08:30+60) must refuse an entry at 10:00 CT")
+		t.Fatal("a stored 08:30+60 window must refuse an entry at 10:00 CT")
 	}
 	none := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorWindowMinutes: -1})
 	if refuse, why := none.mentorWindowGate(in); refuse {

@@ -64,6 +64,7 @@ func pictureHtfLiveBars(symbol, tf, contract string, bars []ntwire.Bar, received
 			// MENTOR P3 — the mentor evaluator rides the same event loop: a
 			// FINAL 1m/5m frame stamps the arrival and kicks the pass.
 			at.noteLiveBarsForMentorPass(symbol, tf, bars, receivedAt)
+			at.noteLiveBarsForPepPass(symbol, tf, bars) // PEP MODE: a FINAL 1m frame kicks the pep pass
 			at.NotifyLiveBars(symbol, tf, kl, receivedAt)
 		}
 		return true

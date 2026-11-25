@@ -111,9 +111,10 @@ func TestExcursionOnCloseIsIdempotent(t *testing.T) {
 		t.Fatalf("open excursion: %v", err)
 	}
 	// Pre-close the excursion row (already excursed).
+	stop29900 := 29900.0
 	if err := st.TradeExcursions().Close(id, store.TradeExcursionClose{
 		ExitPx: 30010, ExitTs: time.Now().UnixMilli(), ExitReason: "oco_target",
-		StopPxFinal: 29900,
+		StopPxFinal: &stop29900,
 	}); err != nil {
 		t.Fatalf("pre-close excursion: %v", err)
 	}

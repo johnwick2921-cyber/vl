@@ -149,6 +149,24 @@ func friendRegistryPath() string {
 	return filepath.Join(root, "friends.json")
 }
 
+// friendsPageEnabled is the updater-side copy of the VL_FRIENDS_PAGE parser
+// (m386). The updater is a separate binary and cannot import vl/config, so it
+// re-reads the env directly — the same "1"/"true" contract, anything else off.
+func friendsPageEnabled() bool {
+	v := strings.TrimSpace(os.Getenv("VL_FRIENDS_PAGE"))
+	return v == "1" || strings.EqualFold(v, "true")
+}
+
+// friendRegistryPathIfEnabled returns the registry path only when the Friends
+// page is on; "" otherwise, so updateFriends skips the sweep (the same
+// "no friend surface configured" path as an unset registry).
+func friendRegistryPathIfEnabled() string {
+	if !friendsPageEnabled() {
+		return ""
+	}
+	return friendRegistryPath()
+}
+
 // serve refuses, in order: the process checks (root, the bot's cgroup, TZ),
 // a missing cutover token, an adapter that has not landed, no home for the
 // backups, the worker lock (a second serve writes nothing), and the start
@@ -187,7 +205,9 @@ func serve(t updaterworker.Target, stderr io.Writer) int {
 		Logf:       logf,
 		// W-FRIEND-HOSTED Segment 5: the friend sweep follows a completed
 		// install. Both are disabled when unset (no friend surface configured).
-		FriendRegistry: friendRegistryPath(),
+		// m386: the sweep is also skipped unless VL_FRIENDS_PAGE=1 — the friends
+		// surface is off until the owner box opts in.
+		FriendRegistry: friendRegistryPathIfEnabled(),
 		FriendHost:     strings.TrimSpace(os.Getenv("TUNNEL_IP")),
 	}, updaterworker.Deps{
 		Lib:    lib,

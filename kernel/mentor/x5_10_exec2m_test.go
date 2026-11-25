@@ -43,7 +43,7 @@ func TestX5_10Exec2mAfter30mSwitchesISBReadTo2m(t *testing.T) {
 	now := bars[len(bars)-1].CloseTime + 1 // 09:03 CT
 
 	// OFF (explicit): the 1m read emits the ISB.
-	cfgOff := DefaultConfig()
+	cfgOff := preOctCfg()
 	cfgOff.Enabled = true
 	cfgOff.Exec2mAfter30m = false
 	if got := x5_10Emits(newISBEval(cfgOff), bars, now); got != 1 {
@@ -51,7 +51,7 @@ func TestX5_10Exec2mAfter30mSwitchesISBReadTo2m(t *testing.T) {
 	}
 
 	// ON + after the first 30 min of RTH: the 2m read drops the ISB.
-	cfgOn := DefaultConfig()
+	cfgOn := preOctCfg()
 	cfgOn.Enabled = true
 	cfgOn.Exec2mAfter30m = true
 	if got := x5_10Emits(newISBEval(cfgOn), bars, now); got != 0 {
@@ -108,7 +108,7 @@ func TestX5_10Exec2mScheduleAtTick(t *testing.T) {
 		{"01:30 CT (overnight)", auditMs(2026, 9, 15, 1, 30, 0)},
 		{"03:10 CT (Europe open)", auditMs(2026, 9, 15, 3, 10, 0)},
 	} {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.Enabled = true
 		cfg.Exec2mAfter30m = true
 		e := newISBEval(cfg)
@@ -120,7 +120,7 @@ func TestX5_10Exec2mScheduleAtTick(t *testing.T) {
 
 	// Knob OFF (explicit) at 01:30: the 1m read forms the ISB → the pre-open
 	// day gate refuses it (isb_day_not_measured) — proves the 1m read when OFF.
-	cfgOff := DefaultConfig()
+	cfgOff := preOctCfg()
 	cfgOff.Enabled = true
 	cfgOff.Exec2mAfter30m = false
 	eOff := newISBEval(cfgOff)
@@ -130,7 +130,7 @@ func TestX5_10Exec2mScheduleAtTick(t *testing.T) {
 	}
 
 	// RTH open +30 window (08:45 CT), knob ON: still the 1m read → emits.
-	cfgRth := DefaultConfig()
+	cfgRth := preOctCfg()
 	cfgRth.Enabled = true
 	cfgRth.Exec2mAfter30m = true
 	if got := x5_10Emits(newISBEval(cfgRth), x5BarsAt(auditMs(2026, 9, 15, 8, 45, 0)), auditMs(2026, 9, 15, 8, 45, 0)); got != 1 {
@@ -191,7 +191,7 @@ func TestX5_10Exec2mReadsClosedBucketsNotTheFormingOne(t *testing.T) {
 		rthBars(4, 103, 104, 102, 103), // 09:04 — first minute of the next 2m bucket
 	}
 	now := bars[len(bars)-1].CloseTime + 1 // 09:04 CT
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.Exec2mAfter30m = true
 	if got := x5_10Emits(newISBEval(cfg), bars, now); got != 0 {
@@ -206,9 +206,10 @@ func TestX5_10Exec2mReadsClosedBucketsNotTheFormingOne(t *testing.T) {
 // cancel" fires at the close of the 4th 2m candle (09:09), NOT after three 1m
 // candles (09:06). MUTANT (D1, 1m stacking) → cancels at 09:06 → RED.
 func TestExec2mOnISBStackingCounts2mCandles(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.Exec2mAfter30m = true
+	cfg.ISBStackTinyStopPts = 0 // m465 (#60): the default is now 12.5 (D5.1-R26); this fixture pins the stack count, so the tiny-stop exception is off
 	e := New(cfg)
 	// bars 0-1 = 2m candle 1; bars 2-3 = 2m candle 2 (the ISB candle, I1:
 	// high 106 / low 98.5). Bars 4-9 are doji 1m bars whose 2m candles stay

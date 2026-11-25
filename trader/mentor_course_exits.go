@@ -38,13 +38,26 @@ func mentorSwingRunnerOn(rc *store.RiskControlConfig) bool {
 	return rc == nil || mentorBoolKnob(rc.MentorSwingRunner, true)
 }
 
-// mentorResonanceRunnerTPOn — CX-3, nil → ON (case a, a bug fix).
+// mentorResonanceRunnerTPOn — CX-3, nil → OFF (W-MENTOR-EXACT m186; c52 W2 A3:
+// rc == nil and a loaded strategy with the key unset now AGREE, both OFF —
+// before, a nil risk control read ON and a loaded one OFF). ON = the bot's own
+// inference, "the runner TP moves out to the level beyond the old high". OFF
+// (default) = the course: D2.4 @01:58–02:09 only says "70-80% nó sẽ phá luôn
+// cái đỉnh bên tay trái" + "để stop loss ở break even, cho nó chạy" — the
+// mentor never places a TP for the runner, so OFF means NO CAP: the runner's
+// resting PHL/PLH take-profit is pushed out of reach at the arm
+// (mentorResonanceRunnerUncap) and the runner exits only by its BE stop, X8 or
+// the EOD flat.
 func mentorResonanceRunnerTPOn(rc *store.RiskControlConfig) bool {
-	return rc == nil || mentorBoolKnob(rc.MentorResonanceRunnerTPOldHigh, true)
+	if rc == nil {
+		return false
+	}
+	return mentorBoolKnob(rc.MentorResonanceRunnerTPOldHigh, false)
 }
 
 // mentorBEBeforePartialOn — CX-4, nil → ON (course-defaults-30, owner "fix all"
-// — reverses R3): BE at half-way to +1R is MANDATORY [D1.2 p1 @12:34–13:12, @15:57].
+// — reverses R3): BE at half-way to +1R is MANDATORY [D1.2 p1 @12:34–13:12,
+// @15:56–15:59].
 func mentorBEBeforePartialOn(rc *store.RiskControlConfig) bool {
 	return rc == nil || mentorBoolKnob(rc.MentorBEBeforePartial, true)
 }
@@ -56,7 +69,7 @@ func mentorISBC3PartialAnyProfit(rc *store.RiskControlConfig) bool {
 }
 
 // mentorReverseISBAsPHL — CX-6, nil → ON (course-defaults-30, owner "fix all"):
-// the mentor names the reverse ISB the Potential Low 2 / Lower High [D5.4].
+// the mentor names the reverse ISB the Potential Low 2 / Lower High [D5.4 p1 @03:01–03:02].
 func mentorReverseISBAsPHL(rc *store.RiskControlConfig) bool {
 	return rc == nil || mentorBoolKnob(rc.MentorReverseISBAsPHL, true)
 }
@@ -74,6 +87,72 @@ func mentorEMA9VisitCap(at *AutoTrader, rc *store.RiskControlConfig) string {
 	return mode
 }
 
+// mentorISBLossBox — m465 P2 (release #60, D4.2-R27): range (default) | band;
+// a bad value fails closed to range (the course) and is counted.
+func mentorISBLossBox(at *AutoTrader, rc *store.RiskControlConfig) string {
+	if rc == nil {
+		return mentor.ISBLossBoxRange
+	}
+	mode, ok := mentor.NormalizeISBLossBox(rc.MentorISBLossBox)
+	if !ok {
+		at.mentorCount("isb_loss_box_bad_value")
+	}
+	return mode
+}
+
+// ── m466 P4 (release #61): the SWING4H fidelity knobs ─────────────────────
+
+// mentorSwingISBCloseBack — G63 D5.2-R26 [p3 @04:49–05:09]: not_required
+// (default) | required; a bad value fails closed to not_required (the course)
+// and is counted.
+func mentorSwingISBCloseBack(at *AutoTrader, rc *store.RiskControlConfig) string {
+	if rc == nil {
+		return mentor.SwingISBCloseBackNotRequired
+	}
+	mode, ok := mentor.NormalizeSwingISBCloseBack(rc.MentorSwingISBCloseBack)
+	if !ok {
+		at.mentorCount("swing_isb_close_back_bad_value")
+	}
+	return mode
+}
+
+// mentorSwingISBKeepOn — G66 D5.2-R25 [p2 @10:23–10:51]: nil → ON (the course:
+// the inside-bar order survives a later close through the line).
+func mentorSwingISBKeepOn(rc *store.RiskControlConfig) bool {
+	return rc == nil || mentorBoolKnob(rc.MentorSwingISBKeep, true)
+}
+
+// Swing runner TP modes (G65 D5.2-R6).
+const (
+	mentorSwingRunnerTPNone   = "none"   // default: no runner TP — held by the 4h [D5.2 p1 @05:40–06:14]
+	mentorSwingRunnerTPCapped = "capped" // pre-#61: max(100, 2 × the first-target distance)
+)
+
+// normalizeSwingRunnerTP canonicalizes mentor_swing_runner_tp where it enters
+// (canon 28): "" → none; ok=false = an unknown value (fails closed to none).
+func normalizeSwingRunnerTP(v string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "", mentorSwingRunnerTPNone:
+		return mentorSwingRunnerTPNone, true
+	case mentorSwingRunnerTPCapped:
+		return mentorSwingRunnerTPCapped, true
+	}
+	return mentorSwingRunnerTPNone, false
+}
+
+// mentorSwingRunnerTPMode resolves mentor_swing_runner_tp; a bad value fails
+// closed to none (the course) and is counted swing_runner_tp_bad_value.
+func mentorSwingRunnerTPMode(at *AutoTrader, rc *store.RiskControlConfig) string {
+	if rc == nil {
+		return mentorSwingRunnerTPNone
+	}
+	mode, ok := normalizeSwingRunnerTP(rc.MentorSwingRunnerTP)
+	if !ok {
+		at.mentorCount("swing_runner_tp_bad_value")
+	}
+	return mode
+}
+
 // mentorPositiveKnob resolves a float knob: 0 → def; negative/NaN → def,
 // counted under name+"_bad_value".
 func mentorPositiveKnob(at *AutoTrader, v, def float64, name string) float64 {
@@ -83,6 +162,30 @@ func mentorPositiveKnob(at *AutoTrader, v, def float64, name string) float64 {
 	if v < 0 || math.IsNaN(v) || math.IsInf(v, 0) {
 		at.mentorCount(name + "_bad_value")
 		return def
+	}
+	return v
+}
+
+// mentorWideStopMaxFailClosed is what a BAD stored mentor_wide_stop_max_pts
+// (negative, NaN, ±Inf) resolves to: the #70 cap 40 ("40 điểm thì mình làm
+// gì? Mình không trade" [OctD2.3-R47 @48:12; R48 @49:38]). A bad value must
+// never silently mean "no cap" (fail CLOSED), so it does NOT fall back to the
+// default 0.
+const mentorWideStopMaxFailClosed = mentor.WideStopMaxFailClosedPts
+
+// mentorWideStopMaxResolve resolves mentor_wide_stop_max_pts (owner order
+// 2026-11-15 "tarde all isb or any thing just need adjust contact"):
+// unset/0 → the kernel default 0 = NO stop-size cap; a positive finite value
+// → that cap (revert = 40); negative/NaN/±Inf → 40, counted
+// wide_stop_max_pts_bad_value (fail closed — not mentorPositiveKnob, whose
+// fallback is the default, which here would be no cap).
+func mentorWideStopMaxResolve(at *AutoTrader, v float64) float64 {
+	if v == 0 {
+		return mentorWideStopMaxDefault
+	}
+	if v < 0 || math.IsNaN(v) || math.IsInf(v, 0) {
+		at.mentorCount("wide_stop_max_pts_bad_value")
+		return mentorWideStopMaxFailClosed
 	}
 	return v
 }
@@ -100,6 +203,67 @@ type mentorCourseExitsResolved struct {
 	KeypairRatio          float64
 	BoxFreshRTHPair       bool
 	BoxMaxHeightPts       float64
+	// SwingMaxStopPts (m463, D5.2-R31): the swing skip ceiling — a SWING4H stop
+	// ABOVE it is refused. Knob mentor_swing_max_stop_pts, unset/0/bad → 80
+	// (answers-1112 Q13, "7-80 điểm … cứ vô 1-2" [Sept D5.2 p2 @05:25-05:33];
+	// 90 = the m463 value, the revert).
+	SwingMaxStopPts float64
+	// ISBLossBox (m465 P2, D4.2-R27): what an ISB stop-out boxes — range
+	// (the 5m range that held the trade, default) | band.
+	ISBLossBox string
+	// m466 P3 (release #61): G55 mentor_open5m_break (1m_close | 5m_close),
+	// G56 mentor_news_wait_mode (both | 4h_only), G58 mentor_news_read_lead_min
+	// (minutes before the print, 0–120; 0 = the pre-#61 window start).
+	Open5mBreak     string
+	NewsWaitMode    string
+	NewsReadLeadMin int
+	// m466 P4 (release #61): SwingISBCloseBack (G63, not_required | required),
+	// SwingISBKeep (G66, the inside-bar order survives a close through),
+	// SwingRunnerTP (G65, none | capped).
+	SwingISBCloseBack string
+	SwingISBKeep      bool
+	SwingRunnerTP     string
+	// Stop-to-size LADDER (owner order 2026-11-10): StopSizeLadder
+	// (mentor_stop_size_ladder, nil → ON), WideStopContracts
+	// (mentor_wide_stop_contracts, 0 → 1 [OctD2.3-R47 @48:12 "1 MNQ"]),
+	// WideStopMaxPts (mentor_wide_stop_max_pts, 0 → no cap, owner order
+	// 2026-11-15; a stored positive value caps [OctD2.3-R47 @48:12]; a bad
+	// stored value → 40, fail closed — mentorWideStopMaxResolve). Always
+	// finite: the no-cap +Inf lives only inside mentor.StopLadderCeiling.
+	StopSizeLadder    bool
+	WideStopContracts int
+	WideStopMaxPts    float64
+}
+
+// mentorEnumKnob resolves a string enum knob: "" → def; a value outside
+// `allowed` fails closed to def and is counted under name+"_bad_value".
+func mentorEnumKnob(at *AutoTrader, v, def, name string, allowed ...string) string {
+	v = strings.ToLower(strings.TrimSpace(v))
+	if v == "" {
+		return def
+	}
+	for _, a := range allowed {
+		if v == a {
+			return v
+		}
+	}
+	at.mentorCount(name + "_bad_value")
+	return def
+}
+
+// mentorNewsReadLeadMin — m466 G58 D4.4-R6: nil → 30 (the kernel default, read
+// not retyped); an explicit 0 → 0 (the pre-#61 07:20 start); outside 0–120 →
+// the default, counted.
+func mentorNewsReadLeadMin(at *AutoTrader, rc *store.RiskControlConfig) int {
+	def := mentor.DefaultCourseExitsCfg().NewsReadLeadMin
+	if rc == nil || rc.MentorNewsReadLeadMin == nil {
+		return def
+	}
+	if v := *rc.MentorNewsReadLeadMin; v >= 0 && v <= 120 {
+		return v
+	}
+	at.mentorCount("news_read_lead_min_bad_value")
+	return def
 }
 
 func mentorCourseExitsResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorCourseExitsResolved {
@@ -112,13 +276,34 @@ func mentorCourseExitsResolve(at *AutoTrader, rc *store.RiskControlConfig) mento
 		ReverseISBAsPHL:       mentorReverseISBAsPHL(rc),
 		EMA9VisitCap:          mentorEMA9VisitCap(at, rc),
 		KeypairRatio:          1,
-		ISBMaxPts:             30, // course-defaults-30: stop < 30 taken, ≥ 30 refused
-		BoxFreshRTHPair:       rc != nil && mentorBoolKnob(rc.MentorBoxFreshRTHPair, false),
+		ISBMaxPts:             mentorISBMaxDefault, // m466 G23: 20 — "hai mươi mấy điểm… đừng vô" [D4.1 p1 @05:41–06:08]
+		BoxFreshRTHPair:       rc == nil || mentorBoolKnob(rc.MentorBoxFreshRTHPair, true),
+		SwingMaxStopPts:       mentorSwingMaxStopDefault,
+		ISBLossBox:            mentorISBLossBox(at, rc),
+		Open5mBreak:           mentor.Open5mBreak1mClose,
+		NewsWaitMode:          mentor.NewsWaitBoth,
+		NewsReadLeadMin:       mentorNewsReadLeadMin(at, rc),
+		SwingISBCloseBack:     mentorSwingISBCloseBack(at, rc),
+		SwingISBKeep:          mentorSwingISBKeepOn(rc),
+		SwingRunnerTP:         mentorSwingRunnerTPMode(at, rc),
+		StopSizeLadder:        rc == nil || mentorBoolKnob(rc.MentorStopSizeLadder, mentorStopLadderDefault),
+		WideStopContracts:     mentorWideStopContractsDefault,
+		WideStopMaxPts:        mentorWideStopMaxDefault,
 	}
 	if rc != nil {
-		out.ISBMaxPts = mentorPositiveKnob(at, rc.MentorISBMaxPts, 30, "isb_max_pts")
+		out.WideStopMaxPts = mentorWideStopMaxResolve(at, rc.MentorWideStopMaxPts)
+		switch {
+		case rc.MentorWideStopContracts > 0:
+			out.WideStopContracts = rc.MentorWideStopContracts
+		case rc.MentorWideStopContracts < 0:
+			at.mentorCount("wide_stop_contracts_bad_value")
+		}
+		out.ISBMaxPts = mentorPositiveKnob(at, rc.MentorISBMaxPts, mentorISBMaxDefault, "isb_max_pts")
+		out.Open5mBreak = mentorEnumKnob(at, rc.MentorOpen5mBreak, mentor.Open5mBreak1mClose, "open5m_break", mentor.Open5mBreak1mClose, mentor.Open5mBreak5mClose)
+		out.NewsWaitMode = mentorEnumKnob(at, rc.MentorNewsWaitMode, mentor.NewsWaitBoth, "news_wait_mode", mentor.NewsWaitBoth, mentor.NewsWait4hOnly)
 		out.KeypairRatio = mentorPositiveKnob(at, rc.MentorKeypairCandleRatio, 1, "keypair_candle_ratio")
 		out.BoxMaxHeightPts = mentorPositiveKnob(at, rc.MentorBoxMaxHeightPts, 0, "box_max_height_pts")
+		out.SwingMaxStopPts = mentorPositiveKnob(at, rc.MentorSwingMaxStopPts, mentorSwingMaxStopDefault, "swing_max_stop_pts")
 	}
 	return out
 }
@@ -131,10 +316,39 @@ func applyMentorCourseExits(at *AutoTrader, cfg *mentor.Config, rc *store.RiskCo
 	cfg.CourseExits.ReverseISBAsPHL = r.ReverseISBAsPHL
 	cfg.CourseExits.EMA9VisitCap = r.EMA9VisitCap
 	cfg.CourseExits.ISBMaxStopPts = r.ISBMaxPts
+	cfg.CourseExits.StopSizeLadder = r.StopSizeLadder // owner order 2026-11-10: kernel ceilings widen to the wide max
+	cfg.CourseExits.WideStopMaxPts = r.WideStopMaxPts // 0 = no cap (owner 2026-11-15); stored caps [OctD2.3-R47 @48:12] — ONE number, kernel + trader R8
 	cfg.CourseExits.KeypairCandleRatio = r.KeypairRatio
 	cfg.CourseExits.BoxFreshRTHPair = r.BoxFreshRTHPair
 	cfg.CourseExits.BoxMaxHeightPts = r.BoxMaxHeightPts
+	cfg.Swing.SkipStopPts = r.SwingMaxStopPts           // m463 D5.2-R31: ONE number, kernel + trader gate
+	cfg.ISBLossBox = r.ISBLossBox                       // m465 P2 D4.2-R27: kernel limits.go rangeLoss
+	cfg.CourseExits.Open5mBreak = r.Open5mBreak         // m466 G55 D4.4-R40: kernel open5m.go
+	cfg.CourseExits.NewsWaitMode = r.NewsWaitMode       // m466 G56 D4.4-R22: kernel news_print.go newsWaitFilter
+	cfg.CourseExits.NewsReadLeadMin = r.NewsReadLeadMin // m466 G58 D4.4-R6: kernel news_print.go newsHTFWindows
+	// m466 P4: the kernel swing ISB knobs (swing4h.go walkSwingBar / stepSwingBar).
+	cfg.Swing.ISBCloseBackRequired = r.SwingISBCloseBack == mentor.SwingISBCloseBackRequired
+	cfg.Swing.ISBCancelOnCloseThrough = !r.SwingISBKeep
 }
+
+// mentorISBMaxDefault is the CX-9 ISB ceiling default — the kernel's own
+// (CourseExits.ISBMaxStopPts, 20 since m466 G23), read, never retyped.
+var mentorISBMaxDefault = mentor.DefaultCourseExitsCfg().ISBMaxStopPts
+
+// The stop-to-size ladder defaults: ON and the wide max (0 = no cap since
+// owner order 2026-11-15) are the kernel's own (CourseExits.StopSizeLadder /
+// WideStopMaxPts), read, never retyped; the 1-MNQ wide tier is the trader's
+// (the kernel does not size) — "Trade vẫn được. 1 MNQ" [OctD2.3-R47 @48:12].
+var (
+	mentorStopLadderDefault  = mentor.DefaultCourseExitsCfg().StopSizeLadder
+	mentorWideStopMaxDefault = mentor.DefaultCourseExitsCfg().WideStopMaxPts
+)
+
+const mentorWideStopContractsDefault = 1
+
+// mentorSwingMaxStopDefault is the m463 swing skip ceiling default — the
+// kernel's own default (SwingCfg.SkipStopPts), read, never retyped.
+var mentorSwingMaxStopDefault = mentor.DefaultSwingCfg().SkipStopPts
 
 // mentorCourseExitsBootLine READS every course-exits knob for THIS trader
 // (never a literal); a value the trader cannot resolve prints n/a.
@@ -155,10 +369,21 @@ func (at *AutoTrader) mentorCourseExitsBootLine() string {
 		}
 		return fmt.Sprintf("%g", v)
 	}
-	return fmt.Sprintf("🧑‍🏫 mentor course-exits knobs: swing_ema34_is_first_target=%s · swing_runner=%s (swing contracts %d) · resonance_runner_tp_old_high=%s · be_before_partial=%s · isb_c3_partial_any_profit=%s · reverse_isb_as_phl=%s · ema9_visit_cap=%s · isb_max_pts=%s · keypair_candle_ratio=%g · box_fresh_rth_pair=%s · box_max_height_pts=%s",
+	// wide_stop_max_pts 0 is NOT "off" (that reads as "the ladder is off"):
+	// it is the no-cap default (owner order 2026-11-15). Never +Inf — the
+	// resolved value is always finite.
+	wideMax := func(v float64) string {
+		if v <= 0 {
+			return "none (no cap)"
+		}
+		return fmt.Sprintf("%g", v)
+	}
+	return fmt.Sprintf("🧑‍🏫 mentor course-exits knobs: swing_ema34_is_first_target=%s · swing_runner=%s (swing contracts %d) · resonance_runner_tp_old_high=%s · be_before_partial=%s · isb_c3_partial_any_profit=%s · reverse_isb_as_phl=%s · ema9_visit_cap=%s · isb_max_pts=%s · keypair_candle_ratio=%g · box_fresh_rth_pair=%s · box_max_height_pts=%s · swing_max_stop_pts=%s · isb_loss_box=%s · open5m_break=%s · news_wait_mode=%s · news_read_lead_min=%d · swing_isb_close_back=%s · swing_isb_keep=%s · swing_runner_tp=%s · stop_size_ladder=%s · wide_stop_contracts=%d · wide_stop_max_pts=%s",
 		onoff(r.SwingEMA34FirstTarget), onoff(r.SwingRunner), at.mentorSwingContractsRead(), onoff(r.ResonanceRunnerTP),
 		onoff(r.BEBeforePartial), onoff(r.ISBC3AnyProfit), onoff(r.ReverseISBAsPHL), r.EMA9VisitCap,
-		num(r.ISBMaxPts), r.KeypairRatio, onoff(r.BoxFreshRTHPair), num(r.BoxMaxHeightPts))
+		num(r.ISBMaxPts), r.KeypairRatio, onoff(r.BoxFreshRTHPair), num(r.BoxMaxHeightPts), num(r.SwingMaxStopPts), r.ISBLossBox, r.Open5mBreak, r.NewsWaitMode, r.NewsReadLeadMin,
+		r.SwingISBCloseBack, onoff(r.SwingISBKeep), r.SwingRunnerTP,
+		onoff(r.StopSizeLadder), r.WideStopContracts, wideMax(r.WideStopMaxPts))
 }
 
 // mentorSwingContractsRead reads the resolved swing size (the existing
@@ -170,17 +395,31 @@ func (at *AutoTrader) mentorSwingContractsRead() int {
 
 // ── CX-2: the swing runner ─────────────────────────────────────────────────
 
-// mentorSwingRunnerMinPts is the runner's take-profit distance floor: the top
-// of the course's per-4h-candle band ("50–100 points per 4-hour candle",
-// 00-METHOD §8 table, D5.2). The runner is held by the 4h (BE at +1R, the
-// hold-close at the end of the 2nd 4h candle — the swing's own rules); this TP
-// only caps it. [C] the course names no runner TP: "hô tới đâu luôn".
+// mentorSwingRunnerMinPts is the runner's take-profit distance floor under
+// mentor_swing_runner_tp=capped (the pre-#61 rule): the top of the course's
+// per-4h-candle band ("50–100 points per 4-hour candle", 00-METHOD §8 table,
+// D5.2). [C] the course names no runner TP: "hô tới đâu luôn" — hence the
+// none default (G65).
 const mentorSwingRunnerMinPts = 100.0
+
+// mentorSwingRunnerNoTPPts (m466 P4, G65 D5.2-R6) is where the runner's TP is
+// PARKED under mentor_swing_runner_tp=none: the course holds the runner by the
+// 4h with no take-profit ("em gồng theo khung 4 giờ" [D5.2 p1 @05:40–06:14]; one
+// 4h candle = 152 pts; R32 "rồi tới đâu thì tới"), but the NT8 bracket is an OCO
+// that needs a TP leg (WireBracket rounds it; the AddOn's modify_bracket cannot
+// drop one — see mentorResonanceNoCapPts). 1,000 MNQ points (~3.4% of the index)
+// is beyond any 4h hold — the stop / BE, the 4h hold-close
+// (kernel manageSwingPosition) or the EOD flat ends the runner first — and a
+// resting take-profit there is a passive limit, never priced through the
+// market. OURS, not the course (the dispatch spec's number).
+const mentorSwingRunnerNoTPPts = 1000.0
 
 // mentorSwingRunnerLegs is the CX-2 split for a SWING4H arm with the runner
 // knob ON and n ≥ 2: leg 1 = ceil(n/2) at the swing's first target
-// (max(1R, the 5m EMA 34) — in.Target), the runner = the rest with its TP at
-// max(100 pts, 2 × the first-target distance) beyond the entry. ok=false →
+// (max(1R, the 5m EMA 34) — in.Target), the runner = the rest. Its TP (m466 P4,
+// mentor_swing_runner_tp): none (default) = parked mentorSwingRunnerNoTPPts
+// beyond the entry, counted swing_runner_no_tp; capped = max(100 pts, 2 × the
+// first-target distance) beyond the entry. ok=false →
 // the caller keeps today's single bracket (knob OFF, not a swing, n < 2, or
 // no first target), the knob-ON skips counted.
 func (at *AutoTrader) mentorSwingRunnerLegs(in mentor.Intent, n int, forkMode string) (leg1Qty int, leg1TP, runnerTP float64, ok bool) {
@@ -201,11 +440,22 @@ func (at *AutoTrader) mentorSwingRunnerLegs(in mentor.Intent, n int, forkMode st
 	}
 	leg1, _ := mentorSplitLegs(n, 0)
 	run := math.Max(mentorSwingRunnerMinPts, 2*dist)
+	noTP := mentorSwingRunnerTPMode(at, at.mentorRiskControl()) == mentorSwingRunnerTPNone
+	if noTP {
+		run = mentorSwingRunnerNoTPPts
+	}
 	runnerTP = in.Price + run
 	if in.Side == mentor.SideShort {
 		runnerTP = in.Price - run
 	}
+	if tick := at.mentorInstrumentTick(); noTP && tick > 0 {
+		runnerTP = math.Round(runnerTP/tick) * tick
+	}
 	at.mentorCount("swing_runner_split")
+	if noTP {
+		at.mentorCount("swing_runner_no_tp")
+		at.logInfof("🧑‍🏫 mentor swing runner: NO take-profit (mentor_swing_runner_tp=none) — held by the 4h; the bracket's TP is parked at %.2f (%.0f pts out, the OCO needs one); the stop / BE, the 4h hold-close or the EOD flat ends it [D5.2-R6 p1 @05:40–06:14 \"gồng theo khung 4 giờ\"]", runnerTP, mentorSwingRunnerNoTPPts)
+	}
 	return leg1, first, runnerTP, true
 }
 
@@ -221,7 +471,7 @@ func (at *AutoTrader) mentorSwingCloseQty(r store.ArmedOrderDB, side string, qty
 	open, ok := mentorDriveOpenQty(at)
 	if !ok {
 		at.mentorCount("close_refused_open_qty_unknown")
-		at.logWarnf("🧑‍🏫 mentor swing hold-close REFUSED — split swing (runner) and the broker's open qty is unreadable; never an over-close; the resting stop protects, retried next 4h read")
+		at.logWarnf("🧑‍🏫 mentor swing hold-close REFUSED — split swing (runner) and the broker's open qty is unreadable; never an over-close; the resting stop protects; the evaluator keeps the hold-close owed and re-sends it on the next closed 5m bar")
 		return 0, false
 	}
 	have := open[strings.ToLower(side)]
@@ -239,18 +489,22 @@ func (at *AutoTrader) mentorSwingCloseQty(r store.ArmedOrderDB, side string, qty
 
 // ── CX-3: the resonance runner's TP, really sent ───────────────────────────
 
-// mentorResonanceRunnerTP sends the mode-A runner TP move the evaluator's
-// RunnerTarget asks for (the level beyond the old high — "70-80% là nó sẽ phá
-// luôn cái đỉnh bên tay trái" [D2.4 p1 @01:58–02:09]) through the SAME
-// leg-scoped modify_bracket path the ISB candle-3 partial uses
+// mentorResonanceRunnerTP is the mode-A runner TP action (CX-3). Default (knob
+// mentor_resonance_runner_tp_old_high OFF — the course names no runner target):
+// UNCAP the runner (mentorResonanceRunnerUncap). Knob ON: send the move the
+// evaluator's RunnerTarget asks for (the level beyond the old high) through the
+// SAME leg-scoped modify_bracket path the ISB candle-3 partial uses
 // (modifyBracketWire), addressed to the RUNNER (wire leg 2). Leg 1's +1R TP
 // stays (R-RES). Every branch that sends nothing is logged AND counted.
 func (at *AutoTrader) mentorResonanceRunnerTP(nt *ntTrader.TCPTrader, p *mentorLivePos, runnerTarget float64) {
 	if !mentorResonanceRunnerTPOn(at.mentorRiskControl()) {
+		// c52 W2 A3: OFF is the course — NO cap. The old-high level is only
+		// logged; the runner's own take-profit is removed (pushed out of reach).
 		if runnerTarget > 0 {
-			at.logInfof("🧑‍🏫 mentor resonance runner TP %.2f NOT sent — mentor_resonance_runner_tp_old_high OFF (logged only, the pre-#25 behaviour)", runnerTarget)
+			at.logInfof("🧑‍🏫 mentor resonance runner TP %.2f NOT used — mentor_resonance_runner_tp_old_high OFF: the course names no runner target, the runner is UNCAPPED [D2.4 p1 @01:58–02:09]", runnerTarget)
 		}
 		at.mentorCount("modify_bracket_resonance_logged")
+		at.mentorResonanceRunnerUncap(nt, p)
 		return
 	}
 	runner := mentorRunnerLeg(p)
@@ -294,6 +548,147 @@ func (at *AutoTrader) mentorResonanceRunnerTP(nt *ntTrader.TCPTrader, p *mentorL
 	runner.TP = want
 }
 
+// mentorResonanceNoCapPts is how far beyond the entry the uncapped runner's
+// take-profit is parked (c52 W2 A3). The NT8 AddOn's modify_bracket cannot
+// DROP a TP leg (new_take_profit <= 0 means "leave untouched", and a frame with
+// neither a stop nor a TP changes nothing: VLTraderTCPClient.cs HandleModifyBracket),
+// and an AddOn change is out of scope, so "no cap" is a sentinel far level. 600
+// MNQ points is ~2% of the index: beyond any intraday run the mentor trades
+// (the EOD flat ends the day first) yet well inside the exchange's price bands.
+// OURS, not the course — the course says only "cho nó chạy".
+const mentorResonanceNoCapPts = 600.0
+
+// mentorResonanceUncapMaxTries bounds the uncap modify (the arm + the retries on
+// later closed candles when a send failed). Guarded by the drive goroutine.
+const mentorResonanceUncapMaxTries = 3
+
+// mentorResonanceUncapPrice is the parked take-profit for an uncapped runner.
+func mentorResonanceUncapPrice(side string, entry, tick float64) float64 {
+	want := entry + mentorResonanceNoCapPts
+	if strings.EqualFold(side, "short") {
+		want = entry - mentorResonanceNoCapPts
+	}
+	if tick > 0 {
+		want = math.Round(want/tick) * tick
+	}
+	return want
+}
+
+// mentorResonanceRunnerUncap makes "no cap" real (c52 W2 A3): in mode A the
+// RUNNER's resting take-profit (the PHL/PLH level shy of the old high — the very
+// leg the mentor says continues) is moved far out of reach with the leg-scoped
+// modify_bracket, so the runner exits only by its BE stop, X8 or the EOD flat.
+// Leg 1's +1R TP stays (R-RES). A one-bracket position (no separate runner leg)
+// is NOT touched: a TP modify there would move the WHOLE position past the 1:1
+// partial. Every branch that sends nothing is logged AND counted. Called at the
+// arm and retried on later closed candles (bounded) when a send failed.
+func (at *AutoTrader) mentorResonanceRunnerUncap(nt *ntTrader.TCPTrader, p *mentorLivePos) {
+	runner := mentorRunnerLeg(p)
+	if runner == nil {
+		return
+	}
+	if runner.Wire != 2 && runner.Wire != 3 {
+		at.mentorCount("resonance_runner_uncap_not_split")
+		at.logWarnf("🧑‍🏫 mentor resonance runner uncap NOT sent — one bracket on the wire (no separate runner leg); a TP modify would move the WHOLE position past the 1:1 partial; the position keeps its TP %.2f", runner.TP)
+		p.UncapTries = mentorResonanceUncapMaxTries
+		return
+	}
+	side := p.Pos.Side
+	want := mentorResonanceUncapPrice(side, p.Pos.Entry, at.mentorInstrumentTick())
+	if runner.TP > 0 && !mentorStopTighter(side, want, runner.TP) {
+		p.UncapTries = mentorResonanceUncapMaxTries // already parked at/beyond the sentinel
+		return
+	}
+	if p.UncapTries >= mentorResonanceUncapMaxTries {
+		return
+	}
+	p.UncapTries++
+	if modifyBracketWire == nil {
+		at.mentorCount("modify_bracket_unwired")
+		at.logWarnf("🧑‍🏫 mentor resonance runner uncap modify_bracket unwired (TP %.2f) — logged, NOT sent", want)
+		return
+	}
+	if err := modifyBracketWire(nt, runner.SignalID, side, runner.Wire, want); err != nil {
+		at.mentorCount("modify_bracket_failed")
+		at.logErrorf("🧑‍🏫 mentor resonance runner uncap modify_bracket FAILED for %s (TP %.2f): %v — the runner keeps %.2f (try %d of %d)", runner.SignalID, want, err, runner.TP, p.UncapTries, mentorResonanceUncapMaxTries)
+		return
+	}
+	at.mentorCount("resonance_runner_uncapped")
+	at.logInfof("🧑‍🏫 mentor resonance runner UNCAPPED: %s leg %d TP %.2f → %.2f (no cap — BE stop, X8 or EOD flat ends it) [D2.4 p1 @01:58–02:09, @02:24–02:47 \"để break even cho nó chạy\"]", runner.SignalID, runner.Wire, runner.TP, want)
+	runner.TP = want
+	p.UncapTries = mentorResonanceUncapMaxTries
+}
+
+// ── B1 (c52 W2): the live 1:1 stop on leg 1 in candle mode ──────────────────
+
+// mentorLeg1RR11Step keeps LEG 1's stop at the live 1:1 rule, on a SPLIT
+// position in candle-trail mode (mentorExitDriveCandle stage 0, leg 1's partial
+// not yet confirmed, BE already armed on a PRIOR candle). The course: "Risk
+// reward của mình lúc nào cũng phải maintain ở mức 1-1 … đừng cố gắng di chuyển
+// risk reward lên 2-1" and "cầm con chuột kéo dí cái stop theo sát đi" [D1.2
+// p1 @14:09–14:28, @15:56–16:07]: stop = 2·close − T (mentorRR11Stop), T = leg
+// 1's own target. Before this, the candle path moved RUNNER legs only
+// (BE, then the candle trail after the partial) and leg 1 sat at its original
+// stop (BE at +0.5R at best): 10/0/20 with a close at 18 → the course stop is
+// 16, the bot's was 10, so an 18 → 11 pullback exited leg 1 at 0R instead of
+// banking +0.6R. Mode C and A never move the stop (D3.4 p3 @07:38, D2.4) —
+// they never reach this function.
+//
+// Runs only with mentor_be_before_partial ON (the course default): OFF is the
+// owner's R3 "no move before the confirmed partial". Never widens (the
+// never-widen guard in mentorMoveLegStop + the broker judge); a candidate on or
+// through the market (close ≤ the stop side by less than a tick, i.e. the close
+// is at/past the target) is skipped, never sent. Returns whether a move applied.
+func (at *AutoTrader) mentorLeg1RR11Step(nt *ntTrader.TCPTrader, p *mentorLivePos, c float64) bool {
+	pos := &p.Pos
+	leg := &p.Legs[0]
+	if leg.Wire != 1 || leg.SignalID == "" || leg.Qty <= 0 || pos.R <= 0 || c <= 0 {
+		return false
+	}
+	if !pos.ArmedBE || !mentorBEBeforePartialOn(at.mentorRiskControl()) {
+		return false
+	}
+	side := pos.Side
+	long := side == "long"
+	target := leg.TP
+	if target <= 0 {
+		target = pos.Entry + pos.R
+		if !long {
+			target = pos.Entry - pos.R
+		}
+	}
+	tick := at.mentorInstrumentTick()
+	next := mentorRR11Stop(side, leg.Stop, c, target)
+	if next == leg.Stop {
+		return false // not tighter than the resting stop: nothing to send
+	}
+	if tick > 0 {
+		next = math.Round(next/tick) * tick
+	}
+	// protective side of the market by at least a tick: a close at/past the
+	// target (leg 1's TP is about to fill, or its marketable ISB modify rests
+	// at the close) would put 2c−T on/through the market — NT8 refuses it, and
+	// the through-market path flattens the whole symbol.
+	if (long && next > c-tick) || (!long && next < c+tick) {
+		at.mentorCount("leg1_rr11_skipped_at_market")
+		return false
+	}
+	err := at.mentorMoveLegStop(nt, side, leg, next)
+	if errors.Is(err, errMentorStopBrokerTighter) || errors.Is(err, errMentorLegClosed) || errors.Is(err, errMentorStopThroughMarket) {
+		return false
+	}
+	if !mentorMoveApplied(err) {
+		if err != nil && !mentorMoveErrAlreadyLogged(err) {
+			at.logWarnf("🧑‍🏫 mentor leg-1 live 1:1 stop %s → %.2f FAILED: %v", leg.SignalID, next, err)
+		}
+		return false
+	}
+	leg.Stop = next
+	at.mentorCount("leg1_rr11_moved")
+	at.logInfof("🧑‍🏫 mentor leg-1 live 1:1 stop: %s → %.2f (2×close %.2f − target %.2f) — risk:reward kept at 1:1 until the partial fills [D1.2 p1 @14:09–16:07]", leg.SignalID, next, c, target)
+	return true
+}
+
 // ── CX-4: break-even half-way to +1R, BEFORE the partial ───────────────────
 
 // mentorBEBeforePartialStep (knob ON, candle mode, stage 0 — leg 1's partial
@@ -323,7 +718,7 @@ func (at *AutoTrader) mentorBEBeforePartialStep(nt *ntTrader.TCPTrader, p *mento
 		half = pos.Entry - pos.R/2
 	}
 	tick := at.mentorInstrumentTick()
-	be := mentorBEStopPrice(side, pos.Entry, tick)
+	be := at.mentorBEStop(side, pos.Entry, tick)
 	if (long && (c < half || c < be+tick)) || (!long && (c > half || c > be-tick)) {
 		return false
 	}
@@ -361,7 +756,7 @@ func (at *AutoTrader) mentorBEBeforePartialStep(nt *ntTrader.TCPTrader, p *mento
 	pos.ArmedBE = true
 	pos.Stop = be
 	at.mentorCount("be_before_partial")
-	at.logInfof("🧑‍🏫 mentor BE before the partial: close %.2f is past half-way %.2f to +1R — stops → break-even %.2f (entry %.2f) [D1.2 p1 @12:41–13:12, @15:57; mentor_be_before_partial ON — overrides owner ruling R3's after-partial BE]",
+	at.logInfof("🧑‍🏫 mentor BE before the partial: close %.2f is past half-way %.2f to +1R — stops → break-even %.2f (entry %.2f) [D1.2 p1 @12:34–13:12, @15:56–15:59; mentor_be_before_partial ON — overrides owner ruling R3's after-partial BE]",
 		c, half, be, pos.Entry)
 	return true
 }

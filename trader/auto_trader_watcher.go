@@ -478,4 +478,6 @@ func (at *AutoTrader) classifyWatchCallError(record *store.DecisionRecord, err e
 	if record.ErrorClass == "ai_payment_402" {
 		at.on402Failure(time.Now(), err)
 	}
+	// m469 — a non-402 watch-call failure counts toward "AI calls keep failing".
+	at.noteAICallFailure(time.Now(), err)
 }

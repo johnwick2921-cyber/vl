@@ -153,6 +153,25 @@ func TestSSHSIGVerifiesAnSshKeygenSignature(t *testing.T) {
 
 // refuseBoth asserts ssh-keygen's opinion (toolAccepts) and that ours refuses
 // with want.
+// refuseOursAnyTool is refuseBoth for a fixture whose ssh-keygen verdict
+// depends on the OpenSSH VERSION: it records the tool's verdict but asserts only
+// that OUR verifier refuses. Use it ONLY where every known OpenSSH verdict is
+// "refuse" or "accept" and ours is the stricter one (refusing what the tool may
+// accept is the permitted direction; accepting what it refuses is not).
+func refuseOursAnyTool(t *testing.T, signers string, sig, msg []byte, want error) {
+	t.Helper()
+	if kerr := keygenVerify(t, signers, sig, msg); kerr == nil {
+		t.Logf("this ssh-keygen ACCEPTS the fixture (newer OpenSSH); ours must still refuse")
+	}
+	v, err := VerifySSHSIG(msg, sig, signers)
+	if err == nil {
+		t.Fatalf("VerifySSHSIG ACCEPTED (verdict %q); want %v", v.String(), want)
+	}
+	if !errors.Is(err, want) {
+		t.Fatalf("VerifySSHSIG refused with %v; want %v", err, want)
+	}
+}
+
 func refuseBoth(t *testing.T, signers string, sig, msg []byte, toolAccepts bool, want error) {
 	t.Helper()
 	kerr := keygenVerify(t, signers, sig, msg)
@@ -215,33 +234,42 @@ func TestSSHSIGRefusesWrongPrincipal(t *testing.T) {
 	for _, tc := range []struct {
 		name, line  string
 		toolAccepts bool
+		toolVaries  bool // the ssh-keygen verdict differs between OpenSSH versions
 		want        error
 	}{
 		// ssh-keygen (OpenSSH 9.6p1) refuses all six: "Could not verify
 		// signature." (after "<file>:1: invalid key" for the keytype/key VT).
-		{"a VT separator", "release\v" + f.signer.pub, false, ErrSigPrincipal},
-		{"an FF separator", "release\f" + f.signer.pub, false, ErrSigPrincipal},
-		{"a U+00A0 NBSP separator", "release\u00a0" + f.signer.pub, false, ErrSigPrincipal},
-		{"a U+0085 NEL separator", "release\u0085" + f.signer.pub, false, ErrSigPrincipal},
-		{"a leading VT", "\vrelease " + f.signer.pub, false, ErrSigPrincipal},
+		{"a VT separator", "release\v" + f.signer.pub, false, false, ErrSigPrincipal},
+		{"an FF separator", "release\f" + f.signer.pub, false, false, ErrSigPrincipal},
+		{"a U+00A0 NBSP separator", "release\u00a0" + f.signer.pub, false, false, ErrSigPrincipal},
+		{"a U+0085 NEL separator", "release\u0085" + f.signer.pub, false, false, ErrSigPrincipal},
+		{"a leading VT", "\vrelease " + f.signer.pub, false, false, ErrSigPrincipal},
 		// "ssh-ed25519\vAAAA…" is one field: a key type that is not
 		// ssh-ed25519, so the line admits nothing.
-		{"a VT between keytype and key", "release " + keyType + "\v" + keyRest, false, ErrSigPrincipal},
+		{"a VT between keytype and key", "release " + keyType + "\v" + keyRest, false, false, ErrSigPrincipal},
 		// The one place the ruled tokenizer is STRICTER than the tool:
 		// ssh-keygen also ends the principal field at a CR (its strdelimw set
 		// is " \t\r\n"); ours does not, so the principal reads
 		// "release\rssh-…" and admits nothing. Refusing what the tool accepts
 		// is the permitted direction; accepting what it refuses is not.
-		{"a CR separator ssh-keygen honours", "release\r" + f.signer.pub, true, ErrSigPrincipal},
+		{"a CR separator ssh-keygen honours", "release\r" + f.signer.pub, true, false, ErrSigPrincipal},
 		// A LEADING CR (verifier f13 defect 1): ssh-keygen skips only leading
 		// space/tab, then ends the first field at the CR — an EMPTY principal
 		// — and refuses (OpenSSH 9.6p1, rc 255 "Could not verify signature.").
 		// Trimming CR from the FRONT of the line would admit it.
-		{"a leading CR", "\rrelease " + f.signer.pub, false, ErrSigPrincipal},
-		{"a leading CR then a space", "\r release " + f.signer.pub, false, ErrSigPrincipal},
-		{"a leading space then a CR", " \rrelease " + f.signer.pub, false, ErrSigPrincipal},
+		// The GitHub runner image ubuntu26 20261025.179 (2026-11-04) ships a newer
+		// OpenSSH whose ssh-keygen ACCEPTS these three lines (it skips the leading
+		// CR), so the tool's verdict varies by version; ours refuses under every
+		// version, which is the permitted (stricter) direction.
+		{"a leading CR", "\rrelease " + f.signer.pub, false, true, ErrSigPrincipal},
+		{"a leading CR then a space", "\r release " + f.signer.pub, false, true, ErrSigPrincipal},
+		{"a leading space then a CR", " \rrelease " + f.signer.pub, false, true, ErrSigPrincipal},
 	} {
 		t.Run("a non space/tab separator: "+tc.name, func(t *testing.T) {
+			if tc.toolVaries {
+				refuseOursAnyTool(t, writeAllowedSigners(t, f.dir, tc.line), sig, f.msg, tc.want)
+				return
+			}
 			refuseBoth(t, writeAllowedSigners(t, f.dir, tc.line), sig, f.msg, tc.toolAccepts, tc.want)
 		})
 	}

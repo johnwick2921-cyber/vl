@@ -12,7 +12,7 @@ import (
 // fills by the close of the NEXT 1m candle or it is cancelled ("cancel if the
 // next candle does not fill" [D1.4 p1 @ 18:32–18:45]).
 func TestISBIntentCarriesNextCandleExpiry(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	// a head bar with a high close so the EMA target clears the E-2 1:1
 	// floor ("the target is never smaller than the stop" [D1.2 p1 @ 07:48]).
@@ -44,7 +44,7 @@ func TestISBIntentCarriesNextCandleExpiry(t *testing.T) {
 // while the candles stay inside the mother candle the expiry is pushed forward
 // (ExtendArm) and the 4th inside candle cancels the arm.
 func TestStackingExtendsAndCancelsAtFourth(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	e := New(cfg)
 	e.State.ORB = ORB{Day: 0, High: 200, Low: 50, Drawn: true, Escaped: SideLong}

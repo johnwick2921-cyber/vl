@@ -233,6 +233,9 @@ func (e *Evaluator) seedHistoryState(bars1m []market.Kline, full1HRTH []market.K
 		// advanced incrementally per tick past this watermark. The forming
 		// candle was already dropped above, so candles1h is all-closed.
 		for _, l := range e.State.SeedLevels {
+			if !e.Cfg.keyLevelDeleteOn1HClose() {
+				break // LL-1: October keeps the level (knob off, the default)
+			}
 			if levelDeletedBy1HBody(l, candles1h, now) {
 				deleted[l.Key] = true
 			}
@@ -255,6 +258,29 @@ func (e *Evaluator) seedHistoryState(bars1m []market.Kline, full1HRTH []market.K
 		e.State.EMA34 = emaFromCloses(closes, e.Cfg.EMAPeriod34)
 		e.State.EMA9 = emaFromCloses(closes, e.Cfg.EMAPeriod9)
 		e.State.Seed1mWatermark = last.CloseTime
+		e.State.EMA34Warmed = true
+	}
+	// M401: the 2m EMA 34/9 over the closed 2m buckets of the same history
+	// (only while the schedule knob is ON; a re-seed recomputes it from scratch).
+	e.State.EMA34x2, e.State.EMA9x2, e.State.Seed2mWatermark, e.State.EMA2mWarmed = 0, 0, 0, false
+	if e.Cfg.Exec2mAfter30m && len(closes) > 0 {
+		var closed1m []market.Kline
+		for _, b := range bars1m {
+			if b.CloseTime <= now {
+				closed1m = append(closed1m, b)
+			}
+		}
+		// Formed only: at least EMAPeriod34 closed 2m candles of history.
+		if b2 := closedBucketsTF(closed1m, 2, now); len(b2) > 0 && len(b2) >= e.Cfg.EMAPeriod34 {
+			c2 := make([]float64, len(b2))
+			for i, b := range b2 {
+				c2[i] = b.Close
+			}
+			e.State.EMA34x2 = emaFromCloses(c2, e.Cfg.EMAPeriod34)
+			e.State.EMA9x2 = emaFromCloses(c2, e.Cfg.EMAPeriod9)
+			e.State.Seed2mWatermark = b2[len(b2)-1].CloseTime
+			e.State.EMA2mWarmed = true
+		}
 	}
 
 	// The swing's 4h EMA 34 line: the last 34 closed 4h candles (17:00 anchor).
@@ -263,7 +289,8 @@ func (e *Evaluator) seedHistoryState(bars1m []market.Kline, full1HRTH []market.K
 	// history (P1). The seed and every incremental step continue the SAME
 	// recurrence, so seed+ticks == full rebuild exactly. 34 closed candles are
 	// the warm-up MINIMUM (SeedMissing), not a cap — never re-window.
-	if b4 := fourHClosedBuckets(barsTF(bars1m, 60), now); len(b4) > 0 {
+	bars1h := barsTF(withSeamBars(bars1m, e.seamBars, now), 60)
+	if b4 := fourHClosedBuckets(bars1h, now); len(b4) > 0 {
 		closes4 := make([]float64, 0, len(b4))
 		for _, b := range b4 {
 			closes4 = append(closes4, b.Close)
@@ -273,8 +300,16 @@ func (e *Evaluator) seedHistoryState(bars1m []market.Kline, full1HRTH []market.K
 		e.State.Swing.EmaCount = len(closes4)
 		// The line is the canonical recurrence over the stored closes again —
 		// the F-3 stale mark ("until a restart reseeds the line from the
-		// store") is exactly what this read cures.
-		e.State.Swing.LineStale = false
+		// store") is exactly what this read cures. EXCEPT (m456): a 4h bucket
+		// that was OPEN CME time but has no bars (a 1m hole the replay window
+		// never reached: 10-26 17:00-21:57 CT, +0.42 pt on 10-28, +10.8 pt on
+		// 10-27) was skipped as if it were a weekend, so the recurrence is
+		// missing a fold. Mark it stale (SWING4H refused, counted) until a
+		// refill + re-seed closes the hole; holes older than the horizon have
+		// decayed to nothing and do not count.
+		holes, present := holedFourHBuckets(bars1h, 3_600_000, fourHBucketStart(b4[0].OpenTime, ctime()), fourHBucketStart(now, ctime()))
+		e.State.Swing.HoledBuckets = recentHoledBuckets(holes, present, swingHoleHorizonBuckets(e.Cfg.Swing.EMAPeriod))
+		e.State.Swing.LineStale = len(e.State.Swing.HoledBuckets) > 0
 	}
 
 	// F2 (release #10) + LINES-RESTART (release #22): seed the 5m trigger line
@@ -295,6 +330,7 @@ func (e *Evaluator) seedHistoryState(bars1m []market.Kline, full1HRTH []market.K
 		trig, fourH, oneH = TriggerLine{}, TriggerLine{}, TriggerLine{}
 	}
 	e.State.Trigger = TriggerReplay1m(trig, closed1m, 5, e.Cfg)
+	e.seedEscalationTriggers(closed1m, reset) // m465 P1 (D3.4-R43): the 15m/30m lines, same replay
 	// Print windows: the SAME freeze the tick path uses. N6 (release #23):
 	// the windows are absolute instants, and the caller hands the seed the
 	// print windows of EVERY day the replayed history covers (the trader reads
@@ -342,9 +378,52 @@ func (e *Evaluator) seedBoxLatch(closed1m []market.Kline, now int64) {
 	if !e.Cfg.Enabled || len(closed1m) == 0 {
 		return
 	}
-	cfg := e.Cfg.Box
+	latched, post := e.replayLatchDay(closed1m, day)
+	// m473 B1: a restart between the 17:00 roll and the next RTH open must
+	// still hold the previous day's box (a Friday box on the Sunday chart
+	// [Oct D3.3 @ 17:00]) — replay the previous trading day's latch the same
+	// way and carry what is still inside its validity window.
+	e.seedCarriedBoxes(closed1m, day, now)
+	if len(latched) == 0 {
+		return
+	}
+	e.State.LatchedBoxes = latched
+	e.State.PostEscapeBoxes = post
+	e.watermarkBoxes(closed1m, latched, post)
+}
+
+// seedCarriedBoxes (m473 B1) rebuilds State.CarriedBoxes from the trading day
+// before `day` that the bars cover, and watermarks them like latched boxes.
+func (e *Evaluator) seedCarriedBoxes(closed1m []market.Kline, day string, now int64) {
+	e.State.CarriedBoxes = nil
+	if !boxCarryRTH {
+		return
+	}
+	first := sort.Search(len(closed1m), func(i int) bool {
+		return tradingDayKey(time.UnixMilli(BarCloseInstant(closed1m[i])).In(ctime())) >= day
+	})
+	if first == 0 {
+		return
+	}
+	prev := tradingDayKey(time.UnixMilli(BarCloseInstant(closed1m[first-1])).In(ctime()))
+	latched, post := e.replayLatchDay(closed1m[:first], prev)
+	for _, b := range carryBoxes(e.Cfg.BoxCarryFirstLatched, latched, post) {
+		if now >= boxExpiryMs(b) {
+			continue
+		}
+		if e.State.CarriedBoxes == nil {
+			e.State.CarriedBoxes = map[string]Box{}
+		}
+		e.State.CarriedBoxes[string(b.Kind)] = b
+	}
+	e.watermarkBoxes(closed1m, e.State.CarriedBoxes, nil)
+}
+
+// replayLatchDay replays one trading day's FTGH/FTGL latch (see seedBoxLatch).
+func (e *Evaluator) replayLatchDay(closed1m []market.Kline, day string) (map[string]Box, []Box) {
+	cfg := e.withBoxFlags(e.Cfg.Box)
 	if cfg.TF == "" {
-		cfg = DefaultBoxCfg()
+		cfg = e.withBoxFlags(DefaultBoxCfg())
 	}
 	// The first bar a tick of THIS trading day evaluated: the tick's clock is
 	// BarCloseInstant(bar), so the day key is read at that instant.
@@ -364,20 +443,46 @@ func (e *Evaluator) seedBoxLatch(closed1m []market.Kline, now int64) {
 		// so the window is cut there (same boxes, a fraction of the work). The
 		// aggregated TFs (2m, 5m Heikin Ashi) depend on the window's start and
 		// keep the live window exactly.
-		if cfg.TF == "1m" && lo < first-2 {
-			lo = first - 2
+		// m410: a 2m box frame needs 2 left 2m neighbours (4 1m bars) and a
+		// window that starts on a 2m bucket, so the cut keeps 8 bars of margin.
+		cut := first - 2
+		if e.Cfg.Exec2mAfter30m {
+			cut = first - 8
+		}
+		if cfg.TF == "1m" && lo < cut {
+			lo = cut
 		}
 		if lo < 0 {
 			lo = 0
 		}
+		if e.Cfg.Exec2mAfter30m {
+			// m410: a 2m box frame needs the window to START on a 2m bucket.
+			for lo > 0 && bucketOpen(closed1m[lo].OpenTime, 2) != closed1m[lo].OpenTime {
+				lo--
+			}
+		}
 		w := closed1m[lo : j+1]
+		build := e.boxFrameCfg(at) // m410: the frame this tick draws boxes on
 		// Once both roles are latched the first box never changes, so the
 		// full BoxesBuild scan is skipped — only the B52 new-zone check below
 		// still needs the window.
-		if len(latched) < 2 {
-			for _, b := range BoxesBuild(w, cfg, time.UnixMilli(at)) {
-				if _, ok := latched[string(b.Kind)]; !ok {
+		// m429 R4: with the fresh-RTH knob ON a role latched in the evening can
+		// still be REPLACED by a box that forms in RTH, so the scan must reach
+		// RTH — it builds from the RTH slice exactly as the tick does
+		// (boxBuildBars), never the full window, and applies the SAME replace
+		// rule (freshRTHReplaces) the tick's latchBoxes applies.
+		rthScan := e.Cfg.CourseExits.BoxFreshRTHPair && boxRTHWindow(at, e.Cfg) && eveningLatched(latched, at, preOpenLookbackMs(e.Cfg), e.Cfg.BoxCarryFirstLatched)
+		if len(latched) < 2 || rthScan {
+			for _, b := range e.boxesBuildRTH(w, at, build) {
+				if build.TF != cfg.TF {
+					b.TF = build.TF
+				}
+				old, ok := latched[string(b.Kind)]
+				if !ok {
 					latched[string(b.Kind)] = b
+				} else if e.freshRTHReplaces(old, b) {
+					latched[string(b.Kind)] = b
+					post = dropPreRTHPost(post, b)
 				}
 			}
 		}
@@ -386,38 +491,33 @@ func (e *Evaluator) seedBoxLatch(closed1m []market.Kline, now int64) {
 		// latched, exactly as the tick does. The replay runs to the end of the
 		// day (escapes happen long after the first boxes form).
 		if e.Cfg.BoxNewZoneAfterEscape {
-			wTF := barsForTF(w, cfg.TF)
 			for _, kind := range []BoxKind{FTGL, FTGH} {
 				active, ok := activeBoxOfPair(latched, post, kind)
 				if !ok {
 					continue
 				}
-				idx, ok := resolveBarIndex(wTF, active.FormedAtMs)
-				if !ok {
+				if _, escapedYet := boxEscapeOpenMs(w, active, cfg); !escapedYet {
 					continue
 				}
-				active.FormedAt = idx
-				if _, escapedYet := boxEscapeIndex(wTF, active, idx); !escapedYet {
-					continue
-				}
-				nb := boxAfterEscapeBuild(w, cfg, active)
+				nb := boxAfterEscapeBuildFrame(w, build, cfg, active)
 				if nb == nil || postHasBox(post, nb.Key) {
 					continue
 				}
 				post = append(post, *nb)
 			}
-		} else if len(latched) >= 2 {
+		} else if len(latched) >= 2 && !e.freshRTHPending(latched, at) {
 			// The pre-B52 fast path: stop once both roles are latched — a
 			// latched role never changes, so a normal day costs a few dozen
 			// scans, a day where one role never forms costs one scan per minute.
+			// (m429: not while an evening box can still be replaced in RTH.)
 			break
 		}
 	}
-	if len(latched) == 0 {
-		return
-	}
-	e.State.LatchedBoxes = latched
-	e.State.PostEscapeBoxes = post
+	return latched, post
+}
+
+// watermarkBoxes sets BoxRefs of every box to the newest closed bar.
+func (e *Evaluator) watermarkBoxes(closed1m []market.Kline, latched map[string]Box, post []Box) {
 	if e.State.BoxRefs == nil {
 		e.State.BoxRefs = map[string]int64{}
 	}
@@ -432,6 +532,38 @@ func (e *Evaluator) seedBoxLatch(closed1m []market.Kline, now int64) {
 			e.State.BoxRefs[b.Key] = newest
 		}
 	}
+}
+
+// eveningLatched reports whether any latched box formed before the RTH open of
+// the CT day `at` falls on (a candidate for the m429 fresh-RTH replacement).
+func eveningLatched(latched map[string]Box, at, lookbackMs int64, preOpenToo bool) bool {
+	open := rthOpenMs(at) - lookbackMs
+	if preOpenToo { // knob BoxCarryFirstLatched (false = the pre-P3 seed scan)
+		// P3-missesA D3.3-E9: a box formed INSIDE the pre-open window is still replaced
+		// by the box the open candle itself confirms (freshRTHReplaces' second case:
+		// peak 2 = the 08:29 candle, box formed exactly at 08:30). The live tick
+		// replaces it; the seed replay used to stop scanning once a pre-open box was
+		// latched, so a restart / the 17:00 carry kept 28,793.50-28,794.00 instead
+		// of the Friday FTGH 28,812.50-28,818.25 [Oct D3.3 @17:00 R27, @41:28 R51].
+		open = rthOpenMs(at)
+	}
+	for _, b := range latched {
+		if b.FormedAtMs < open {
+			return true
+		}
+	}
+	return false
+}
+
+// freshRTHPending (m429) reports whether the seed replay must keep scanning
+// past "both roles latched": the knob is ON and a latched box is still an
+// evening box that today's RTH (not yet over at `at`) can replace.
+func (e *Evaluator) freshRTHPending(latched map[string]Box, at int64) bool {
+	if !e.Cfg.CourseExits.BoxFreshRTHPair || !eveningLatched(latched, at, preOpenLookbackMs(e.Cfg), e.Cfg.BoxCarryFirstLatched) {
+		return false
+	}
+	t := time.UnixMilli(at).In(ctime())
+	return t.Hour()*60+t.Minute() < 17*60 // before the 17:00 roll the RTH may still produce a box
 }
 
 // SeedBoxLine is the boot line for the replayed box latch — every field READ
@@ -456,6 +588,7 @@ func (e *Evaluator) SeedBoxLine() string {
 type ReseedSnapshot struct {
 	FourH, OneH, FiveM TriggerLine
 	EMA34, EMA9        float64
+	EMAFrame           string // "1m" or "2m": the frame EMA34/EMA9 were read on
 	SwingLine          float64
 	SwingCount         int
 	SwingStale         bool
@@ -472,9 +605,10 @@ type ReseedReport struct {
 
 func (e *Evaluator) reseedSnapshot() ReseedSnapshot {
 	live, del := e.keyLevelCounts()
+	ema9, ema34, frame := e.State.EMAUsed()
 	return ReseedSnapshot{
 		FourH: e.State.HTF.FourH, OneH: e.State.HTF.OneH, FiveM: e.State.Trigger,
-		EMA34: e.State.EMA34, EMA9: e.State.EMA9,
+		EMA34: ema34, EMA9: ema9, EMAFrame: frame,
 		SwingLine: e.State.Swing.Line, SwingCount: e.State.Swing.EmaCount, SwingStale: e.State.Swing.LineStale,
 		KeyLive: live, KeyDel: del,
 		Bars1m: e.State.Seed1mWatermark,
@@ -524,8 +658,8 @@ func (r ReseedReport) Line() string {
 		trig("4h trigger", b.FourH, a.FourH),
 		trig("1h trigger", b.OneH, a.OneH),
 		trig("5m trigger", b.FiveM, a.FiveM),
-		num("1m EMA34", b.EMA34, a.EMA34),
-		num("1m EMA9", b.EMA9, a.EMA9),
+		num(a.EMAFrame+" EMA34", b.EMA34, a.EMA34),
+		num(a.EMAFrame+" EMA9", b.EMA9, a.EMA9),
 		num("swing 4h EMA34 line", b.SwingLine, a.SwingLine),
 	}
 	if b.SwingStale != a.SwingStale {
@@ -612,6 +746,14 @@ func ReseedState(e *Evaluator, bars1m, full1HRTH []market.Kline, now int64) Rese
 func (e *Evaluator) SeedLine(contracts int) string {
 	parts := []string{"mentor seed:"}
 	parts = append(parts, fmt.Sprintf("4h EMA34 %d/%d", e.depth.fourH, FourHEMA34Warmup))
+	if e.State.Swing.LineStale && len(e.State.Swing.HoledBuckets) > 0 {
+		// m456: say it on the boot line, not only in the refusal counter.
+		starts := make([]string, 0, len(e.State.Swing.HoledBuckets))
+		for _, ms := range e.State.Swing.HoledBuckets {
+			starts = append(starts, kernel.FormatCT(time.UnixMilli(ms)))
+		}
+		parts = append(parts, fmt.Sprintf("swing line STALE: no bars in open 4h bucket %s", strings.Join(starts, ", ")))
+	}
 	parts = append(parts, fmt.Sprintf("1m EMA34 %d/%d", e.depth.oneM, OneMEMA34Warmup))
 	parts = append(parts, fmt.Sprintf("1H RTH levels %d candles", e.depth.oneH))
 	// r22 (P3, "92 levels"): the count is READ from the seeded set split by the

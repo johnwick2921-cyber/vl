@@ -9,8 +9,8 @@ import (
 
 // exited-candle-pin (release #32, DS-105): the `exited [3]bool` leg mask must
 // stop the exit drive from trailing / moving / re-selling a leg whose own TP
-// receipt already closed it. Release #32 sizes 4 = 2+2 (a 3-pair on the wire:
-// leg 1 = 2 at +1R, leg 2 = 1 at the runner-partial line, leg 3 = 1 trailer);
+// receipt already closed it. The fixture registers a 3-wire-leg position (leg 1
+// scaled at +1R, leg 2 exited at the runner-partial line, leg 3 the trailer);
 // the mask is the ONLY thing that keeps the closed wire-2 leg out of the
 // runner set, so a missing mask would double-exit it on the broker.
 

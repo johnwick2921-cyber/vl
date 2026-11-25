@@ -16,14 +16,17 @@ import (
 // updater/bar-hole guard tripped, must always reach the owner — the alert
 // center is the only surface a down trader has. Plan-content alerts keep the
 // day-plan gate.
-func (at *AutoTrader) emitAlert(level, kind, eventID, title, body string) {
+// created = this call wrote the row (false = a repeat, or a kind this trader does
+// not raise); err = the row was refused (a P0 is pushed all the same). Almost every
+// caller ignores both.
+func (at *AutoTrader) emitAlert(level, kind, eventID, title, body string) (created bool, err error) {
 	if at.store == nil {
-		return
+		return false, nil
 	}
 	if !at.dayPlanEnabled() && !isOpsAlertKind(kind) {
-		return
+		return false, nil
 	}
-	if _, err := at.store.Alert().Emit(&store.AlertDB{
+	row := &store.AlertDB{
 		TraderID:  at.id,
 		Level:     level,
 		Kind:      kind,
@@ -31,12 +34,25 @@ func (at *AutoTrader) emitAlert(level, kind, eventID, title, body string) {
 		Title:     title,
 		Body:      body,
 		CreatedAt: time.Now().Unix(),
-	}); err != nil {
+	}
+	created, err = at.store.Alert().Emit(row)
+	// m432: a NEW ops P0 also reaches the owner's phone (outbound, async,
+	// deduped, rate-limited; never blocks this caller).
+	// m471 L3-2: a P0 whose row INSERT FAILED is pushed too. untracked-position
+	// is raised exactly when the same DB just refused a write, and daily-loss /
+	// dead_man / ai-failing / unprotected flatten / panics are one-shot latches
+	// that are not re-emitted: gating the push on the row lost them for good.
+	// The owner-push key (kind|trader|event) dedupes a repeat.
+	if (err == nil && created) || (err != nil && level == "P0") {
+		at.maybeOwnerPush(row, ownerPushClock())
+	}
+	if err != nil {
 		// P0-cleanup — an alert that vanishes on DB write failure is a silent
 		// hole in the one owner-facing surface.
 		at.logErrorf("🚨 alert EMIT failed (%s %s): %v — body: %s", level, kind, err, body)
 		telemetry.RecordError(at.id, "alert_emit_failed", err.Error(), telemetry.CostNone)
 	}
+	return created, err
 }
 
 // isOpsAlertKind reports whether an alert kind is an OPS condition (down, link,
@@ -49,6 +65,7 @@ func isOpsAlertKind(kind string) bool {
 	switch kind {
 	case "trader_down_no_evaluator", // the run-owner "trader is DOWN" P0
 		"feed-down",                // the NT8 link/feed down P0
+		alertKindBarHoleUnfilled,   // m432: NT8 has no history for a bar hole — reload it
 		"dead_man_reconcile_stuck", // DS-102 #538: dead-man reconcile block with no upper bound
 		// m226: protection alerts are the only signal for a position whose stop is
 		// missing, partial or stuck — they must reach the desk even when the
@@ -56,7 +73,22 @@ func isOpsAlertKind(kind string) bool {
 		"unprotected_position",
 		"protection_partial",
 		"protection_pending_stuck",
-		"protection_over_covered":
+		"protection_over_covered",
+		"pep_mode_conflict", // PEP MODE: a trader refused at start for an illegal mode combination
+		"pep_flat_failed",   // PEP MODE: a pep position is still open after repeated flat attempts
+		alertKindStopMoveNotApplied,
+		alertKindCloseRejected, // m442 #19: NT8 refused an exit - the position is still open
+		// m469: every kind pushed to the owner is an ops kind too, so a trader
+		// with no day plan (every mentor trader) still writes the row - and only
+		// a written row is ever pushed. The census test pins pushed => ops.
+		// look twice: an unprotected position the bot is holding on
+		alertKindProtectionUnverified, alertKindProtectionHeld, alertKindProtectionTwoRows, alertKindOwnReverse,
+		"ai-payment",         // the AI provider answers 402: no AI decision until topped up
+		"ai-failing",         // AI calls keep failing for another reason
+		"daily-loss",         // the daily loss limit tripped: entries refused, positions flattened
+		"untracked-position", // a fill the DB did not record: the trader is frozen
+		"trader_panic",       // a panic froze the trader for new entries
+		"goroutine_panic":    // a trader goroutine panicked: frozen for new entries
 		return true
 	}
 	return false

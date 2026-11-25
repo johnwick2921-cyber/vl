@@ -111,4 +111,25 @@ describe('useMentorTruth', () => {
     expect(screen.getByTestId('enabled').textContent).toBe('true')
     expect(screen.getByTestId('stale').textContent).toBe('false')
   })
+
+  it('m421b C3: a trader switch resets truth at once and a failed fetch for the new trader never shows the old one', async () => {
+    getMentorTruth.mockResolvedValueOnce({
+      enabled: true,
+      levels: [],
+      depth: {},
+    })
+    const { rerender } = render(<Harness traderId="A" />)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(screen.getByTestId('enabled').textContent).toBe('true')
+
+    getMentorTruth.mockRejectedValue(new Error('boom'))
+    rerender(<Harness traderId="B" />)
+    expect(screen.getByTestId('enabled').textContent).toBe('null')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(screen.getByTestId('enabled').textContent).toBe('null')
+  })
 })

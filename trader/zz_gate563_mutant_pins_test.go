@@ -17,6 +17,9 @@ import (
 // or one that only accepts wire 2, leaves the wire-3 runner untouched.
 func TestG563ResonanceTPIsSentOnWire3(t *testing.T) {
 	at, _ := newDriveAT(t)
+	// m186 W-MENTOR-EXACT: runner TP default is OFF; enable explicitly to pin
+	// the wire-3 address path.
+	at.config.StrategyConfig.RiskControl.MentorResonanceRunnerTPOldHigh = cxBool(true)
 	lp := g563Register(t, at, "sig-m16-m19") // long 5: leg1 3, leg2 1 (line 14), leg3 1 (target 16)
 	runner := mentorRunnerLeg(lp)
 	if runner == nil || runner.Wire != 3 || !runner.Final {

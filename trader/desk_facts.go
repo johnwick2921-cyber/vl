@@ -650,7 +650,8 @@ func (at *AutoTrader) deskBook(now time.Time) DeskLine {
 	// request-local view changes no trading gate or shared cache.
 	view := nt.NewOrderSnapshotCache()
 	view.PutAt(snap, received)
-	leg := Leg4FromBrokerAt(view, account, symbol, OrderSnapshotInterval(), orders, now)
+	deskPos, deskPerr := at.gatePositions()
+	leg := Leg4FromBrokerWithPositionsAt(view, account, symbol, OrderSnapshotInterval(), orders, leg4PositionsFrom(deskPos, deskPerr), now)
 	state, reason := "ok", ""
 	if !leg.Pass {
 		state, reason = "stale", leg.Detail
@@ -715,6 +716,16 @@ func (at *AutoTrader) deskFeed(now time.Time) DeskLine {
 			reason += "; "
 		}
 		reason += "the newest 1m bar is older than 2 minutes — check the NT8 data connection"
+	}
+	// m134 DS-108 (c): the soft lag band (just under FEED DOWN) names the
+	// concrete fix, not just "older than 2 minutes" — this is the early
+	// warning before FEED DOWN.
+	if at.feedLagActiveForDesk() {
+		state = "stale"
+		if reason != "" {
+			reason += "; "
+		}
+		reason += "NinjaTrader bars ~10 min late — restart NinjaTrader"
 	}
 	if !linkKnown {
 		state = "unknown"

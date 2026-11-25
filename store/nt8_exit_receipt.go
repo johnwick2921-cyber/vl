@@ -144,6 +144,15 @@ func (s *PositionStore) ApplyNT8Exit(in NT8ExitReceipt) (out NT8ExitResult, err 
 			updates["close_reason"] = ExitCauseFromBroker(in.Reason)
 			updates["pnl_corrected"] = totalPnL
 			updates["pnl_correction_note"] = "NT8 execution receipts: sum(price delta × actual contracts × futures point value)"
+		} else {
+			// m232: a PARTIAL leg exit keeps the row OPEN (residual qty) but the
+			// realized leg P&L must be visible, not NULL. Stamp pnl_corrected with
+			// the partial so the row is RESOLVED for the booked leg and the
+			// dashboard/history can show it labelled "partial" (the full P&L is
+			// corrected again on the final close). pnl_corrected on an OPEN row
+			// means "the realized partial so far", never the open P&L.
+			updates["pnl_corrected"] = totalPnL
+			updates["pnl_correction_note"] = "partial: NT8 execution receipts — realized leg P&L so far (row OPEN, runner residual)"
 		}
 		res := tx.Model(&TraderPosition{}).Where("id = ? AND account = ? AND status = ? AND quantity = ? AND entry_quantity = ?", row.ID, in.Account, "OPEN", row.Quantity, row.EntryQuantity).Updates(updates)
 		if res.Error != nil {

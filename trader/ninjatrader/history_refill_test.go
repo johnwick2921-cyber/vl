@@ -85,3 +85,23 @@ func TestHoleFilledAnnouncesTheHistoryRefill(t *testing.T) {
 		t.Fatalf("the FILLED measure must announce the refill: gen %d → %d, why %q", gen0, gen1, why)
 	}
 }
+
+// TestRingRehydrateAnnouncesTheHistoryRefill is the m327 (a) pin: the boot RING
+// rehydrate reads the STORE's 1m and deepens the ring — the store may hold 1m
+// bars the mentor's boot seed could not see (a restart hole healed after the
+// seed). It must announce the 1m refill so the mentor tick re-seeds its
+// history-derived state (EMA9/34, trigger lines). MUTANT: drop the
+// NoteHistoryRefill in rehydrateRingFromStoreWith → the generation stays put →
+// RED.
+func TestRingRehydrateAnnouncesTheHistoryRefill(t *testing.T) {
+	f := newRHFixture(t)
+	gen0, _ := HistoryRefillGeneration("MNQ")
+	rehydrateRingFromStoreWith(f.bh, f.server, time.Now(), false)
+	gen1, why := HistoryRefillGeneration("MNQ")
+	if gen1 <= gen0 {
+		t.Fatalf("the ring rehydrate must announce the MNQ 1m refill: gen %d → %d", gen0, gen1)
+	}
+	if !strings.Contains(why, "ring rehydrate") {
+		t.Fatalf("the refill must name itself (READ values): %q", why)
+	}
+}

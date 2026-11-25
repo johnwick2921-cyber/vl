@@ -1,56 +1,111 @@
 package mentor
 
-import "vl/market"
+import (
+	"fmt"
+	"sort"
 
-// wickMicroscalpLevel (D4.3-02/-03/-07) reports the wick-microscalp target level
-// when the pressure read fires: 2+ consecutive CLOSED 5m candles rejecting with
-// wicks the SAME way — LOWER wicks in an uptrend, UPPER wicks in a downtrend
-// ("TỪ 2 ĐẾN 3 CÂY TRỞ LÊN… NÓ RÚT RÂU CÙNG CHIỀU NHA… NÓ ĐANG CÓ SỰ MUA VÔ"
-// [D4.3 @00:00–03:20]; "RÚT TRÊN NHA — tại vì ĐANG XU HƯỚNG GIẢM MÀ… đang xu
-// hướng giảm mà RÚT DƯỚI là TÔI KHÔNG BIẾT ĐƯỜNG TÔI ĐÁNH" [@13:22–13:44]).
+	"vl/market"
+)
+
+// D4.3 wick microscalp — the TARGET half (m465 P5, D4.3-R17/R27; knob
+// wick_microscalp, default OFF). The zone half (detector, box, lifecycle,
+// entries) is wick_zone.go.
 //
-// The target is the rejecting candles' FAR wick — the ceiling high for a long,
-// the floor low for a short — "TARGET VẪN LÀ KHUNG 5 PHÚT — TARGET LÀ NHỮNG CÁI
-// RÂU CỦA KHUNG 5 PHÚT" [D4.3 @09:27–09:46]; bounded, never 100–200 pts.
+// "Target ở đâu? Thì target vẫn là khung 5 phút. Target thì là những cái râu
+// của khung 5 phút, đúng không?" [D4.3 @09:39–09:46]; "scalp thì scalp đi đâu
+// anh chị? Có phải là scalp về đây không?… Chứ không phải là scalp mà bắn một
+// phát lên 100-200 điểm. Không có." [@07:30–07:49]. On screen he draws the
+// rays at the TOPS of nearby 5m wicks: Ex.1 28,919.75 / 28,933.50, Ex.2
+// 29,267.75 / 29,275.75 [screen @07:40–07:44, @09:42–09:53]; no target was drawn
+// for the shorts (Ex.3/Ex.4) — the mirror (the BOTTOMS of nearby 5m lower
+// wicks) is D4.3-R27, derived from the examples, not spoken.
 //
-// Conservative reading (mentor question open): the threshold is 2 (the minimum
-// of "2–3"); a wick "rejects" when the low is strictly below the body (long) /
-// the high strictly above the body (short); the target is the extreme wick of
-// the rejecting run.
-func wickMicroscalpLevel(buckets []market.Kline, trend Side) (Level, bool) {
-	if trend != SideLong && trend != SideShort {
-		return Level{}, false
+// Pinned (no number in the course): "nearby" = the last wickTargetLookback5m
+// closed 5m candles; a candle offers a target only if it HAS the wick (high
+// above its body for a long, low below its body for a short); the ladder is
+// capped wickTargetMaxPts beyond the zone's near edge ("not 100–200 points").
+//
+// The pre-m465 wickMicroscalpLevel (the run's own far wick as a single
+// target, fed by the 5m TRIGGER direction, never wired to a knob) is replaced
+// by this ladder: the course target is the nearby 5m wicks, and the trend is
+// the 5m structure (wick_zone.go wickTrend).
+
+const (
+	// wickTargetLookback5m — the last N closed 5m candles read for target
+	// wicks (one hour; ours — the course says "nearby").
+	wickTargetLookback5m = 12
+	// wickTargetMaxPts — no target more than this beyond the zone's near
+	// edge: "không phải là scalp mà bắn một phát lên 100-200 điểm" [@07:30–07:49].
+	wickTargetMaxPts = 100.0
+)
+
+// wickTargetLadder returns the zone's 5m-wick targets, nearest first: for a
+// LONG zone the highs of the recent closed 5m candles that carry an UPPER
+// wick, above the zone top and at most wickTargetMaxPts over it; for a SHORT
+// zone the mirror (lows with a LOWER wick, under the zone bottom). Distinct
+// prices only. Empty when nothing qualifies.
+func wickTargetLadder(closed5m []market.Kline, z WickZone) []float64 {
+	from := len(closed5m) - wickTargetLookback5m
+	if from < 0 {
+		from = 0
 	}
-	run := 0
-	extreme := 0.0
-	for i := len(buckets) - 1; i >= 0; i-- {
-		c := buckets[i]
-		bodyLow, bodyHigh := c.Open, c.Open
-		if c.Close < bodyLow {
-			bodyLow = c.Close
-		}
-		if c.Close > bodyHigh {
-			bodyHigh = c.Close
-		}
-		var rejecting bool
-		if trend == SideLong {
-			rejecting = c.Low < bodyLow // lower wick = buyers bought the dip
-			if rejecting && (extreme == 0 || c.High > extreme) {
-				extreme = c.High
+	seen := map[float64]bool{}
+	var out []float64
+	for _, c := range closed5m[from:] {
+		lower, upper := wickParts(c)
+		var p float64
+		switch z.Side {
+		case SideLong:
+			if upper <= 0 || c.High <= z.Top || c.High-z.Top > wickTargetMaxPts {
+				continue
 			}
-		} else {
-			rejecting = c.High > bodyHigh // upper wick = sellers sold the pop
-			if rejecting && (extreme == 0 || c.Low < extreme) {
-				extreme = c.Low
+			p = c.High
+		case SideShort:
+			if lower <= 0 || c.Low >= z.Bottom || z.Bottom-c.Low > wickTargetMaxPts {
+				continue
 			}
+			p = c.Low
+		default:
+			return nil
 		}
-		if !rejecting {
-			break
+		if !seen[p] {
+			seen[p] = true
+			out = append(out, p)
 		}
-		run++
 	}
-	if run < 2 {
-		return Level{}, false
+	if z.Side == SideLong {
+		sort.Float64s(out)
+	} else {
+		sort.Sort(sort.Reverse(sort.Float64Slice(out)))
 	}
-	return Level{Key: "wick_microscalp", Kind: KindWickMicroscalp, Price: extreme}, true
+	return out
+}
+
+// wickTargetLevels turns the ladder into TARGET-ONLY levels
+// (KindWickMicroscalp): nextLevelBeyondRoom / phlTarget pick the nearest one
+// beyond the entry; the touch loop skips the kind and levelIsLocation is false
+// for it (it is never a place to enter).
+func wickTargetLevels(closed5m []market.Kline, z WickZone) []Level {
+	ladder := wickTargetLadder(closed5m, z)
+	out := make([]Level, 0, len(ladder))
+	for _, p := range ladder {
+		out = append(out, Level{Key: fmt.Sprintf("%s:%s:%.2f", KindWickMicroscalp, z.Side, p), Kind: KindWickMicroscalp, Price: p})
+	}
+	return out
+}
+
+// wickParts returns a candle's lower and upper wick lengths (each ≥ 0).
+func wickParts(c market.Kline) (lower, upper float64) {
+	bodyLow, bodyHigh := c.Open, c.Close
+	if bodyLow > bodyHigh {
+		bodyLow, bodyHigh = bodyHigh, bodyLow
+	}
+	lower, upper = bodyLow-c.Low, c.High-bodyHigh
+	if lower < 0 {
+		lower = 0
+	}
+	if upper < 0 {
+		upper = 0
+	}
+	return lower, upper
 }

@@ -79,8 +79,33 @@ func (at *AutoTrader) mentorCountSetupPlaced(in mentor.Intent) {
 // refusal is logged/counted (rule gate, sizing, placement hold, ledger refusals).
 func (at *AutoTrader) mentorRecordStallRefusal(in mentor.Intent, reason string) {
 	if k := mentorSetupKind(in); k != "" {
+		if mentorStallPolicyRefusal(reason) {
+			telemetry.SetupStallRecordPolicyRefusal(at.id, k, reason) // m442 #9: not a stall
+			return
+		}
 		telemetry.SetupStallRecordRefusal(at.id, k, reason)
 	}
+}
+
+// mentorStallPolicyRefusalPrefixes are the refusal reasons that are the OWNER'S
+// OWN RULES working, not a stalled setup: the trading window, the EOD-flat
+// author refusal, the day stops (done after a win, stop after a loss, the daily
+// loss limit) and the news hold. A trader with a 60-minute window refuses every
+// out-of-window intent by design; counting those as "seen but never placed"
+// raised a false P1 (10-28 18:17:59, "isb: 3 emitted, 0 reached the ledger ...
+// window: ..."). The reasons are recorded verbatim at the gate sites in
+// mentor_tick.go ("window: "+why, ...); this list must match those prefixes.
+var mentorStallPolicyRefusalPrefixes = []string{
+	"window:", "eod_flat:", "done_after_win:", "stop_after_loss:", "daily_loss:", "news_hold:",
+}
+
+func mentorStallPolicyRefusal(reason string) bool {
+	for _, p := range mentorStallPolicyRefusalPrefixes {
+		if strings.HasPrefix(reason, p) {
+			return true
+		}
+	}
+	return false
 }
 
 // mentorStallAlarmCheck fires the stalled-setup P1 alert once per kind per
@@ -98,6 +123,9 @@ func (at *AutoTrader) mentorStallAlarmCheck(now time.Time) {
 		}
 		title := fmt.Sprintf("Mentor setup stalled: %s", a.Kind)
 		body := fmt.Sprintf("%s: %d emitted, %d reached the ledger since %s 17:00 CT — last refusal: %s", a.Kind, a.Emitted, a.Placed, window, lastRefusal)
+		if a.Policy > 0 { // m442 #9: say how many were the owner's own rules, so the count is honest
+			body = fmt.Sprintf("%s: %d emitted (%d of them refused by your own window / day-stop rules, not counted as a stall), %d reached the ledger since %s 17:00 CT — last refusal: %s", a.Kind, a.Emitted, a.Policy, a.Placed, window, lastRefusal)
+		}
 		at.emitAlert("P1", "mentor-setup-stalled", fmt.Sprintf("mentor-setup-stalled:%s:%s", at.id, a.Kind), title, body)
 		at.logWarnf("🧑‍🏫 mentor setup stalled: %s", body)
 	}

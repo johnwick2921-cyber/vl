@@ -19,7 +19,7 @@ import (
 // VALUE is asserted.
 func TestB9ISBOnSpentDayEmitsExactlyTheCap(t *testing.T) {
 	run := func(verdict DayVerdict) Intent {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.Enabled = true
 		cfg.EMAPeriod34 = 0
 		cfg.EMAPeriod9 = 0

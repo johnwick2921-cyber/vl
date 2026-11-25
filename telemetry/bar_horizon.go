@@ -17,11 +17,12 @@ var (
 	barHorizonHoled      atomic.Int64
 	barHorizonEmpty      atomic.Int64
 	barHorizonGraced     atomic.Int64
+	barHorizonBeyondRing atomic.Int64
 	barHorizonSuppressed atomic.Int64
 )
 
 // IncBarHorizon counts one detection. kind is "short" | "holed" | "empty" |
-// "graced" | "suppressed"; an unrecognised kind is dropped rather than
+// "graced" | "beyond_ring" (m452: a depth request larger than the ring) | "suppressed"; an unrecognised kind is dropped rather than
 // attributed to the wrong arm.
 func IncBarHorizon(kind string) {
 	switch kind {
@@ -33,6 +34,8 @@ func IncBarHorizon(kind string) {
 		barHorizonEmpty.Add(1)
 	case "graced":
 		barHorizonGraced.Add(1)
+	case "beyond_ring":
+		barHorizonBeyondRing.Add(1)
 	case "suppressed":
 		barHorizonSuppressed.Add(1)
 	}
@@ -41,10 +44,11 @@ func IncBarHorizon(kind string) {
 // BarHorizonCounts returns every arm. Reading never resets (class 35).
 func BarHorizonCounts() map[string]int64 {
 	return map[string]int64{
-		"short":      barHorizonShort.Load(),
-		"holed":      barHorizonHoled.Load(),
-		"empty":      barHorizonEmpty.Load(),
-		"graced":     barHorizonGraced.Load(),
-		"suppressed": barHorizonSuppressed.Load(),
+		"short":       barHorizonShort.Load(),
+		"holed":       barHorizonHoled.Load(),
+		"empty":       barHorizonEmpty.Load(),
+		"graced":      barHorizonGraced.Load(),
+		"beyond_ring": barHorizonBeyondRing.Load(),
+		"suppressed":  barHorizonSuppressed.Load(),
 	}
 }

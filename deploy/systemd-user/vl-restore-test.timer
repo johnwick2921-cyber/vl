@@ -1,0 +1,14 @@
+[Unit]
+Description=vl weekly backup restore test timer — Sunday 12:00 CT (m448)
+
+[Timer]
+# Sunday noon CT: the market is closed until 17:00 CT, so the multi-GB copy and
+# integrity_check cannot compete with a live session. The explicit zone suffix
+# makes it CT wall-clock on any machine zone.
+OnCalendar=Sun *-*-* 12:00:00 America/Chicago
+# Run a missed test as soon as possible (box off at the scheduled time).
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

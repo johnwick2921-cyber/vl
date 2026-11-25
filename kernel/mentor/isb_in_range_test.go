@@ -10,7 +10,7 @@ import (
 // ── item 21 (D4.1-06) — the ISB "in range" size cut is wider than
 // midRangeBoxed: inside the standing 5m ISB box, between two key levels closer
 // than the ping-pong minimum, and (once built) a 15m ISB range. "Khi trade isb
-// in-range bắt buộc giảm size" [D4.1 p1 written rule 3]. ───────────────────────
+// in-range bắt buộc giảm size" [D4.1 p1 @ 04:58–05:04; slide rule 3]. ───────────────────────
 
 func TestISBInRangeInsideStandingBox(t *testing.T) {
 	box := &ISBBox{High: 100, Low: 90}
@@ -53,29 +53,29 @@ func TestISBInRangeNarrowKeyLevels(t *testing.T) {
 // The production resolver: an ISB inside the standing 5m box carries isb_in_range
 // even with no boxes and no old extreme.
 func TestISBFlagsForWidensInRange(t *testing.T) {
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	e.State.ISBBox = &ISBBox{High: 100, Low: 90}
 	cur := market.Kline{High: 96, Low: 94, Close: 95}
-	if f := e.isbFlagsFor(cur, nil, nil); f != FlagISBInRange {
+	if f := e.isbFlagsFor(cur, SideLong, nil, nil); f != FlagISBInRange {
 		t.Fatalf("ISB inside the 5m box must carry isb_in_range, got %q", f)
 	}
 	// outside the box, no old extreme → no flags.
 	e.State.ISBBox = &ISBBox{High: 100, Low: 90}
 	cur2 := market.Kline{High: 106, Low: 104, Close: 105}
-	if f := e.isbFlagsFor(cur2, nil, nil); f != "" {
+	if f := e.isbFlagsFor(cur2, SideLong, nil, nil); f != "" {
 		t.Fatalf("outside the box with no other range the flags must be empty, got %q", f)
 	}
 }
 
 // TestISBInRangeFlagOnTick — item 21 (D4.1-06) Tick-level pin at the emit call
-// site (`chosen.Flag = e.isbFlagsFor(cur, levels, boxes)`): an ISB whose candle
+// site (`chosen.Flag = e.isbFlagsFor(cur, side, levels, boxes)`): an ISB whose candle
 // sits inside the standing 5m ISB box emits with isb_in_range. The unit pin
 // (TestISBFlagsForWidensInRange) exercises the resolver directly; this pin
 // catches a revert of the CALL SITE to the old `isbFlags`. Mutant
 // (`chosen.Flag = isbFlags(cur, levels, boxes)`) → RED: the ISB emits with an
 // empty flag.
 func TestISBInRangeFlagOnTick(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.RoomMultiple = 0 // item 25: this fixture pins the in-range flag, not the room rule
 	box := ISBBox{High: 103, Low: 97, Dir: SideLong, AtTime: auditMs(2026, 9, 15, 9, 0, 0)}

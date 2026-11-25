@@ -13,8 +13,9 @@ import (
 // intent carries a reason and every PlaceStopEntry is geometrically sane
 // (stop on the risk side, target on the reward side).
 func TestEvaluatorOnRecordedDaysEmitsOnlyCompleteIntents(t *testing.T) {
+	lateRefusedBefore := SwingLateDayRRRefused()
 	for _, day := range []string{"mnq_1m_2026-09-15_rth", "mnq_1m_2026-09-16_rth", "mnq_1m_2026-08-28_rth"} {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.Enabled = true
 		e := New(cfg)
 		bars := loadFixture(t, day, "1m")
@@ -61,9 +62,20 @@ func TestEvaluatorOnRecordedDaysEmitsOnlyCompleteIntents(t *testing.T) {
 		}
 		t.Logf("%s: %d intents over %d bars", day, total, len(bars))
 		if day == "mnq_1m_2026-09-15_rth" && swingIntents == 0 {
-			// the wiring mutant (dropping runSwing from Tick) must turn RED
-			// here: 09-15's tape provably produces §8 swing intents.
-			t.Fatalf("%s: no swing intents emitted — runSwing not wired into Tick", day)
+			// 09-15's RTH tape (08:30 → 15:00) has its FIRST readable 4h line
+			// only at 13:00 (two closed buckets). Before rv59 that first tick
+			// walked the whole 08:30–12:55 backlog against the 13:00 line: a
+			// reject dropped as stale (S2) still left its Pending registered,
+			// it "filled", and the bot emitted 17 break-even intents for a swing
+			// it never placed. Since rv59 the backlog of closed 4h candles is
+			// not walked (named once, swing_candle_closed), so the tape emits
+			// no swing intent. The swing path is still wired: the line is read
+			// and the skip is NAMED. The wiring mutant (dropping runSwing from
+			// Tick) leaves the line at 0 and the ledger empty → RED.
+			if SwingLateDayRRRefused() == lateRefusedBefore &&
+				(e.State.Swing.Line == 0 || e.State.Refusals[SwingRefusedCandleClosed] == 0) {
+				t.Fatalf("%s: no swing intents, no late-day swing refusal, line %.2f, refusals %v — runSwing not wired into Tick", day, e.State.Swing.Line, e.State.Refusals)
+			}
 		}
 	}
 }
@@ -80,13 +92,13 @@ func TestEvaluatorTickWarmSwingEntryUsesSeededLine(t *testing.T) {
 		bar(14, 21, 5, 1600, 1600, 1600, 1600),
 		bar(15, 1, 5, 1000, 1000, 1000, 1000),
 		bar(15, 5, 0, 900, 905, 895, 900),
-		bar(15, 5, 5, 900, 1100, 900, 1100),
+		bar(15, 5, 5, 1100, 1100, 900, 900), // candle 1: RED close-back (W5 A7 — its colour sets the ISB side)
 		bar(15, 5, 10, 970, 1020, 930, 940),
 		bar(15, 5, 15, 940, 945, 935, 940),
 	}
 	now := bars[len(bars)-1].CloseTime + 1
 	bucket := fourHBucketStart(now, loc)
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	e.Cfg.Enabled = true
 	e.State.Swing = SwingState{
 		Line:        950,
@@ -111,8 +123,8 @@ func TestEvaluatorTickWarmSwingEntryUsesSeededLine(t *testing.T) {
 	if swings[0].Stop != e.State.Swing.Line {
 		t.Fatalf("entry stop %.6f, want authoritative warm line %.6f", swings[0].Stop, e.State.Swing.Line)
 	}
-	if local, _, ok := swingLine(closedBuckets(bars, now, e.Cfg), now, e.Cfg.Swing, loc); !ok || abs(local-e.State.Swing.Line) <= e.Cfg.Swing.LineOffsetPts {
-		t.Fatalf("fixture local line %.6f must differ from warm line %.6f beyond touch tolerance %.2f", local, e.State.Swing.Line, e.Cfg.Swing.LineOffsetPts)
+	if local, _, ok := swingLine(closedBuckets(bars, now, e.Cfg), now, e.Cfg.Swing, loc); !ok || abs(local-e.State.Swing.Line) <= swingNearTouchBandPts {
+		t.Fatalf("fixture local line %.6f must differ from warm line %.6f beyond the near-touch band %.2f", local, e.State.Swing.Line, swingNearTouchBandPts)
 	}
 }
 
@@ -130,14 +142,20 @@ func TestEvaluatorTickWarmSwingEntryUsesIncrementedLineAfterFlip(t *testing.T) {
 		bar(15, 5, 0, 1190, 1200, 1180, 1190),
 		bar(15, 8, 55, 1190, 1200, 1180, 1200),
 		bar(15, 9, 0, 900, 905, 895, 900),
-		bar(15, 9, 5, 900, 1100, 900, 1100),
-		bar(15, 9, 10, 970, 1020, 930, 940),
-		bar(15, 9, 15, 940, 945, 935, 940),
+		bar(15, 9, 5, 900, 1100, 900, 1100),  // touches, closes THROUGH (above the line)
+		bar(15, 9, 10, 1050, 1060, 930, 940), // candle 1: RED, closes back below the line (W5 A7)
+		bar(15, 9, 15, 970, 975, 935, 940),   // the inside bar of candle 1 -> SHORT
+		bar(15, 9, 20, 940, 945, 935, 940),   // closes the 09:15 5m bucket
 	}
 	now := bars[len(bars)-1].CloseTime + 1
 	oldBucket := fourHBucketStart(bars[3].OpenTime, loc)
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	e.Cfg.Enabled = true
+	// m466 P4: under the #61 default (not_required) the 09:10 close-back bar is
+	// itself an inside bar of the 09:05 through candle and arms one beat earlier
+	// — dropped by S2 in this single multi-bar tick. This test pins the LINE
+	// after the flip, so it runs the strict read.
+	m61PreP4Swing(&e.Cfg.Swing)
 	e.State.Swing = SwingState{
 		Line:        950,
 		BucketStart: oldBucket,
@@ -170,7 +188,7 @@ func TestEvaluatorTickWarmSwingEntryUsesIncrementedLineAfterFlip(t *testing.T) {
 // from bars plus the ledger, never RAM-only (dispatch requirement): replaying
 // the same history in one pass yields exactly the state built incrementally.
 func TestEvaluatorRebuildFromBarsMatchesIncremental(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	bars := loadFixture(t, "mnq_1m_2026-09-15_rth", "1m")
 
@@ -200,7 +218,7 @@ func TestEvaluatorRebuildFromBarsMatchesIncremental(t *testing.T) {
 
 // TestEvaluatorStateRoundTrip — the ledger form survives marshal/unmarshal.
 func TestEvaluatorStateRoundTrip(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	e := New(cfg)
 	bars := loadFixture(t, "mnq_1m_2026-09-15_rth", "1m")
@@ -222,7 +240,7 @@ func TestEvaluatorStateRoundTrip(t *testing.T) {
 // INVALID, only ISBs may trade there — the evaluator never emits a PHL/PLH
 // naming that level.
 func TestEvaluatorInvalidLevelBlocksPHL(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.RangeGapPts = 0
 	// synthetic history: price runs up to a key level, first touch closes on
@@ -279,7 +297,7 @@ func TestSwingZoneGateKnob(t *testing.T) {
 // exactly ON the line is now allowed when no box builds the FTGL/buy zone
 // (see trigger_zone_test.go for the zone itself).
 func TestEvaluatorRefusesWrongTriggerSide(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := legacy2mCfg()
 	cfg.Enabled = true
 	mk := func(i int, o, h, l, c float64) market.Kline {
 		return market.Kline{OpenTime: int64(i) * 60_000, Open: o, High: h, Low: l, Close: c}

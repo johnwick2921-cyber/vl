@@ -165,6 +165,11 @@ func noFreshPrice(t *testing.T) {
 // reconcileProtectionAt → PlaceProtectiveStop (a real place_protective_stop
 // frame). The frame must carry the BE 30456.50, never the plan's 30551.25.
 func TestProtectionNetNeverReWidensAMovedStop654(t *testing.T) {
+	// Look twice (2026-11-24): this pins WHICH stop the net places, on one direct
+	// pass with seeded state and no AddOn answering heartbeats. The single-look
+	// path runs it; TestLookTwiceKnownBrokerStopIsPlacedBySecondLook pins the
+	// same price through the second look.
+	t.Setenv(lookTwiceEnv, "0")
 	t.Setenv("EXIT_MECHS_SUSPENDED", "0")
 	noFreshPrice(t)
 	w := newExecWire(t, "p21-654")
@@ -204,6 +209,7 @@ func TestProtectionNetNeverReWidensAMovedStop654(t *testing.T) {
 // TCPTrader has no moved-stop record. The persisted F12 history still shows the
 // -sl at the BE price (snapshot 112688's shape), and that is the floor.
 func TestProtectionNetUsesBookHistoryAfterRestart654(t *testing.T) {
+	t.Setenv(lookTwiceEnv, "0") // see TestProtectionNetNeverReWidensAMovedStop654
 	noFreshPrice(t)
 	w := newExecWire(t, "p21-654-hist")
 	sid := w.open654(t)

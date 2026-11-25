@@ -71,7 +71,7 @@ func fullJob(t *testing.T, dd string) Job {
 	j.Addon = &AddonState{DllPath: "/tmp/vl-addon-build/" + id + "/ps1-out/VL.AddOn.dll", Sha256: "fedcba9876543210fedcba9876543210fedcba98",
 		BuiltBy:          "roslyn-ps1",
 		MigrationPending: true,
-		BackupDir:        "/mnt/c/Users/hoang/Documents/NinjaTrader 8/bin/Custom/AddOns/.vl-backups/VL.AddOn.dll.bak", Restarted: true, OldAcceptSeq: 7}
+		BackupDir:        "/mnt/c/Users/hoang/Documents/NinjaTrader 8/bin/Custom/AddOns/.vl-backups/VL.AddOn.dll.bak", Restarted: true, StoppedNT8: true, OldAcceptSeq: 7}
 	step(t, dd, &j, &now, StateAddonBuilt)
 	step(t, dd, &j, &now, StateAddonPlaced)
 	step(t, dd, &j, &now, StateNT8Restarted)
@@ -213,6 +213,11 @@ func TestJobFileSchemaGolden(t *testing.T) {
 	// them (absent ≠ false).
 	delete(want, "catchup")
 	delete(want, "catchup_nt8_open")
+	// addon.expected_build (m355) and addon.pre_job_build (m357 D) are set only
+	// when a catch-up job is created — the install path never writes them
+	// (absent ≠ empty).
+	delete(want, "addon.expected_build")
+	delete(want, "addon.pre_job_build")
 	// friends (W-FRIEND-HOSTED Segment 5) is written only by the worker's
 	// post-complete friend sweep, which the golden's install path does not
 	// run (no friend registry configured): absent ≠ empty, like the others.

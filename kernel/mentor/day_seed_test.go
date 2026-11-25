@@ -28,7 +28,7 @@ import (
 // dsCfg is the evaluator config for the 10-15 tape: DefaultConfig + the live
 // switches. The tape has no red-folder print windows, so the news knobs are inert.
 func dsCfg() Config {
-	c := DefaultConfig()
+	c := preOctCfg()
 	c.Enabled = true
 	c.RealFillOnly = true
 	return c
@@ -243,7 +243,8 @@ func TestSeedTrendlinesMarksCrossed(t *testing.T) {
 	e := New(dsCfg())
 	SeedTrendlines(e, bars, now)
 
-	lines, crossed := trendlinesBuild(closedOnly(bars, now), time.UnixMilli(now))
+	// m407: the same frame the seed (and Tick) build on — 2m at 16:00 CT.
+	lines, crossed := trendlinesBuildExec(closedOnly(bars, now), time.UnixMilli(now), e.Cfg.Exec2mAfter30m && exec2mReads2m(now))
 	if len(crossed) == 0 {
 		t.Fatal("the 10-15 fixture must carry crossed-between-anchors pairs for this test to pin anything")
 	}
@@ -256,7 +257,7 @@ func TestSeedTrendlinesMarksCrossed(t *testing.T) {
 		}
 	}
 	before := e.State.Refusals["trendline_crossed_between_anchors"]
-	e.trackTrendlines(lines, crossed, now)
+	e.trackTrendlines(lines, nil, crossed, now)
 	if got := e.State.Refusals["trendline_crossed_between_anchors"]; got != before {
 		t.Fatalf("the first tick recounted already-crossed pairs: %d → %d", before, got)
 	}

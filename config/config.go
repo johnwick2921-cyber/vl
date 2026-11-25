@@ -80,6 +80,11 @@ type Config struct {
 	FriendInstance bool   // VL_FRIEND_INSTANCE
 	FriendName     string // VL_FRIEND_NAME (lowercase a-z0-9, 2-20 chars)
 
+	// FriendsPage (m386): the owner's Friends page + monitor + updater sweep are
+	// OFF unless VL_FRIENDS_PAGE=1. The owner box opts in at install; every other
+	// box runs byte-identical with the friends surface gone (404, no nav, no sweep).
+	FriendsPage bool // VL_FRIENDS_PAGE
+
 	// Database configuration
 	DBType string // sqlite or postgres
 	DBPath string // SQLite database file path
@@ -190,6 +195,11 @@ func Init() {
 		cfg.FriendInstance = true
 		cfg.FriendName = strings.ToLower(strings.TrimSpace(os.Getenv("VL_FRIEND_NAME")))
 	}
+
+	// m386: the Friends page is opt-in. VL_FRIENDS_PAGE=1 (the ONE parser below)
+	// is read at Init so cfg.FriendsPage reflects the boot-time state; runtime
+	// gates re-read the env via FriendsPageEnabled().
+	cfg.FriendsPage = FriendsPageEnabled()
 
 	if v := os.Getenv("API_SERVER_PORT"); v != "" {
 		if port, err := strconv.Atoi(v); err == nil && port > 0 {
@@ -357,6 +367,15 @@ func ValidFriendName(name string) bool {
 // import cycle (config → mcp → security); this is the config-package facade.
 func FriendInstanceEnabled() bool {
 	return friendmode.Enabled()
+}
+
+// FriendsPageEnabled is the ONE parser for VL_FRIENDS_PAGE (m386): "1" or
+// "true" (trimmed, case-insensitive for "true"), anything else — including ""
+// — is false (friends surface off). A friend instance never has the owner API
+// anyway (friendMode404); this gate is about the OWNER box opting in.
+func FriendsPageEnabled() bool {
+	v := strings.TrimSpace(os.Getenv("VL_FRIENDS_PAGE"))
+	return v == "1" || strings.EqualFold(v, "true")
 }
 
 // JWTSecretIsDefault reports whether the effective JWT secret is the insecure

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
 )
 
 // verify.go — B5 S9: the friend app verifies EVERY download (the SSHSIG
@@ -63,6 +64,11 @@ func VerifyFriendManifest(manifestBytes, sigBytes, allowedSigners []byte) (Frien
 	}
 	if m.AddonBuild == "" || m.AppVersion == "" {
 		return FriendManifest{}, fmt.Errorf("friend manifest: missing addon_build or app_version")
+	}
+	// S15: addon_build must be NUMERIC — a non-numeric build breaks the newer/older
+	// comparison and could allow a rollback.
+	if _, err := strconv.Atoi(m.AddonBuild); err != nil {
+		return FriendManifest{}, fmt.Errorf("friend manifest: addon_build %q is not numeric", m.AddonBuild)
 	}
 	for _, h := range []struct{ name, v string }{
 		{"addon_sha256", m.AddonSHA256},

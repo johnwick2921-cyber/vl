@@ -7,6 +7,75 @@ import type {
 import { API_BASE, httpClient } from './helpers'
 import { ApiError } from '../httpClient'
 
+/** Pep "what trades" card — GET /api/traders/:id/pep-truth.
+ *
+ *  This is the trader lane's REAL shape (fix/m458-pep-trader:
+ *  trader/pep_truth.go `PepTruth`, served by api/handler_pep_truth.go). Every
+ *  name below is a json tag there; components/pep/pepTruthContract.test.ts
+ *  fails when trader/pep_truth.go is present and a tag the UI reads is missing
+ *  from it, so the two sides cannot drift apart silently again.
+ *
+ *  Fields the Go side marks omitempty are optional here, and the card renders
+ *  only what arrived: an absent field is shown as absent, never as 0.
+ *  `enabled:false` (or a 404 from an older server) hides the card. */
+export interface PepTruth {
+  enabled: boolean
+  /** The trader's mode as the SERVER resolved it: ai | mentor | pep | conflict.
+   *  "conflict" = mentor and pep both saved ON (the trader was refused at start). */
+  mode?: 'ai' | 'mentor' | 'pep' | 'conflict'
+  /** Present only for mode "conflict": the server's named refusal. */
+  conflict?: { code: string; message: string }
+  /** The instrument pep reads (e.g. "MNQ"); the chart draws the box only on a
+   *  tab showing it. NOT sent by the server today (it is `at.futuresSymbol()` on
+   *  the trader side) — without it no line is drawn and the chart says so; the
+   *  contract test requires the trader lane to add a `symbol` tag. */
+  symbol?: string
+  style?: 'A' | 'E' | 'Custom'
+  /** The entry rule that runs: breakout (A, or Custom breakout) or ema_cross
+   *  (E, or Custom ema_cross). Absent from an older server: read the style. */
+  entry?: 'breakout' | 'ema_cross'
+  contracts?: number
+  /** CT date the day-counters belong to ("2006-01-02"). */
+  day?: string
+  /** The opening range as the evaluator measured it; `drawn` false until the box
+   *  window has closed with every minute present. ABSENT/zero until evaluated. */
+  box?: { high: number; low: number; size: number; drawn: boolean }
+  /** The evaluator state in one word. */
+  signal?: PepSignalState
+  /** Named refusals of the latest evaluation. */
+  refusals?: {
+    code: string
+    severity: 'wait' | 'block'
+    detail?: string
+  }[]
+  trades_today?: number
+  max_trades_per_day?: number
+  position_open?: boolean
+  /** Today's newest entry's bracket (points) and side ("long" | "short"). */
+  stop?: number
+  target?: number
+  side?: string
+  /** The time exit, "HH:MM" CT, and the seconds left until it (0 once reached —
+   *  always sent, so 0 means "reached", never "unknown"). */
+  flat_time_ct?: string
+  flat_countdown_sec?: number
+  /** When the evaluator last ran (ms). ABSENT until it has run once. */
+  last_evaluated_ms?: number
+  /** Saved leaves that did not take effect as saved: leaf name -> reason. */
+  clamps?: Record<string, string>
+}
+
+export type PepSignalState =
+  | 'no_data'
+  | 'waiting_box'
+  | 'waiting_signal'
+  | 'signal'
+  | 'blocked'
+  | 'traded'
+  | 'position_open'
+  | 'after_flat'
+  | 'flat_pending'
+
 /** Mentor "what trades" panel — the live evaluator state (release #10). */
 export interface MentorTruth {
   enabled: boolean
@@ -34,7 +103,16 @@ export interface MentorTruth {
     drawn_at: number
     visits_today: number
     merged_from?: number[]
+    /** m421b, additive: box edges (ftgh_edge/ftgl_edge) may carry the box's
+     * formation / end time (ms) and frame; absent today = the chart falls
+     * back to drawn_at, then the first drawn bar. */
+    formed_ms?: number
+    ended_ms?: number
+    tf?: string
   }[]
+  /** m422: ms of the last close the boot display seed drew from; set only
+   *  until the first real tick (overlays are "as of last close"). */
+  chart_seeded_at?: number
   /** ABSENT (undefined) while the evaluator has not built yet. */
   depth?: Record<string, number>
   /** true when mentor is ON but the evaluator has not built yet (first 1m bar). */
@@ -45,7 +123,7 @@ export interface MentorTruth {
   done_after_win_why?: string
   stop_after_loss: boolean
   stop_after_loss_why?: string
-  /** T7 (release #22) — ABSENT while computing; `[]` once built. VALID trendlines only. */
+  /** T7 (release #22) — ABSENT while computing; `[]` once built. FORMING + VALID trendlines (m134). */
   trendlines?: {
     side: string // 'long' = support, 'short' = resistance
     p0_ms: number
@@ -55,6 +133,15 @@ export interface MentorTruth {
     now_ms: number
     now_px: number
     in_level: boolean // false = inside a box this bar (the box wins)
+    valid: boolean // m134: true = 3rd touch seen (a location); false = forming (waiting)
+  }[]
+  /** m134 — the per-bar EMA 9/34 curve, ABSENT while computing; `[]` once built. */
+  ema_series?: {
+    ms: number
+    ema9: number
+    ema34: number
+    /** m402: the frame the engine used (1 or 2 min); ABSENT on an older backend = 1. */
+    tf_min?: 1 | 2
   }[]
   /** T7 — the ISB rest boxes the evaluator holds (5m / 15m / 30m). */
   isb_boxes?: MentorRange[]
@@ -221,6 +308,17 @@ export const traderApi = {
     )
     if (!result.success || !result.data) {
       throw new Error('Failed to fetch mentor truth panel')
+    }
+    return result.data
+  },
+
+  async getPepTruth(traderId: string, silent = true): Promise<PepTruth> {
+    const result = await httpClient.request<PepTruth>(
+      `${API_BASE}/traders/${traderId}/pep-truth`,
+      { method: 'GET', silent }
+    )
+    if (!result.success || !result.data) {
+      throw new Error('Failed to fetch pep truth card')
     }
     return result.data
   },

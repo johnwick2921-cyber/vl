@@ -38,8 +38,12 @@ it('UG-4: "no window" states the clock rules that still bind', () => {
   expect(mm).toMatch(/ct\.Hour\(\) == 15 && ct\.Minute\(\) >= 45/)
   expect(label).toContain('no new entry 15:45–17:00 CT')
   // the EOD flat cancels intraday mentor orders until the 17:00 reopen
-  expect(repo('trader/auto_trader_clock.go')).toMatch(
-    /cancelArmedOrdersSyncFiltered\("session close — EOD flat", skipSwingArms\)/
+  // (m471 L1-1: an ordinary day still skips SWING4H arms; only a shortened
+  // day's early flat drops the skip — the label describes the ordinary day)
+  const clock = repo('trader/auto_trader_clock.go')
+  expect(clock).toMatch(/skipArms := armCancelSkip\(skipSwingArms\)/)
+  expect(clock).toMatch(
+    /cancelArmedOrdersSyncFiltered\("session close — EOD flat", skipArms\)/
   )
   expect(repo('kernel/session_registry.go')).toMatch(/14:45/)
   expect(label).toContain('EOD flat (14:45 CT')

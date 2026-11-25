@@ -69,12 +69,13 @@ func f2PHLEval(cfg Config, bars []market.Kline, now int64) *Evaluator {
 // f2PHLCfg is the frame-pin config: the room rule and the target-shy are off
 // so the pin reads the frame stamp and the entry geometry alone.
 func f2PHLCfg() Config {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.EMALocationTFMinutes = 0
 	cfg.EMAPeriod34 = 0
 	cfg.EMAPeriod9 = 0
 	cfg.RoomMultiple = 0
+	cfg.PHLRoomMultiple = cfg.RoomMultiple // review: the PHL/PLH room follows the fixture's room setting (the decoupled knob defaults to 1 since answers-1112 Q2)
 	cfg.PHLTargetShyPts = 0
 	cfg.PHLMinCandlesFromExtreme = 2
 	cfg.LocTriggerFilter = false
@@ -95,7 +96,7 @@ func f2PHLEmits(cfg Config, bars []market.Kline, now int64) []Intent {
 func TestF2Exec2mPHLCarriesItsFrame(t *testing.T) {
 	bars, now := f2PHLBars(auditMs(2026, 9, 15, 9, 0, 0)) // 09:00–09:05 CT
 
-	// OFF (explicit): the 1m read — entry at bar 5's high 102 + 1.0 buffer,
+	// OFF (explicit): the 1m read — entry at bar 5's high 102 + 0.50 buffer,
 	// no frame stamp.
 	off := f2PHLCfg()
 	off.Exec2mAfter30m = false
@@ -103,12 +104,12 @@ func TestF2Exec2mPHLCarriesItsFrame(t *testing.T) {
 	if len(gotOff) == 0 {
 		t.Fatal("fixture: knob OFF, the 1m read must emit the PHL")
 	}
-	if gotOff[0].Price != 103 || gotOff[0].ExecTFMin != 0 {
-		t.Fatalf("knob OFF: the 1m PHL must be entry 103 (high 102 + 1.0) with ExecTFMin 0, got Price=%.2f ExecTFMin=%d (%+v)", gotOff[0].Price, gotOff[0].ExecTFMin, gotOff[0])
+	if gotOff[0].Price != 103 || gotOff[0].ExecTFMin != 1 {
+		t.Fatalf("knob OFF: the 1m PHL must be entry 103 (high 102 + 1.00 [Oct D2.3 @ 46:20-47:20 OctD2.3-R46 supersedes Sept D2.2-R10]) with ExecTFMin 1 (m417), got Price=%.2f ExecTFMin=%d (%+v)", gotOff[0].Price, gotOff[0].ExecTFMin, gotOff[0])
 	}
 
 	// ON at 09:05: the 2m read — entry at the closed 2m candle's high 105.4 +
-	// 1.0, stamped ExecTFMin 2.
+	// 0.50, stamped ExecTFMin 2.
 	on := f2PHLCfg()
 	on.Exec2mAfter30m = true
 	gotOn := f2PHLEmits(on, bars, now)
@@ -116,7 +117,7 @@ func TestF2Exec2mPHLCarriesItsFrame(t *testing.T) {
 		t.Fatal("fixture: knob ON past 09:00, the 2m read must emit the PHL")
 	}
 	if gotOn[0].Price != 106.4 || gotOn[0].ExecTFMin != 2 {
-		t.Fatalf("knob ON: the 2m PHL must be entry 106.4 (high 105.4 + 1.0) with ExecTFMin 2, got Price=%.2f ExecTFMin=%d (%+v)", gotOn[0].Price, gotOn[0].ExecTFMin, gotOn[0])
+		t.Fatalf("knob ON: the 2m PHL must be entry 106.4 (high 105.4 + 1.00, [Oct D2.3 @ 46:20-47:20]) with ExecTFMin 2, got Price=%.2f ExecTFMin=%d (%+v)", gotOn[0].Price, gotOn[0].ExecTFMin, gotOn[0])
 	}
 }
 
@@ -133,7 +134,7 @@ func TestF2Exec2mPHLScheduleAtTick(t *testing.T) {
 	if len(got) == 0 {
 		t.Fatal("fixture: knob ON inside the RTH open +30 window, the 1m read must emit the PHL")
 	}
-	if got[0].Price != 103 || got[0].ExecTFMin != 0 {
-		t.Fatalf("knob ON before 09:00 CT: the PHL must stay the 1m read (entry 103, ExecTFMin 0), got Price=%.2f ExecTFMin=%d (%+v)", got[0].Price, got[0].ExecTFMin, got[0])
+	if got[0].Price != 103 || got[0].ExecTFMin != 1 {
+		t.Fatalf("knob ON before 09:00 CT: the PHL must stay the 1m read (entry 103, ExecTFMin 1 — m417), got Price=%.2f ExecTFMin=%d (%+v)", got[0].Price, got[0].ExecTFMin, got[0])
 	}
 }

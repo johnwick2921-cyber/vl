@@ -139,8 +139,29 @@ func stampSource(bars []Bar, src string) []Bar {
 // for: on a same-time collision an EXISTING live (or mixed) bar is kept over an
 // INCOMING historical one. The old merge said "incoming is freshest" — true for
 // a live update over a stale seed, false for a replay over a bar that traded.
+//
+// m467 (release #62) — ONE exception: a live bar the AddOn NEVER FINALISED, in
+// a period that has CLOSED (it is not the ring's newest bar), is a snapshot,
+// not the bar as it traded — the store already calls it live_partial (m416) and
+// lets a replay replace it there. The ring stamped it plain live and kept it
+// over NT8's own closed bar, so on 11-03 the 5m 17:55 snapshot (low 28328.50,
+// volume 4666) stood against the 1m it was made of (low 28310.75, volume 9621)
+// and the cross_frame pause could not clear even after a replay. The replay
+// bar now replaces it — only on the SAME price scale (the close within
+// ScaleMismatchPct of the snapshot's: a back-adjusted replay, ~290 pt away on
+// 09-10, never replaces anything). A FINAL live bar, a mixed bar and the
+// newest (forming) bar are never replaced. replaced counts the swaps.
 func mergeSeedKeepingLive(existing, incoming []Bar) []Bar {
-	out := make([]Bar, 0, len(existing)+len(incoming))
+	out, _ := mergeSeedKeepingFinal(existing, incoming)
+	return out
+}
+
+func mergeSeedKeepingFinal(existing, incoming []Bar) (out []Bar, replaced int) {
+	out = make([]Bar, 0, len(existing)+len(incoming))
+	var newestT int64
+	if len(existing) > 0 {
+		newestT = existing[len(existing)-1].T
+	}
 	i, j := 0, 0
 	for i < len(existing) && j < len(incoming) {
 		switch {
@@ -151,9 +172,14 @@ func mergeSeedKeepingLive(existing, incoming []Bar) []Bar {
 			out = append(out, incoming[j])
 			j++
 		default:
-			if existing[i].Source == BarSourceLive || existing[i].Source == BarSourceMixed {
-				out = append(out, existing[i]) // the minute as it traded stays
-			} else {
+			ex := existing[i]
+			switch {
+			case ex.Source == BarSourceLive && !ex.Final && ex.T < newestT && sameScaleClose(ex.C, incoming[j].C):
+				out = append(out, incoming[j]) // NT8's closed bar over the never-finalised snapshot
+				replaced++
+			case ex.Source == BarSourceLive || ex.Source == BarSourceMixed:
+				out = append(out, ex) // the minute as it traded stays
+			default:
 				out = append(out, incoming[j])
 			}
 			i++
@@ -162,7 +188,25 @@ func mergeSeedKeepingLive(existing, incoming []Bar) []Bar {
 	}
 	out = append(out, existing[i:]...)
 	out = append(out, incoming[j:]...)
-	return out
+	return out, replaced
+}
+
+// sameScaleClose reports whether two closes of one period are on one price
+// scale: within ScaleMismatchPct of the reference (the threshold the boot scale
+// check uses for the same question).
+func sameScaleClose(ref, c float64) bool {
+	if ref == 0 {
+		return false
+	}
+	d := ref - c
+	if d < 0 {
+		d = -d
+	}
+	r := ref
+	if r < 0 {
+		r = -r
+	}
+	return d <= r*ScaleMismatchPct
 }
 
 // detectScaleMismatch runs on a LIVE upsert. If the bar it is about to write

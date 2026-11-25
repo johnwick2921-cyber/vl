@@ -27,6 +27,28 @@ func levelMap(levels []DetectedLevel) map[LevelKind]float64 {
 	return m
 }
 
+// TestStartOfWeekCTSundayRollsForward — bug-hunt #32: a Sunday belongs to the
+// FOLLOWING Monday (the CME week opens Sunday 17:00 CT), not the ISO week's
+// previous Monday. The prior-week window (PWH/PWL) was otherwise a week stale
+// on Sunday evening. Mutant (ISO convention: Sunday → previous Monday) → RED.
+func TestStartOfWeekCTSundayRollsForward(t *testing.T) {
+	loc := chicago()
+	cases := []struct {
+		name string
+		in   time.Time
+		want time.Time
+	}{
+		{"Sunday evening", time.Date(2026, 10, 18, 18, 0, 0, 0, loc), time.Date(2026, 10, 19, 0, 0, 0, 0, loc)},
+		{"Monday midnight", time.Date(2026, 10, 19, 0, 0, 0, 0, loc), time.Date(2026, 10, 19, 0, 0, 0, 0, loc)},
+		{"Friday morning", time.Date(2026, 8, 14, 10, 0, 0, 0, loc), time.Date(2026, 8, 10, 0, 0, 0, 0, loc)},
+	}
+	for _, c := range cases {
+		if got := startOfWeekCT(c.in); !got.Equal(c.want) {
+			t.Fatalf("%s: startOfWeekCT(%v) = %v, want %v", c.name, c.in.Format("Mon 01-02 15:04"), got.Format("Mon 01-02 15:04"), c.want.Format("Mon 01-02 15:04"))
+		}
+	}
+}
+
 func TestExtractMultiDayLevels(t *testing.T) {
 	loc := chicago()
 	reg := DefaultSessionRegistry()
@@ -56,10 +78,13 @@ func TestExtractMultiDayLevels(t *testing.T) {
 
 	m := levelMap(ExtractMultiDayLevels(bars, reg, now))
 
+	// m239: PDH/PDL/PDC are the prior CME session (08-12 17:00 → 08-13 16:00),
+	// NOT the prior calendar day. The 08-13 18:00 Asia bar is in the CURRENT
+	// session (08-13), so it no longer shapes PDH/PDC.
 	want := map[LevelKind]float64{
-		KindPDH:  15620, // 08-13 calendar high (incl. evening Asia)
-		KindPDL:  15450, // 08-13 calendar low
-		KindPDC:  15600, // 08-13 last close (18:00 bar)
+		KindPDH:  15580, // prior session high (the 08-13 09:00 RTH bar)
+		KindPDL:  15450, // prior session low (the 08-13 14:00 RTH bar)
+		KindPDC:  15520, // prior session last close (08-13 16:59)
 		KindRTHH: 15580, // 08-13 NY high only
 		KindRTHL: 15450, // 08-13 NY low
 		KindASH:  15620, // overnight Asia high

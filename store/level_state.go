@@ -286,12 +286,26 @@ func AgedFreshness(cur *LevelStateDB, now time.Time) string {
 	if !cur.Consumed && cur.Freshness != FreshnessDone {
 		return cur.Freshness
 	}
-	last := cur.UpdatedAt
+	// Age from the CONSUMING TOUCH, not updated_at [bug-hunt #53]: EnsureLevel
+	// refreshes updated_at every cycle for every seated level, so a burned
+	// level that keeps reappearing near price read days==0 ("done") forever.
+	// last_play_ms is stamped by MarkConsumed at the consumption instant.
+	last := time.UnixMilli(cur.LastPlayMs)
+	if cur.LastPlayMs == 0 {
+		last = cur.UpdatedAt
+	}
 	if last.IsZero() {
 		last = cur.CreatedAt
 	}
 	if last.IsZero() {
 		return FreshnessDone
+	}
+	// Step back in CHICAGO calendar days: AddDate keeps the wall clock of the
+	// value's location, so a UTC `now` stepped one day back across a DST change
+	// can land in the SAME CT session twice and over-age the level by a day
+	// (TestP1DAgedFreshness failed under TZ=UTC in the week after 11-01).
+	if chicago, err := time.LoadLocation("America/Chicago"); err == nil {
+		now = now.In(chicago)
 	}
 	days := 0
 	for cmeDayKey(now.AddDate(0, 0, -days)) != cmeDayKey(last) {

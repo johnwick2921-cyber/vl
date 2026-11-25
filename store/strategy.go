@@ -701,6 +701,12 @@ type StrategyConfig struct {
 	// every existing strategy byte-identical. Pointer fields resolve shipped
 	// defaults in the accessors (HTFVetoEnabled: nil → ON — dispatch 1.3).
 	Regime *RegimeConfig `json:"regime,omitempty"`
+
+	// Pep is the optional pep trading-mode block (owner order 2026-10-29). ROOT
+	// placement (sibling of day_plan / regime) so a grid switch never drops it;
+	// additive + OFF: a nil pointer emits no pep key, keeping every existing
+	// strategy byte-identical. See store/pep.go.
+	Pep *PepConfig `json:"pep,omitempty"`
 }
 
 // RegimeConfig holds the regime-wave Studio toggles (G1 HTF veto now; G4
@@ -762,6 +768,7 @@ func (c StrategyConfig) MarshalJSON() ([]byte, error) {
 		PublishConfig *PublishStrategyConfig `json:"publish_config,omitempty"`
 		DayPlan       *DayPlanConfig         `json:"day_plan,omitempty"`
 		Regime        *RegimeConfig          `json:"regime,omitempty"`
+		Pep           *PepConfig             `json:"pep,omitempty"`
 	}{
 		StrategyType:  strategyType,
 		Language:      c.Language,
@@ -769,6 +776,7 @@ func (c StrategyConfig) MarshalJSON() ([]byte, error) {
 		PublishConfig: c.PublishConfig,
 		DayPlan:       c.DayPlan,
 		Regime:        c.Regime,
+		Pep:           c.Pep,
 	}
 
 	if strategyType == "grid_trading" {
@@ -798,6 +806,7 @@ func (c *StrategyConfig) UnmarshalJSON(data []byte) error {
 		PublishConfig *PublishStrategyConfig `json:"publish_config"`
 		DayPlan       *DayPlanConfig         `json:"day_plan"`
 		Regime        *RegimeConfig          `json:"regime"`
+		Pep           *PepConfig             `json:"pep"`
 
 		CoinSource     *CoinSourceConfig     `json:"coin_source"`
 		Indicators     *IndicatorConfig      `json:"indicators"`
@@ -818,6 +827,7 @@ func (c *StrategyConfig) UnmarshalJSON(data []byte) error {
 	c.PublishConfig = raw.PublishConfig
 	c.DayPlan = raw.DayPlan
 	c.Regime = raw.Regime
+	c.Pep = raw.Pep
 
 	if raw.AIConfig != nil {
 		c.CoinSource = raw.AIConfig.CoinSource
@@ -1986,22 +1996,41 @@ type MentorTuning struct {
 	OrbGateEnabled *bool `json:"orb_gate_enabled,omitempty"`
 	// ISBReverseEMA9Enabled: the reverse ISB at EMA 9 (D5.4; nil → ON, R-C).
 	ISBReverseEMA9Enabled *bool `json:"isb_reverse_ema9_enabled,omitempty"`
-	// HTFGateNewsOnly (D4.4-11): the 4h/1h direction gate only inside the
-	// 07:20–07:35 CT news window (nil → OFF = all-day gate; owner decision A
-	// 2026-10-21 m134).
+	// HTFGateNewsOnly: nil → ON since oct round 2 D2-G7 (October: the 5m is the
+	// only big frame, OctD4.3-R9) = the 4h/1h gate applies only in the news
+	// period (print day, 07:20–08:30 CT) and the 08:30–09:30 CT open window. A
+	// STORED false restores the m462 all-session gate (September D5.1-R9/R11).
 	HTFGateNewsOnly *bool `json:"htf_gate_news_only,omitempty"`
-	// Exec2mAfter30m (X5-10): after the first 30 minutes of RTH (09:00 CT)
-	// the named setups — the ISB pair AND PHL/PLH — are read on the 2m chart
-	// (nil → ON since release #31; the course trades the 1m for the first 30
-	// min, then the 2m [X5 @00:41–01:14; X8 @15:52–15:57]).
+	// Exec2mAfter30m (X5-10): the execution frame — 2m after 09:00 CT
+	// (1m 08:30–09:00) for ISB + PHL/PLH, the EMA 9/34, boxes, trendlines
+	// and the X8 exit (nil → OFF since m472 A1: the 1m all day [Oct D4.2 @ 22:56-23:46];
+	// ON = the September schedule, 1m for the first 30 min then the 2m [X5 @00:41–01:14; X8 @15:52–15:57]).
 	Exec2mAfter30m *bool `json:"exec_2m_after_30m,omitempty"`
+	// BEOffsetTicks (m472 A5): the break-even stop sits this many ticks PAST
+	// the entry on the profit side (long entry+N*tick, short entry-N*tick)
+	// instead of exactly at it. The course moves the stop "a little past" the
+	// entry — "gia 10 do ... de o gia 11 do" [Oct D4.2 @ 13:00-13:25] — but
+	// never says how many ticks, so nil / 0 = OFF = the entry exactly (today).
+	// Valid 0..20; out of range fails closed to 0 and is counted.
+	BEOffsetTicks *int `json:"be_offset_ticks,omitempty"`
 	// Spent-day gate (METHOD §7 table, D5.1 p1 @14:21–15:57): a run of at
 	// least SpentPts before the open = spent; the target cap then applies,
 	// and any setup whose stop is over the cap is skipped (R9).
 	DayGateSpentPts     float64 `json:"day_gate_spent_pts,omitempty"`
 	DayGateTargetCapPts float64 `json:"day_gate_target_cap_pts,omitempty"`
-	// SwingMaxStopPts: SWING4H skips at a stop >= this (R-D, default 100). The
-	// trader rule gate and the kernel swing gate read this ONE value.
+	// HTFOpposedRangeHaltPts — answers-1112 Q1 extra rule: unset / 0 = OFF
+	// (today). > 0: from the 08:30 CT open to the 17:00 CT day roll, when the
+	// 4h and 1h triggers are opposed and the Globex day's run (17:00 CT → now)
+	// is at/above this, no new mentor entries for the rest of the trading day
+	// (<setup>_htf_opposed_range_halt) — "Còn nếu như 2 khung giờ đang ngược
+	// nhau / Mà khung daily nó đã chạy được 300-400 điểm rồi / Tắt máy nghỉ
+	// luôn cho em" [Sept D5.1 p1 @19:22-19:26]. Default OFF: a range, not a
+	// number, and September. Valid 50..2000; out of range fails closed to OFF
+	// and is counted.
+	HTFOpposedRangeHaltPts float64 `json:"htf_opposed_range_halt_pts,omitempty"`
+	// SwingMaxStopPts: a SWING4H stop >= this is SIZED DOWN to <= 2 MNQ (B5; never
+	// skipped, never widened; default 100). The trader size table and the kernel
+	// swing config read this ONE value.
 	SwingMaxStopPts float64 `json:"swing_max_stop_pts,omitempty"`
 	// SwingMinStopPts (W26 P2-4): SWING4H skips at a stop NARROWER than this.
 	// 0 = OFF (the course states no minimum — only the 100-pt ceiling and "a
@@ -2014,6 +2043,17 @@ type MentorTuning struct {
 	// CE-1: inside a 15m ISB box — "off" | "require_5m_isb" (default) |
 	// "no_trade_until_escape" [D4.2 p1 @17:09–17:13].
 	FifteenMinIBRequires5mISB string `json:"15m_ib_requires_5m_isb,omitempty"`
+	// m465 P1 (release #60). Early15mRead: nil → ON — two churning 5m candles
+	// inside the last closed 15m box the FORMING 15m as a provisional ISB box
+	// (refusals only, named _forming) [D4.2-R2 p1 @00:08–00:39; D4.3-R21
+	// @12:20–12:32]. MTFConfluenceSource: "standing_boxes" (default) | "last_pair"
+	// — where mode C reads "15m and 5m both say so" [D4.2-R17 p1 @14:57–15:37].
+	// TriggerEscalation: nil → OFF since G3 (oct round 2: October reads the 5m only,
+	// OctD4.3-R9). true = crossing 5m ISBs hand the trigger to the 15m, then the
+	// 30m [D3.4-R43 p2 @17:07–17:49].
+	Early15mRead        *bool  `json:"15m_early_read,omitempty"`
+	MTFConfluenceSource string `json:"mtf_confluence_source,omitempty"`
+	TriggerEscalation   *bool  `json:"trigger_escalation,omitempty"`
 	// CE-2: "first_box" | "both_boxes" (default, course-defaults-30) [D4.2 p1 @07:54–08:02; OQ-2].
 	TFConflictEnd string `json:"tf_conflict_end,omitempty"`
 	// CE-3: after a print, wait for the close beyond the 4h line (nil → ON,
@@ -2022,7 +2062,9 @@ type MentorTuning struct {
 	// CE-4: drop print→08:30 bars from the 1h/4h feed (nil → ON,
 	// course-defaults-30; release #29 rework — freeze the pre-print read).
 	NewsBarsExcluded *bool `json:"news_bars_excluded,omitempty"`
-	// CE-5: ISB rest-box escape "close" | "body" (default) [D4.1 p1 @20:52].
+	// CE-5: ISB rest-box escape "close" (default since m466 G20/G49, release
+	// #61 — "nó đóng bên ngoài cái box là at least" [D4.1 p1 @20:36–21:03]) |
+	// "body" (the #25–#60 default; a stored body still wins).
 	ISBBoxEscape string `json:"isb_box_escape,omitempty"`
 	// CE-6: after an EMA 34 loss — "session" | "until_zone_exit" (default).
 	EMA34LossRelock string `json:"ema34_loss_relock,omitempty"`
@@ -2052,6 +2094,338 @@ type MentorTuning struct {
 	// outside the old range (nil → ON) [D3.4 p3 recovered2 @00:00–00:21;
 	// "Đừng vẽ vùng thứ 3… Rối lắm" D3.2 p2 @09:47–09:54; D4.1 p2 @02:38].
 	BoxNewZoneAfterEscape *bool `json:"box_new_zone_after_escape,omitempty"`
+	// Release #52 B19: the ORB opens only on a candle COMPLETELY outside the
+	// 2-minute range, wicks included (nil/false → OFF = the body test)
+	// [extra "Routine trước khi trade" part1 @06:47–07:16].
+	OrbEscapeCompletely *bool `json:"orb_escape_completely,omitempty"`
+	// m465 P5 (release #60): the D4.3 wick microscalp, the whole setup — the
+	// 5m wick-run zone, a 1m ISB/PHL at the zone, the nearby 5m wicks as the
+	// target (nil/false → OFF: the mentor calls it advanced, "đừng có tập khúc
+	// này đầu liền" [D4.3 @04:55–05:17]).
+	WickMicroscalp *bool `json:"wick_microscalp,omitempty"`
+	// m465 P5: the D4.3-R20 safe play — a setup at a wick zone waits for its
+	// reference candle to CLOSE beyond the zone's near edge (nil/false → OFF)
+	// [D4.3 @14:07–14:27]. Read only while wick_microscalp is ON.
+	WickSafePlay *bool `json:"wick_safe_play,omitempty"`
+	// m466 P1 (release #61): boxes, breaks, ranges. Absent = the course default.
+	// Mentor5mBoxSource: "merge" (default, ISB5-F1 OctD4.3-R59 [Oct D4.3 @
+	// 58:00]: 5m candles that close inside the box merge into ONE inside bar) |
+	// "newest" (the #61–#66 default: the NEWEST 5m inside bar [D4.1-R37 p1
+	// @22:31–22:49; D4.2-R10 p1 @05:34–08:33]) | "first".
+	Mentor5mBoxSource string `json:"mentor_5m_box_source,omitempty"`
+	// MentorBreakDirectionLock: nil → ON — after a box break only setups in the
+	// break direction until a close back inside [D4.1-R31/R33 p1 @18:29–20:33;
+	// D4.1-R55 @07:47–08:07].
+	MentorBreakDirectionLock *bool `json:"mentor_break_direction_lock,omitempty"`
+	// MentorSmallRangeGuard: nil → OFF (release #61 final) — when true, no entry
+	// inside a range too small for its candles (61.50 pts / two 30-pt candles)
+	// [D4.2-R33 p2 @06:16–06:30]. OFF by default: the course states no candle
+	// count or breakout margin; on the mentor list. A stored true still wins.
+	MentorSmallRangeGuard *bool `json:"mentor_small_range_guard,omitempty"`
+	// MentorMidRangeRejectSide: nil → ON — mid-range, trade WITH the last box
+	// rejection [D2.2-R71 p3 @14:28–15:58].
+	MentorMidRangeRejectSide *bool `json:"mentor_mid_range_reject_side,omitempty"`
+	// OCT-EXACT A1 (owner order 2026-11-14 "mentor mode = the October course
+	// exactly"): nil → OFF for each gate below (October is silent or contrary);
+	// a stored true is the revert and still wins.
+	//   MentorHTFGateEnabled    — row 1, the 4h/1h direction gate [Oct D4.3-R9 @07:28]
+	//   MentorDayGateEnabled    — row 2, the §7 day gate (day_off/day_spent/spent caps)
+	//   MentorSwing4HEnabled    — row 3, NEW SWING 4H arms [Oct D4.3-R10 @07:58]
+	//   MentorOrbPart2Enabled   — row 4, ORB not_drawn/not_escaped/wrong_side (orb_inside stays)
+	//   MentorOpen5mGateEnabled — row 5, open_5m_range_not_broken
+	//   MentorNewsHoldEnabled   — row 7, news_hold 07:20-07:35 entry hold only (the flatten is MentorNewsFlattenEnabled)
+	//   MentorLossBoxEnabled    — row 10, loss box / loss range (G2)
+	MentorHTFGateEnabled    *bool `json:"mentor_htf_gate_enabled,omitempty"`
+	MentorDayGateEnabled    *bool `json:"mentor_day_gate_enabled,omitempty"`
+	MentorSwing4HEnabled    *bool `json:"mentor_swing4h_enabled,omitempty"`
+	MentorOrbPart2Enabled   *bool `json:"mentor_orb_part2_enabled,omitempty"`
+	MentorOpen5mGateEnabled *bool `json:"mentor_open5m_gate_enabled,omitempty"`
+	MentorNewsHoldEnabled   *bool `json:"mentor_news_hold_enabled,omitempty"`
+	// MentorNewsFlattenEnabled — review fix (fidelity P2): the news cancel + flatten at print -10m is
+	// a SAFETY behaviour, split from the entry hold above. nil -> ON ("safety stays"); a stored false
+	// is the explicit owner acceptance of holding through a print.
+	MentorNewsFlattenEnabled *bool `json:"mentor_news_flatten_enabled,omitempty"`
+	MentorLossBoxEnabled     *bool `json:"mentor_loss_box_enabled,omitempty"`
+	// OCT-EXACT A2 (owner order 2026-11-14): nil -> OFF / the October value for
+	// each knob below; a stored value is the revert and still wins.
+	Mentor15mBoxNoTrade         *bool    `json:"mentor_15m_box_no_trade,omitempty"`         // review fix: the 15m ISB-box no-trade (OctD4.3-R60 @58:38), nil -> ON
+	MentorHTFBoxGates           *bool    `json:"mentor_htf_box_gates,omitempty"`            // row 1: 15m/30m ISB-box gates on every setup
+	MentorTFConflict            *bool    `json:"mentor_tf_conflict,omitempty"`              // row 2: tf_conflict (5m vs 15m box disagreement)
+	MentorMTFConfluence         *bool    `json:"mentor_mtf_confluence,omitempty"`           // row 3: MTF confluence C from the 15m + 5m boxes
+	MentorRollingLevelTouchOwns *bool    `json:"mentor_rolling_level_touch_owns,omitempty"` // row 4: rolling_level_touch_owns
+	KeypairRuleEnabled          *bool    `json:"keypair_rule_enabled,omitempty"`            // row 5: keypair_candle_too_big (X4)
+	MentorTriggerRetestWrongWay *bool    `json:"mentor_trigger_retest_wrong_way,omitempty"` // row 9: trigger_retest_wrong_way refusal
+	MentorBoxPingPong           *bool    `json:"mentor_box_ping_pong,omitempty"`            // row 11: box_ping_pong
+	MentorPHLISBPreferredAtBox  *bool    `json:"mentor_phl_isb_preferred_at_box,omitempty"` // row 11: phl_isb_preferred_at_box
+	MentorTriggerBoxZone        *bool    `json:"mentor_trigger_box_zone,omitempty"`         // row 11: trigger_ftgl_buy_zone / trigger_ftgh_sell_zone
+	MentorISBLocationSizeCuts   *bool    `json:"mentor_isb_location_size_cuts,omitempty"`   // row 12: isb_at_old_extreme / isb_in_range size cuts
+	MentorPullbackWarnCut       *bool    `json:"mentor_pullback_warn_cut,omitempty"`        // row 13: pullback_warn size cut
+	MentorTrendlineBoxBeats     *bool    `json:"mentor_trendline_box_beats,omitempty"`      // row 15: box beats trendline
+	MentorConfluenceHold2R      *bool    `json:"mentor_confluence_hold_2r,omitempty"`       // row 17: confluence C hold 2R
+	MentorX8TrapDodge           *bool    `json:"mentor_x8_trap_dodge,omitempty"`            // row 17: X8 trap-dodge exit
+	MentorBoxRoomMultiple       *float64 `json:"mentor_box_room_multiple,omitempty"`        // row 11: box room multiple (October 1:1; 2 reverts; 0 = the shared room_multiple)
+	TrendlineLevelPreferPts     *float64 `json:"trendline_level_prefer_pts,omitempty"`      // row 15: respected-level-beats-trendline band (0 = off; 2 reverts)
+	MentorKeyLevelPrunePts      *float64 `json:"mentor_key_level_prune_pts,omitempty"`      // row 14: key-level prune distance (0 = off; 20 reverts)
+	MentorBoxTouchBandPts       *float64 `json:"mentor_box_touch_band_pts,omitempty"`       // row 11: FTGH/FTGL box touch band (0 = literal; 0.25 reverts)
+	MentorResonanceBEMinRR      *float64 `json:"mentor_resonance_be_min_rr,omitempty"`      // row 17: one-bracket resonance BE minimum R (0 = BE once beyond entry; 0.25 reverts)
+	TrendlineMaxLinesPerAnchor  int      `json:"trendline_max_lines_per_anchor,omitempty"`  // row 15: 0 = 3 (October fan, OctD3.2-R21/R22); 1 reverts
+	// OCT-EXACT BC (owner order 2026-11-14): nil -> the October value; a stored value is the revert and still wins.
+	MentorISBRoomMultiple      *float64 `json:"mentor_isb_room_multiple,omitempty"`       // C4: ISB room multiple (October 1:1; 2 reverts; 0 = the shared room_multiple)
+	MentorLevelFirstTouchLock  *bool    `json:"mentor_level_first_touch_lock,omitempty"`  // C3: nil -> false (a first touch closing through only cancels that order); true reverts (ISB-only lock)
+	MentorBoxCarryFirstLatched *bool    `json:"mentor_box_carry_first_latched,omitempty"` // P3-missesA E9: nil -> true; false reverts (the carried box is the newest live box per role)
+	MentorBoxCounter5mScalp    *bool    `json:"mentor_box_counter_5m_scalp,omitempty"`    // P3-missesA E9: nil -> true; false reverts (a box return against the 5m stays refused)
+	MentorISBRevOldExtremeRoom *bool    `json:"mentor_isbrev_old_extreme_room,omitempty"` // P4-missesB D2.3-WE8: a retagged reverse ISB (a PLH by D5.4 @03:52) with an old extreme inside 1R of the entry (measured to the shy target) is refused, no fill-close: D2.3-R53 @54:00 / R55 @57:00; nil -> true, false reverts to the r1 fill-close
+	MentorISBRevFillClose      *bool    `json:"mentor_isbrev_fill_close,omitempty"`       // close r1: nil -> true; false reverts. the reverse ISB takes the ISB first target (fill-candle close / +1R) when no level gives room: D5.3-R39 @16:43 reverse ISB is the same setup read under another name; D2.2 @28:37
+	MentorISBJustBrokenLevel   *bool    `json:"mentor_isb_just_broken_level,omitempty"`   // D1: ISB at a level it just broke refused until the retest (default ON)
+	MentorFTGLBodyEdgePartner  *bool    `json:"mentor_ftgl_body_edge_partner,omitempty"`  // D3: FTGL partner by body edge (default ON)
+	MentorLeg1FixedPts         *float64 `json:"mentor_leg1_fixed_pts,omitempty"`          // D2: leg-1 fixed partial in points (15; 0 = today's +1R)
+	MentorCounter5mScalpPts    *float64 `json:"mentor_counter_5m_scalp_pts,omitempty"`    // C1: counter-5m EMA 34 scalp first target (15; 0 = off, today)
+	MentorResonanceTrail       *bool    `json:"mentor_resonance_trail,omitempty"`         // C6: nil -> true (the mode-A runner trails after BE, D4.2-R31/R32); false reverts (no trail, D4.2-R13)
+	// isbTF audit (F4/F6) — numbers the course does not state, shipped as knobs
+	// at today's values (unset = unchanged):
+	//   MentorSwingISBOnePerCandle: nil → ON — after the level's inside-bar
+	//     order FILLED and ended, a later inside bar of the same 4h candle is
+	//     refused swing_isb_spent. The bot's [B] reading of "one setup per
+	//     level" [D5.2-R19/R23 p1 @13:23–13:40]; the course gives the inside bar
+	//     no time limit [D5.2-R25 p2 @10:23–10:51] — mentor question.
+	//   CrossingISBLookback / CrossingISBMin: the crossing-inside-bar read that
+	//     escalates the trigger 5m → 15m → 30m [D3.4-R43 p2 @17:07–17:49] — the
+	//     last N CLOSED buckets (0 = 3, range 3..12) holding at least M inside
+	//     bars of BOTH directions (0 = 2, range 2..N-1). The course states no
+	//     count or window — mentor question Q10.
+	MentorSwingISBOnePerCandle *bool `json:"mentor_swing_isb_one_per_candle,omitempty"`
+	CrossingISBLookback        int   `json:"crossing_isb_lookback,omitempty"`
+	CrossingISBMin             int   `json:"crossing_isb_min,omitempty"`
+
+	// Release #52 W11 — "invented-constant" knobs. Every number below is OURS,
+	// not the course's (the mentor gave none, or the owner fixed none); each
+	// default equals the value the kernel hard-coded before, so an unset key
+	// changes nothing. Blank in Studio = the default.
+	//
+	// B8: the 2m ISB stacking cancel candle (default 4 = the 1m course count
+	// [Ngày 4.2 Multitime frame 15_ part2 @00:08:53–00:09:03]; 3–12).
+	ISBStackCancelCandle2m int `json:"isb_stack_cancel_candle_2m,omitempty"`
+	// B8: tiny-stop exception — an ISB whose stop is at or under this many
+	// points is not cancelled at the cancel candle [Ngày 5.1 Go over lại tất cả
+	// part2 @02:50–03:40]. m465 (release #60, D5.1-R26): the worked example's
+	// measured stop 12.5 [D5.1 p2 @02:24–04:41]; (0, 25]. G2 (oct round 2): unset
+	// → 0 = OFF (October: the 4th non-filling candle cancels, OctD4.3-R57); store
+	// 12.5 for the September hold.
+	ISBStackTinyStopPts float64 `json:"isb_stack_tiny_stop_pts,omitempty"`
+	// B10: evening "slow" cutoff in points (default 100), the CT hour the range
+	// starts at (15 default, 15–17) and an optional trailing window in minutes
+	// (0 = cumulative since the start hour) [X11 @17:40–18:26; owner Q6].
+	EveningSlowPts       float64 `json:"evening_slow_pts,omitempty"`
+	EveningSlowFromHour  int     `json:"evening_slow_from_hour,omitempty"`
+	EveningSlowWindowMin int     `json:"evening_slow_window_min,omitempty"`
+	// B11: near-box room as a multiple of risk (nil → 2; explicit 0 → the
+	// refusal is OFF) and whether the refusal also gates PHL/PLH (nil → ON)
+	// [Ngày 3.2 FTGH FTGL part1 @00:22:44–00:23:10 — no distance given].
+	NearBoxRoomMultiple *float64 `json:"near_box_room_multiple,omitempty"`
+	NearBoxRoomPHL      *bool    `json:"near_box_room_phl,omitempty"`
+	// NearBoxRoomPHLMultiple — answers-1112 Q2 (owner question): the near-box
+	// multiple for the PHL/PLH leg only. nil → follow near_box_room_multiple
+	// (today exactly); explicit 0 → the PHL/PLH leg is off (ISB unchanged);
+	// [0,10]. The 2x is ours, not the course [Ngày 3.2 FTGH FTGL part1
+	// @00:22:44–00:23:10 shows the skip on an ISB only; Oct D2.3 @49:37-49:56
+	// asks 1:1 room for a PHL/PLH].
+	NearBoxRoomPHLMultiple *float64 `json:"near_box_room_phl_multiple,omitempty"`
+	// C16: how far short of the old high/low the PHL/PLH target sits (nil → 5;
+	// explicit 0 → AT the old extreme) [Ngày 4.1 Go over ngày 3 part1
+	// @00:07:21–00:07:40 "gần đỉnh cũ"].
+	PHLTargetShyPts *float64 `json:"phl_target_shy_pts,omitempty"`
+	// PHL-1 (phl audit 2026-11-10): the rolling PHL/PLH's old high / old low is
+	// the 1m swing the pullback started from; this is its width k (a bar beating
+	// its k left neighbours, confirmed by k bars to its right). 0 / absent = 4
+	// (the only width that reproduces the four Oct D2.3 worked examples — the
+	// course states no number); -1 = the pre-PHL-1 source (the 5m/15m pivots);
+	// 1..10 = k.
+	PHLOldExtreme1mK int `json:"phl_old_extreme_1m_k,omitempty"`
+	// B27: the ISB size-cut definitions — "at the old high/low" band in points
+	// (nil → 2; explicit 0 → an exact touch) and the "in range" key-level gap
+	// (0 / unset → inherit ping_pong_min_gap_pts) [Ngày 4.1 Go over ngày 3
+	// part1 @00:04:31–00:05:19].
+	ISBOldExtremePts *float64 `json:"isb_old_extreme_pts,omitempty"`
+	ISBInRangeGapPts float64  `json:"isb_in_range_gap_pts,omitempty"`
+
+	// m465 P3 (release #60) structure-fidelity knobs. Unset = the course
+	// (the full video read); the other value = the pre-#60 behaviour.
+	//
+	// D2.3-R7: "third" (unset since m472 A2; "fourth" was the September reading) — a 1m/2m trendline is not a location on the
+	// candle of its 3rd touch (the TEST), the entry comes on a later touch
+	// [D2.3 p1 @02:34–02:47, 03:03–03:16]; "third" — it arms on the 3rd touch.
+	TrendlineEntryTouch string `json:"trendline_entry_touch,omitempty"`
+	// D3.2-R29/R30: nil/false — between two boxes is NOT a blanket near-box
+	// exemption (E6 refused), the middle case passes on its own room [D3.2 p1
+	// @22:12–24:41]; true — the pre-#60 exemption.
+	NearBoxBetweenExempt *bool `json:"near_box_between_exempt,omitempty"`
+	// D2.2-R64: "flat_near" (unset) — a PHL low within the m428 R2 "same price"
+	// distance of the prior low is an FTGL, not a PHL (mirror PLH) [D2.2 p3
+	// @07:44–10:15]; "strict" — the pre-#60 strict comparison only.
+	PHLFlatLow string `json:"phl_flat_low,omitempty"`
+	// D5.4-R7: "pair" (unset) — the reverse ISB's EMA 9 touch reads the mother
+	// + ISB candle group [D5.4 p1 @03:35–03:46]; "isb_candle" — the ISB candle
+	// alone (pre-#60).
+	ISBReverseTouch string `json:"isb_reverse_touch,omitempty"`
+
+	// m466 P2 (release #61) levels-and-touches knobs. Unset = the course; the
+	// other value = the pre-#61 behaviour.
+	//
+	// G2 D1.3-R21: "on" (unset) — a key level that held today and then breaks
+	// flips its role once (Uno Reverse, level_broken_uno) and the backtest
+	// reject trades [D1.3 p1 @12:31–12:58]; "off" — ISB-only on any break.
+	UnoKeyLevels string `json:"uno_key_levels,omitempty"`
+	// G10/G11 D3.1-R26/R20: "on" (unset) — the session's first 5m candle wick is
+	// an old high/low, and an unfilled ≥20-pt gap's far edge is a level [D3.1 p1
+	// @11:58–12:22, @09:41–09:51]; "off" — neither.
+	SessionOpenLevels string `json:"session_open_levels,omitempty"`
+	// G17 D2.3-R34: "current_line" (unset) — a resting order on a trendline /
+	// EMA 34 is cancelled by a close through the line's CURRENT price, and a
+	// trendline gone from the set cancels it [D2.3 p1 @23:35–24:03];
+	// "placement_price" — the frozen placement price (pre-#61).
+	LevelArmLineCancel string `json:"level_arm_line_cancel,omitempty"`
+	// G41 D2.2-R59: "pullback" (unset) — the whole pullback's low must stay
+	// above the prior low (phl_pullback_lower_low, mirror) [D2.2 p3
+	// @08:25–09:25]; "signal" — the signal candle's low only (pre-#61).
+	PHLPullbackLow string `json:"phl_pullback_low,omitempty"`
+	// levels audit LL-4: "own" (unset) — every pre-roll 1H RTH key-level candle
+	// the current contract's native bars fully cover (1m, else 15m, else 30m)
+	// is built from its own prints [OctD5.2-R16 @06:18]; "stitched" — the older
+	// contract shifted by the one measured roll gap (pre-LL-4).
+	KeyLevelHistorySource string `json:"key_level_history_source,omitempty"`
+	// levels audit LL-2: "on" (unset) — a key level whose FIRST touch closes
+	// through it flips its role (level_broken_retest) and the first retest
+	// candle from the new side that closes back on it is the PHL/PLH reference
+	// [OctD5.2-R20/R24/R25 @07:42, 13:35, 14:16]; "off" — the September
+	// "invalid, ISB-only for the day" [D5.2 p1 @19:44–20:25].
+	KeyLevelBreakRetest string `json:"key_level_break_retest,omitempty"`
+	// D3-G15 (oct round 2): "off" (unset, today) — a key level that is ISB-only
+	// after its one flip stays ISB-only for the session day; "on" — it re-arms
+	// on visit departure like a trendline, so the retest after the run, closing
+	// back on the right side, is a fresh first touch [OctD3.2-R78 @ 60:00,
+	// garbled ASR; its sketch is a trendline — an inference [B]]. Mentor question.
+	KeyLevelRearm string `json:"key_level_rearm,omitempty"`
+	// D5.3-R43/R44 (oct round 2): "ema" (unset, October) — the reverse ISB at the
+	// EMA 9 trades with the trend the lines show (EMA 9 vs EMA 34 and price vs
+	// the 34; the fish is not built), the 5m trigger side is not consulted
+	// [Oct D5.3 @17:33, 20:00, 20:44]; "trigger" — today: the governing 5m
+	// trigger's side is the trend.
+	ISBReverseTrend string `json:"isb_reverse_trend,omitempty"`
+	// D5.4-SCALP (oct round 2): "on" (unset) — a PHL/PLH entry opposite to the
+	// governing 5m trigger sizes the reduced tier [OctD5.4-R11 @04:47 "giảm size
+	// lại", R13 @05:00 "ăn ít lại"]; "off" — today's table.
+	Counter5mReduceSize string `json:"counter_5m_reduce_size,omitempty"`
+	// levels audit LL-1: "off" (unset) — a key level a 1H RTH body closed
+	// through stays drawn. The course states only "draw as many as you like…
+	// Key Level nó là quá khứ" [OctD5.2-R15 @04:44] and never mentions a
+	// deletion; keeping the level is an INFERENCE [B] from his drawn stack and
+	// the WE3 quiz level 27,997.75 (a quiz, not a trade), both crossed by a 1H
+	// body long before [OctD5.2-R19/R20 @07:20–07:42]; "on" — the deck /
+	// September deletion (slide 31 step 4). Mentor question.
+	KeyLevelDeleteOn1HClose string `json:"key_level_delete_on_1h_close,omitempty"`
+	// PHLMinAbovePriorPts — G7 (oct round 2): nil → 0 (OFF, today's behaviour; the course's figure is 15). A PHL/PLH whose entry sits
+	// closer than this many points to the old low (PLH: old high) it stands on is
+	// refused phl_min_above_old_extreme [OctD4.2-R39/R41/R42 @ 36:45–40:20]. The
+	// mentor calls 15 experience, not law [OctD4.2-R39 @ 36:45], so it ships as a
+	// knob: set 15 for the course's figure.
+	PHLMinAbovePriorPts *float64 `json:"phl_min_above_old_extreme_pts,omitempty"`
+	// RollingLeftBreakCancel — D2-G6 (oct round 2): nil → ON (October). A 1m candle
+	// that CLOSES beyond the rolling ladder's left extreme (the higher low / lower
+	// high the leg to the old extreme started from) ends the ladder, counted
+	// rolling_left_extreme_broken [OctD2.3-R69 @ 78:10]. false = the per-rung
+	// phl_not_higher_low / phl_not_lower_high refusal only.
+	RollingLeftBreakCancel *bool `json:"rolling_left_break_cancel,omitempty"`
+	// RollingStaleTouchReleases — FIX-1112 B (WE6): nil -> OFF (today). true: a level touch-reject
+	// owns the rolling entry only if the touch candle is not older than the old
+	// extreme the ladder targets (a touch of an earlier leg does not block the
+	// pullback) [OctD2.3 @ 13:37-28:33]. nil/false = any live touch-reject owns (m216).
+	RollingStaleTouchReleases *bool `json:"rolling_stale_touch_releases,omitempty"`
+	// RollingKeypairTapeExempt — FIX-1112 B (WE7): nil -> OFF (today). true: the X4 keypair
+	// sit-out is not applied to the rolling ladder's 1m tape old extreme (not a
+	// drawn key level) [OctD2.3 @ 35:46-39:09]. nil/false = today.
+	RollingKeypairTapeExempt *bool `json:"rolling_keypair_tape_exempt,omitempty"`
+	// HTFTrendlineFlip — D3-G12 (oct round 2): nil -> ON (October). A persistent 1H/4H trendline broken by a 5m candle wholly beyond it is kept with its role flipped (a broken support is resistance and the reverse; a location again after a retest touch) instead of being deleted [OctD3.2-R20/R29 @ 08:27, 14:18-14:47]. false = the m428 delete. The 1m lines still die when broken.
+	HTFTrendlineFlip *bool `json:"htf_trendline_flip,omitempty"`
+	// TrendlineMaxSlopePtsPerBar — D3-G14 (oct round 2): nil -> 0 (OFF). An intraday trendline steeper than this many points per build-frame bar is refused [OctD3.2-R40/R41 @ 29:12-29:38: 30-45 degrees, not 80-85]; the course gives no points-per-bar number.
+	TrendlineMaxSlopePtsPerBar *float64 `json:"trendline_max_slope_pts_per_bar,omitempty"`
+	// TrendlineMinBouncePts — D3-G10 (oct round 2): nil -> 0 (OFF). A swing anchors an intraday trendline only when price bounced at least this many points from it before the next same-role swing [OctD3.2-R9/R35/R36 @ 03:13, 24:00]; the course states no number.
+	TrendlineMinBouncePts *float64 `json:"trendline_min_bounce_pts,omitempty"`
+	// KnockKnockZone — D2-G10 (oct round 2): nil -> ON (October). Knock Knock counts tests per price zone and keeps the pre-market tests of the same CME session; the 4th test of a zone refuses [OctD2.1-R22/R25/R34 @ 21:18-23:43]. false = the per-level-key count reset at the 08:30 day-gate latch.
+	KnockKnockZone *bool `json:"knock_knock_zone,omitempty"`
+	// TrendlineFirstBottomAnchor — D3-G9 (oct round 2): nil -> ON (October). A trendline joins the FIRST bottom (top) of the move to each later higher bottom (lower top): the non-adjacent slot may be refilled from the same first anchor [OctD3.2-R45/R46/R59 @ 31:20, 33:00, 41:20]. false = the pre-round-2 pick.
+	TrendlineFirstBottomAnchor *bool `json:"trendline_first_bottom_anchor,omitempty"`
+	// BoxFlipReversible — D3-G7 (oct round 2): nil -> ON (October). The D14 box flip is reversible: a candle whose whole body is back on the original side of the box restores the role, so the retest from that side is the resistance/support again [OctD3.3-R46/R48 @ 37:40, 39:20]. false = the September permanent flip.
+	BoxFlipReversible *bool `json:"box_flip_reversible,omitempty"`
+	// BoxCarriedStaysLive — D3-G4 (oct round 2): nil -> ON (October). A carried box (live at the RTH open, valid to the next 08:30 CT) stays the role's live box over a box that formed later in the evening [OctD3.3-R27/R51 @ 17:00, 41:28]. false = the m473 rule (a carried box only fills a role the live set lacks).
+	BoxCarriedStaysLive *bool `json:"box_carried_stays_live,omitempty"`
+	// BoxSwingBothRoles — D3-G2 (oct round 2): nil -> ON (October). A candle that is both a 3-bar swing high and a swing low counts as a peak AND a bottom for the FTGH/FTGL box builder [OctD3.3-R25 @ 15:46; E11 frame s_02696]. false = the September one-role switch (low wins).
+	BoxSwingBothRoles *bool `json:"box_swing_both_roles,omitempty"`
+	// BoxPreOpenLookbackMin — D3-G1 (oct round 2): nil -> 10 minutes (R52). A pair of pre-open peaks that forms in the last N minutes before the 08:30 CT open is the morning box and replaces the overnight pair [OctD3.3-R23/R52 @ 17:13, 42:00]; 0 = only boxes formed from 08:30 replace the overnight box (the pre-round-2 behaviour).
+	BoxPreOpenLookbackMin *float64 `json:"box_preopen_lookback_min,omitempty"`
+	// ISBTargetFillClose — D2-G3 (oct round 2): nil → OFF (review: the course does not say a no-target ISB may be traded, [B]). ON = the ISB's basic
+	// target is the fill candle's close [OctD2.2-R35/R37 @ 28:40, 30:03]: an ISB
+	// with no level beyond its entry (isb_missing_target) or only a level inside
+	// 1R (isb_target_below_floor) is no longer refused; its first target is the
+	// +1R leg-1 TP and the room-to-a-level rule has no level to measure. false =
+	// the September rule (a level target >= 1R with 2R room).
+	// Since answers-1112 Q3 the no-level case defaults ON under
+	// ISBNoLevelFillClose; this knob's remaining own job is the level-inside-1R
+	// case, which no video covers.
+	ISBTargetFillClose *bool `json:"isb_target_fill_close,omitempty"`
+	// ISBNoLevelFillClose — answers-1112 Q3: nil → ON. An ISB with NO level
+	// beyond its entry (isb_missing_target) is traded; its first target is the
+	// close of the candle that fills it [Oct D2.2 @28:37-28:56 "target đầu tiên
+	// … bán bớt … là khi cây nến trend phiêu lĩnh … Đóng", @30:24-30:43 "không
+	// quan tâm nó làm gì hết"; Sept D1.4 p1 @12:12-13:27]: the +1R leg-1 TP,
+	// partial at the fill close (mentorISBPartialTP), no room rule. A level
+	// inside 1R stays refused (isb_target_below_floor; isb_target_fill_close
+	// owns it). false = today's isb_missing_target refusal exactly.
+	ISBNoLevelFillClose *bool `json:"isb_no_level_fill_close,omitempty"`
+	// TouchStopCoverLaterWick — answers-1112 Q7: nil → OFF (today) since the
+	// 2026-11-12 review — a [B] port onto the swing re-arm, the owner's opt-in.
+	// true: two touch candles,
+	// the entry on the SECOND (the swing leeway re-arm, "du di 2 cây nến"
+	// [Sept D5.2 p1 @15:37-15:51] — the bot's only later-candle entry; a
+	// level-touch PHL/PLH always stays on candle 1). When candle 2's wick
+	// reaches further than candle 1's and past the line + 30 stop, the stop
+	// covers it, 1 pt beyond [Oct D5.2 @19:42-20:03 "cây râu của cây nến đỏ nó
+	// dài hơn… đặt cây nến đỏ đi"; Oct D2.3 @46:20-47:20]. Widen only; the
+	// R31 skip (mentor_swing_max_stop_pts) and the trader gate read the wider
+	// stop. A candle-1 entry is unchanged ([B], not built). false/nil = today.
+	TouchStopCoverLaterWick *bool `json:"touch_stop_cover_later_wick,omitempty"`
+	// BoxTrendlinePartialNotRoom — answers-1112 Q12: nil → OFF (today) since the
+	// 2026-11-12 review (the report: "Builds, all default OFF"). true: for a BOX
+	// (FTGL/FTGH edge) trade a trendline in the path is a place to sell part,
+	// not the level the room rule measures: the target and the room read the
+	// next real level beyond the line, and the line is the runner's first
+	// partial when it sits past the 1:1 leg-1 exit ("Về trendline / Anything …
+	// Là những cái chỗ anh chị bán bớt" [Sept D3.3 p1 @05:15-07:46]; "đụng cái
+	// box … đánh lên trendline … nếu mà thoát ra khỏi trendline thì biên bông
+	// nó sẽ bự hơn" [Sept D3.2 p2 @11:06-11:39, f_000338]; sell part only at
+	// >= 1:1 [Oct D1.2 @11:00-11:40]). A line with no real level beyond stays
+	// the target; ISB/PHL/PLH/swing unchanged. false/nil = today exactly.
+	BoxTrendlinePartialNotRoom *bool `json:"box_trendline_partial_not_room,omitempty"`
+	// PHL5mBoxSameDirAllowed — answers-1112 Q9: nil → OFF (today). true: inside
+	// a standing 5m ISB box a PHL/PLH on the box's OWN side (candle-1 colour) is
+	// not refused phl_5m_box_ban; its target is capped at the box's far edge (a
+	// scalp: "Chỉ cần xuống gần cạnh dưới bóc là anh chị đã out rồi. Chỉ là scap
+	// thôi" [Oct D4.3 @01:11:40-01:11:45]; "phải đánh cùng chiều với InshaBar 05
+	// phút" [@01:08:24-01:08:39]). The opposite side stays banned; 15m/30m box
+	// bans and the mid-range bans are unchanged. Default OFF: "kinh nghiệm cho
+	// anh chị nào đã nhìn quen rồi" [@01:10:58-01:11:03] — experienced only, the
+	// owner's call.
+	PHL5mBoxSameDirAllowed *bool `json:"phl_5m_box_same_dir_allowed,omitempty"`
+	// TriggerFromOpen — G4 (oct round 2): nil → ON (October). The 5m/15m/30m trigger
+	// line is read from the 08:30 CT Open, not from the overnight Globex tape
+	// ("từ lúc Open ra… từ cái mảng đen" [OctD4.3-R5 @ 03:10]). false = the
+	// whole-history read (the 08:30 candle compared with the 08:25 Globex candle).
+	TriggerFromOpen *bool `json:"trigger_from_open,omitempty"`
+	// PHLRoomMultiple — D2-G2 (oct round 2): the room multiple the PHL/PLH path asks
+	// (level touch + rolling ladder). nil → 1 since answers-1112 Q2: October 1:1 [Oct D2.3
+	// @49:37-49:56 "stop-loss 40 điểm ... target 40 điểm ... Risk reward 1-1"; WE10 s_04126 R:R
+	// 1.71 taken]. 2 = the revert value (Sept D5.3 2R room, today before answers-1112).
+	// 0 = no room rule (the 1:1 floor stays).
+	PHLRoomMultiple *float64 `json:"phl_room_multiple,omitempty"`
 }
 
 // RiskControlConfig risk control configuration
@@ -2174,11 +2548,11 @@ type RiskControlConfig struct {
 	MentorTrailMode string `json:"mentor_trail_mode,omitempty"`
 	// STOP RULES (owner ruling 00:1x CT "exactly like he said") — class rules,
 	// NOT his personal routine. The window is default ON; done-after-win is
-	// default OFF (owner order 2026-10-16):
+	// default ON (the course default; m186 reverts the 2026-10-16 owner order):
 	// (a) done for the day after a winning close with the day net positive
-	//     (nil → OFF, owner order 2026-10-16; explicit true enables);
+	//     (nil → ON; an explicit false disables);
 	// (b) the trading window: MentorWindowStart (HH:MM CT) + MentorWindowMinutes
-	//     (30/60/90/120; unset → 60). The SWING setup is exempt.
+	//     (30/60/90/120; -1 = off; unset → 08:30 + 405 min = the RTH band to 15:15 CT, screen-read [Oct D5.2 @ 01:00-01:20]; -1 = explicit off). The SWING setup is exempt.
 	// (c)/(d) never-widen / never-add are guards, not knobs.
 	MentorDoneAfterWin *bool `json:"mentor_done_after_win,omitempty"`
 	// MentorDoneAfterWinDayStart — the done-after-win "day" boundary, "HH:MM"
@@ -2236,17 +2610,29 @@ type RiskControlConfig struct {
 	//   CX-2 MentorSwingRunner — nil → ON (course-defaults-30, owner "fix all"):
 	//        a swing of ≥ 2 contracts (mentor_swing4h_contracts) splits into
 	//        leg 1 at the first target + a runner held by the 4h.
-	//   CX-3 MentorResonanceRunnerTPOldHigh — nil → ON (case a, a bug fix):
-	//        the mode-A runner's TP really moves past the old high.
+	//   CX-3 MentorResonanceRunnerTPOldHigh — nil → OFF (c52 W2 A3, W-MENTOR-EXACT
+	//        m186): the mode-A runner has NO cap (its TP is parked far out of
+	//        reach); true = the TP moves to the level beyond the old high.
 	//   CX-4 MentorBEBeforePartial — nil → ON (course-defaults-30): BE at
 	//        half-way to +1R BEFORE leg 1's partial fills [D1.2 p1 @12:41].
 	//   CX-5 MentorISBC3PartialAnyProfit — nil → ON = today's rule (the ISB
 	//        candle-3 partial at any profit); false = hold leg 1 for its +1R.
 	//   CX-6 MentorReverseISBAsPHL — nil → ON (course-defaults-30, D5.4).
 	//   CX-8 MentorEMA9VisitCap — "" → shared (case b, course silent).
-	//   CX-9 MentorISBMaxPts — 0 → 30 (course-defaults-30, owner order).
+	//   CX-9 MentorISBMaxPts — 0 → 20 (m466 G23 D4.1-R12: "hai mươi mấy điểm…
+	//        đừng vô" [D4.1 p1 @05:41–06:08]; pre-#61 25). ISB setups only at
+	//        the trader R8 — PHL/PLH/BOX keep the D3.3-R1 25.
 	//   CX-10 MentorKeypairCandleRatio — 0 → 1 (case b, no ratio spoken).
-	//   CX-11 MentorBoxFreshRTHPair — nil → OFF; MentorBoxMaxHeightPts — 0 → off.
+	//   CX-11 MentorBoxFreshRTHPair — nil → ON (m429, owner 2026-10-25: a fresh RTH box replaces the evening box of its role); MentorBoxMaxHeightPts — 0 → off.
+	//   m463 MentorSwingMaxStopPts — 0 → 80 (answers-1112 Q13: "có những lúc mà cái
+	//        nến 5 phút nó tới 7-80 điểm… cứ vô 1-2… risk reward phải 1-1" [Sept D5.2
+	//        p2 @05:25-05:33]; 90 = the m463 value, set it to revert): a SWING4H stop ABOVE this is refused
+	//        ("100 điểm quá nhiều rủi ro… đừng vô" [D5.2-R31 p2 @19:34–21:43]; his
+	//        example 91.75). REVERSES m186 (owner order 2026-11-01 "full of it").
+	//   m465 P2 MentorISBLossBox — "" → range (release #60, D4.2-R27/R28/R30): an
+	//        ISB stop-out boxes the whole 5m range that held the trade ("tôi bọc
+	//        cái khu vực này lại" [D4.2 p2 @03:43–04:07]); band = the pre-#60
+	//        entry-to-stop band only. Unknown → range, counted.
 	MentorSwingEMA34IsFirstTarget  *bool   `json:"mentor_swing_ema34_is_first_target,omitempty"`
 	MentorSwingRunner              *bool   `json:"mentor_swing_runner,omitempty"`
 	MentorResonanceRunnerTPOldHigh *bool   `json:"mentor_resonance_runner_tp_old_high,omitempty"`
@@ -2258,6 +2644,92 @@ type RiskControlConfig struct {
 	MentorKeypairCandleRatio       float64 `json:"mentor_keypair_candle_ratio,omitempty"`
 	MentorBoxFreshRTHPair          *bool   `json:"mentor_box_fresh_rth_pair,omitempty"`
 	MentorBoxMaxHeightPts          float64 `json:"mentor_box_max_height_pts,omitempty"`
+	MentorSwingMaxStopPts          float64 `json:"mentor_swing_max_stop_pts,omitempty"`
+	MentorISBLossBox               string  `json:"mentor_isb_loss_box,omitempty"`
+	// m466 P4 (release #61, owner order 2026-11-02 "fix everything the video
+	// check found") — the SWING4H fidelity knobs. Resolved ONLY in
+	// trader/mentor_course_exits.go; an unknown value fails closed to the
+	// course default and is counted.
+	//   MentorSwingISBCloseBack — "" → not_required (G63 D5.2-R26): after an
+	//        invalid cross the 5m inside bar alone is the setup, even while price
+	//        still closes beyond the line ("chị vô đúng mà… đợi đóng ngược lại
+	//        cũng được nhưng hơi lâu" [D5.2 p3 @04:49–05:09]); required = the
+	//        pre-#61 candle-1 + inside-bar close back.
+	//   MentorSwingISBKeep — nil → ON (G66 D5.2-R25): a resting INSIDE-BAR order
+	//        survives a later 5m close through the line ("Để cái cây inside bar
+	//        này cho em" [D5.2 p2 @10:23–10:51]); false = the pre-#61 cancel. The
+	//        REJECT order is always cancelled (R22).
+	//   MentorSwingRunnerTP — "" → none (G65 D5.2-R6): the swing runner carries
+	//        no take-profit — it is held by the 4h ("em gồng theo khung 4 giờ"
+	//        [D5.2 p1 @05:40–06:14]); the bracket's TP is parked 1,000 pts out
+	//        (the AddOn's OCO needs one); capped = the pre-#61 max(100, 2 × the
+	//        first-target distance).
+	MentorSwingISBCloseBack string `json:"mentor_swing_isb_close_back,omitempty"`
+	MentorSwingISBKeep      *bool  `json:"mentor_swing_isb_keep,omitempty"`
+	MentorSwingRunnerTP     string `json:"mentor_swing_runner_tp,omitempty"`
+
+	// m465 P4 (release #60, owner order 2026-11-02 "fix everything the video
+	// check found"). Resolved ONLY in trader/mentor_resonance_raw.go.
+	//   MentorResonanceRawISB — nil → ON (D2.4-R2, course explicit): a RAW
+	//        same-way inside bar within 3 entry-frame candles of a PHL/PLH fill
+	//        arms resonance, even when that ISB's own entry was refused
+	//        ("trong vòng 3 cây nến sau đó xuất hiện một setup Inside bar cùng
+	//        chiều" [D2.4 p1 @01:37, @04:54]); false = only an ISB entry that
+	//        passed every placement gate but never-add arms it (m151).
+	//   Mentor2mReduceSize — nil → ON (D3.1-R30): an ISB/PHL/PLH entry read on
+	//        the 2m (or 5m) frame sizes the reduced tier ("vô lệnh khung 2
+	//        phút, stop loss lớn hơn… Mình phải giảm size" [D3.1 p1
+	//        @14:09–14:35]); false = the 1m tiers.
+	MentorResonanceRawISB *bool `json:"mentor_resonance_raw_isb,omitempty"`
+	Mentor2mReduceSize    *bool `json:"mentor_2m_reduce_size,omitempty"`
+
+	// Stop-to-size LADDER (owner order 2026-11-10 "stop loss can adjust
+	// contract to fit like mentor said … cause some day it go big"). Resolved
+	// ONLY in trader/mentor_course_exits.go (mentorCourseExitsResolve) onto the
+	// kernel CourseExits block and the trader size table. Every non-SWING4H
+	// mentor setup (ISB, reverse ISB, PHL/PLH, BOX):
+	//   stop ≤ 20            → the tiers unchanged;
+	//   stop in (20, 30]     → the reduced tier (3) — "ISB 20 điểm, 30 điểm…
+	//                          Tôi vô size 3 hoặc tôi không trade… 12 điểm. Ok,
+	//                          tôi vô size 5" [OctD2.2-R73 @01:12:32];
+	//   stop > 30            → MentorWideStopContracts (1) — "40 điểm… Mình
+	//                          không trade… Trade vẫn được. 1 MNQ" [OctD2.3-R47 @48:12],
+	//                          NO upper limit by default (owner order 2026-11-15
+	//                          "tarde all isb or any thing just need adjust contact");
+	//   stop > a STORED max  → refused (revert 40) [OctD2.3-R47/R48 @48:12, 49:38].
+	// The ladder only LOWERS size (min with the tier the setup earns) and never
+	// touches the target ("giảm size only chứ không có tăng target" [OctD2.2-R49
+	// @40:47]). SWING4H keeps its own tiers.
+	//   MentorStopSizeLadder — nil → ON; false = the pre-ladder ceilings and
+	//        tiers exactly (ISB > mentor_isb_max_pts refused, PHL/PLH/BOX > 25).
+	//   MentorWideStopContracts — 0 → 1 [OctD2.3-R47 @48:12 "1 MNQ"].
+	//   MentorWideStopMaxPts — 0 → NO stop-size cap (owner order 2026-11-15);
+	//        a stored positive value refuses above it (revert 40 [OctD2.3-R47
+	//        @48:12 "40 điểm… không trade"]); negative/NaN → 40, counted
+	//        wide_stop_max_pts_bad_value (fail closed). Never narrows a setup's
+	//        ladder-OFF ceiling.
+	MentorStopSizeLadder    *bool   `json:"mentor_stop_size_ladder,omitempty"`
+	MentorWideStopContracts int     `json:"mentor_wide_stop_contracts,omitempty"`
+	MentorWideStopMaxPts    float64 `json:"mentor_wide_stop_max_pts,omitempty"`
+
+	// m466 P3 (release #61, owner order 2026-11-02 "fix everything the video
+	// check found"). Resolved ONLY in trader/mentor_course_exits.go onto the
+	// kernel's CourseExits block; unset = the course default; a bad value
+	// fails closed to the default, counted (<name>_bad_value).
+	//   MentorOpen5mBreak — "" → 1m_close (G55 D4.4-R40): the opening 5m range
+	//        is broken by a CLOSED 1m candle outside it ("một cây nến một
+	//        phút… đóng bên ngoài cái box là at least" [D4.1 p1 @20:36–21:03]);
+	//        5m_close = a closed 5m candle only (pre-#61).
+	//   MentorNewsWaitMode — "" → both (G56 D4.4-R22): the news wait needs the
+	//        close beyond the 4h AND the pre-print 1h line ("nằm trên hai cái
+	//        đường line này" [D4.4 p1 @21:48–22:12]); 4h_only = pre-#61.
+	//   MentorNewsReadLeadMin — nil → 30 (G58 D4.4-R6): on a print day the
+	//        1h/4h read freezes this many minutes before the print ("Một giờ
+	//        thì đợi gần trước news, tầm 30 phút" [D4.4 p1 @05:28–05:36]);
+	//        an explicit 0 = the pre-#61 07:20 start; range 0–120.
+	MentorOpen5mBreak     string `json:"mentor_open5m_break,omitempty"`
+	MentorNewsWaitMode    string `json:"mentor_news_wait_mode,omitempty"`
+	MentorNewsReadLeadMin *int   `json:"mentor_news_read_lead_min,omitempty"`
 	// MentorTuning — the owner-tunable mentor method numbers (K3, OWNER RULING
 	// 2026-10-04 "do all as mentor"). EVERY field unset (nil/0) resolves to the
 	// ruled default in kernel/mentor DefaultConfig, so an absent block runs
@@ -2461,11 +2933,17 @@ func applyFuturesIndicatorDefaults(ind *IndicatorConfig) {
 
 // Create create a strategy
 func (s *StrategyStore) Create(strategy *Strategy) error {
+	if err := guardStrategyModes(strategy.Config); err != nil {
+		return err
+	}
 	return s.db.Create(strategy).Error
 }
 
 // Update update a strategy
 func (s *StrategyStore) Update(strategy *Strategy) error {
+	if err := guardStrategyModes(strategy.Config); err != nil {
+		return err
+	}
 	return updateStrategyRow(s.db, strategy, time.Now().UTC()).Error
 }
 

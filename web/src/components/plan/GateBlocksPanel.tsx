@@ -67,7 +67,7 @@ export const GATE_LABELS: Record<string, { en: string; icon: string }> = {
   },
   reentry_cooldown: { en: 'Re-entry cooldown after a stop', icon: '⏳' },
   entry_gate: { en: 'Entry gate', icon: '🚦' },
-  trader_stopped: { en: 'Trader stopped (Picture)', icon: '⏹' },
+  trader_stopped: { en: 'Trader stopped (Picture, pep)', icon: '⏹' },
   day_plan_off: { en: 'Day Plan off (Picture)', icon: '📴' },
   arm_not_admitted: {
     en: 'Arm not admitted this pass',
@@ -114,6 +114,10 @@ export const GATE_LABELS: Record<string, { en: string; icon: string }> = {
   mentor_stale_intent: { en: 'Mentor — stale intent', icon: '🧑‍🏫' },
   mentor_sources_missing: { en: 'Mentor — sources missing', icon: '🧑‍🏫' },
   mentor_window: { en: 'Mentor — outside trading window', icon: '🧑‍🏫' },
+  mentor_eod_flat: {
+    en: 'Mentor — flat window (EOD / forced flat)',
+    icon: '🧑‍🏫',
+  },
   mentor_done_after_win: {
     en: 'Mentor — done for the day (win)',
     icon: '🧑‍🏫',
@@ -136,6 +140,25 @@ export const GATE_LABELS: Record<string, { en: string; icon: string }> = {
     en: 'Mentor — daily guardrail unverified',
     icon: '🧑‍🏫',
   },
+  // m426 (review of m425b) — the mentor refusal classes the gate-blocks table
+  // now counts by name (trader/mentor_actions.go), so the panel shows words.
+  mentor_rule_r8: { en: 'Mentor — rule R8 refused', icon: '🧑‍🏫' },
+  mentor_rule_r9: { en: 'Mentor — rule R9 refused', icon: '🧑‍🏫' },
+  // m463 (D5.2-R31): a SWING4H stop above mentor_swing_max_stop_pts (80; 90 before answers-1112 Q13).
+  mentor_rule_r31: {
+    en: 'Mentor — swing stop above the ceiling (R31, đừng vô)',
+    icon: '🧑‍🏫',
+  },
+  mentor_rule_other: { en: 'Mentor — other rule refused', icon: '🧑‍🏫' },
+  mentor_bad_geometry: { en: 'Mentor — bad stop/target geometry', icon: '🧑‍🏫' },
+  mentor_untagged_setup: { en: 'Mentor — untagged setup', icon: '🧑‍🏫' },
+  mentor_size_refused: { en: 'Mentor — size refused', icon: '🧑‍🏫' },
+  mentor_same_side_working: {
+    en: 'Mentor — same-side order already working',
+    icon: '🧑‍🏫',
+  },
+  mentor_resonance_hold: { en: 'Mentor — resonance hold', icon: '🧑‍🏫' },
+  mentor_place_off: { en: 'Mentor — placement off (dry run)', icon: '🧑‍🏫' },
   // Release #25 (STRICT-12345 F-2/F-3/F-5/F-7/F-8) — the loss-fix switches,
   // all OFF by default; these count only once the owner turns one on.
   room_gate: { en: 'Room gate — first obstacle under min R', icon: '🧱' },
@@ -150,6 +173,106 @@ export const GATE_LABELS: Record<string, { en: string; icon: string }> = {
   breakeven_r_unknown_risk: {
     en: 'Breakeven in R — initial risk unknown (points rule used)',
     icon: '🎯',
+  },
+  // PEP MODE (owner order 2026-10-29) — every named refusal kernel/pep can
+  // return (kernel/pep/types.go Code*). Pinned by pepGateLabels.test.ts, which
+  // scans the Go constants, so a new refusal without a label is RED.
+  pep_config_invalid: { en: 'Pep — settings invalid', icon: '🧭' },
+  pep_tz_unavailable: { en: 'Pep — Chicago timezone unavailable', icon: '🧭' },
+  pep_bars_not_ascending: { en: 'Pep — 1m bars out of order', icon: '🧭' },
+  pep_no_bars: { en: 'Pep — no 1m bars', icon: '🧭' },
+  pep_bars_stale: { en: 'Pep — stale 1m feed', icon: '🧭' },
+  pep_after_flat_time: { en: 'Pep — after the flat time', icon: '🧭' },
+  pep_max_trades_reached: {
+    en: 'Pep — max trades for the day reached',
+    icon: '🧭',
+  },
+  pep_position_open: { en: 'Pep — position already open', icon: '🧭' },
+  pep_box_not_complete: { en: 'Pep — box window not closed yet', icon: '🧭' },
+  pep_box_missing_minute: {
+    en: 'Pep — box minute missing (no trade today)',
+    icon: '🧭',
+  },
+  pep_box_zero_range: { en: 'Pep — box has zero range', icon: '🧭' },
+  pep_box_too_wide: { en: 'Pep — box wider than the max box size', icon: '🧭' },
+  pep_gap_after_box: {
+    en: 'Pep — gap after the box (first break unknown)',
+    icon: '🧭',
+  },
+  pep_no_break_yet: { en: 'Pep — no break of the box yet', icon: '🧭' },
+  pep_bar_through_both_edges: {
+    en: 'Pep — one bar through both box edges',
+    icon: '🧭',
+  },
+  pep_stale_signal: {
+    en: 'Pep — signal too old (not entered late)',
+    icon: '🧭',
+  },
+  pep_ema_not_warm: { en: 'Pep — EMA not warmed up', icon: '🧭' },
+  pep_no_cross_yet: { en: 'Pep — no EMA cross yet', icon: '🧭' },
+  pep_stop_below_one_tick: { en: 'Pep — stop under one tick', icon: '🧭' },
+  // The trader wiring's own refusals (fix/m458-pep-trader: trader/pep_admit.go,
+  // pep_mode.go, pep_tick.go) - each counted under its own name. Pinned by
+  // pepGateLabels.test.ts.
+  pep_ai_entries_off: { en: 'Pep — AI entries are off', icon: '🧭' },
+  pep_ai_closes_off: {
+    en: 'Pep — AI closes are off (pep owns the exit)',
+    icon: '🧭',
+  },
+  pep_not_enabled: {
+    en: 'Pep — entry refused, trader is not in pep mode',
+    icon: '🧭',
+  },
+  pep_no_pending_claim: {
+    en: 'Pep — entry had no recorded signal (refused)',
+    icon: '🧭',
+  },
+  pep_day_unwritable: {
+    en: 'Pep — one-trade-a-day record could not be written',
+    icon: '🧭',
+  },
+  pep_day_unreadable: {
+    en: 'Pep — one-trade-a-day record could not be read',
+    icon: '🧭',
+  },
+  pep_positions_unreadable: {
+    en: 'Pep — open-position read failed',
+    icon: '🧭',
+  },
+  pep_book_unreadable: { en: 'Pep — broker book unreadable', icon: '🧭' },
+  pep_broker_not_flat: {
+    en: 'Pep — broker already holds a position',
+    icon: '🧭',
+  },
+  pep_no_live_price: {
+    en: 'Pep — no live price to anchor the bracket',
+    icon: '🧭',
+  },
+  pep_slippage: { en: 'Pep — price ran away from the signal', icon: '🧭' },
+  pep_wire_rounding: {
+    en: 'Pep — wire rounding refused the side',
+    icon: '🧭',
+  },
+  pep_bracket_wrong_side: {
+    en: 'Pep — bracket on the wrong side after rounding',
+    icon: '🧭',
+  },
+  pep_rr_distorted: {
+    en: 'Pep — reward:risk distorted by tick rounding',
+    icon: '🧭',
+  },
+  pep_no_point_value: { en: 'Pep — no point value for the symbol', icon: '🧭' },
+  pep_entry_failed: {
+    en: 'Pep — entry refused or failed in the executor',
+    icon: '🧭',
+  },
+  pep_mode_conflict_mentor: {
+    en: 'Pep and mentor both ON — trader not started',
+    icon: '🧭',
+  },
+  pep_mode_conflict_day_plan: {
+    en: 'Pep and day plan both ON — trader not started',
+    icon: '🧭',
   },
 }
 

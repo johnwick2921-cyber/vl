@@ -8,12 +8,20 @@ import (
 )
 
 // LocationVerdict implements the LOCATION GATE (fold item 1, owner ruling:
-// setups happen ONLY at important levels — all three setups, ISB included).
+// setups happen ONLY at important levels).
+//
+// TEST-ONLY (c52 W12 S18): this function has NO production caller — only
+// location_test.go and isb_ruling_test.go call it. Production decides a PHL/PLH
+// location through levelIsLocation (eval.go, the touch loop) and the swing
+// through its own level-touch read. The gate covers PHL/PLH, NOT the ISB: the
+// 2026-10-03 owner ruling made the ISB un-location-gated ("inside bar lúc nào
+// cũng có thể take risk" [D4.1 p1 @05:19–05:34]; see eval.go, the ISB branch).
+// Kept as the executable spec of the location rules; do not delete it.
 // A setup's reference candle must touch one of:
 //
 //   - a key level (§4.3);
 //   - the EMA 34 of the trading chart — R3: the 1m EMA 34 for intraday setups
-//     [D5.4 @ 01:00–01:27, 05:21–05:37] (knob EMALocationTFMinutes, default 1;
+//     [D5.4 @08:12–08:40] (knob EMALocationTFMinutes, default 1;
 //     other TFs 5/15/60/240 allowed for experimentation; the 4h EMA 34 is ONLY
 //     the §8 swing's, never this gate [D5.2 p1 @ 05:30–05:43]);
 //   - the 5m trigger-line retest [D3.4 p2 @ 20:51];
@@ -61,6 +69,11 @@ func LocationVerdict(ref market.Kline, levels []Level, trigger TriggerLine, bars
 			if touchesPrice(ref, l.Price, cfg.TouchBandPts) {
 				return true, "trendline"
 			}
+		case KindWickZone:
+			// m465 P5 (D4.3-R15): the wick zone's near edge is a location.
+			if touchesPrice(ref, l.Price, cfg.TouchBandPts) {
+				return true, "wick_zone"
+			}
 		}
 		// KindEMA9 is deliberately NOT a location (reverse-ISB only, §10).
 	}
@@ -72,15 +85,16 @@ func LocationVerdict(ref market.Kline, levels []Level, trigger TriggerLine, bars
 
 // LocationOf names the place a setup was taken at, read from its G2 AnchorKey
 // (the touched level's key, or the box key): "trendline long", "key_level",
-// "ftgl", "ema34_htf", … — the trader's size log prints it so a trade's
-// location is on the record. A trendline also names its side (support =
-// long, resistance = short). "" = the setup carries no anchor (a plain ISB).
+// "ftgl", "ema34_htf", "wick_zone short", … — the trader's size log prints it
+// so a trade's location is on the record. A trendline and a D4.3 wick zone
+// also name their side (support/demand = long, resistance/supply = short).
+// "" = the setup carries no anchor (a plain ISB).
 func LocationOf(anchorKey string) string {
 	if anchorKey == "" {
 		return ""
 	}
 	kind, rest, _ := strings.Cut(anchorKey, ":")
-	if kind == string(KindTrendline) {
+	if kind == string(KindTrendline) || kind == string(KindWickZone) {
 		side, _, _ := strings.Cut(rest, ":")
 		return kind + " " + side
 	}
@@ -110,9 +124,18 @@ func touchesPrice(ref market.Kline, price, band float64) bool {
 // location (PHL/PLH at it): key levels, the EMA34-HTF line, the trigger retest
 // — or an old extreme coinciding ±2 pts with a key level. A bare old high/low
 // is NOT a location (fold item 1).
+//
+// m465 P5 (D4.3-R11/R15): the D4.3 wick zone's near edge (KindWickZone) is a
+// location — "potential high low khung giờ nhỏ hơn, hay là insert bar cho
+// lệnh long khung giờ nhỏ hơn" [D4.3 @06:13–06:29]; its 5m-wick TARGETS
+// (KindWickMicroscalp) stay target-only.
+//
+// m466 P2 (G11 D3.1-R20): the unfilled gap's far edge (KindGapEdge) is a
+// location — "Cái cạnh dưới của cái gap, lúc nào nó cũng sẽ là resistance…
+// Level là resistance" [D3.1 p1 @09:41–09:51].
 func levelIsLocation(lvl Level, levels []Level) bool {
 	switch lvl.Kind {
-	case KindKeyLevel, KindEMA34HTF, KindTriggerRetest, KindFTGHEdge, KindFTGLEdge, KindTrendline:
+	case KindKeyLevel, KindEMA34HTF, KindTriggerRetest, KindFTGHEdge, KindFTGLEdge, KindTrendline, KindWickZone, KindGapEdge:
 		return true
 	case KindOldExtreme:
 		return coincidesWithKeyLevel(lvl, levels)
@@ -124,10 +147,24 @@ func levelIsLocation(lvl Level, levels []Level) bool {
 // evaluator's PHL/PLH entry-level check, where the touched level itself must
 // be a location). R3: default tf = 1m (intraday chart).
 func EMALocationLevel(bars []market.Kline, cfg Config) (Level, bool) {
+	return EMALocationLevelAt(bars, cfg, 0)
+}
+
+// EMALocationLevelAt is EMALocationLevel on the M401 execution-frame schedule
+// (emaScheduleTF; now == 0 = no clock, the configured TF as-is).
+func EMALocationLevelAt(bars []market.Kline, cfg Config, now int64) (Level, bool) {
 	if !cfg.Enabled || len(bars) == 0 || cfg.EMALocationTFMinutes <= 0 {
 		return Level{}, false
 	}
-	v := emaValue(barsTF(bars, cfg.EMALocationTFMinutes), cfg.EMAPeriod34)
+	tfMin := emaScheduleTF(cfg, cfg.EMALocationTFMinutes, now)
+	tf := barsTF(bars, tfMin)
+	if tfMin != cfg.EMALocationTFMinutes {
+		tf = closedBucketsTF(bars, tfMin, now)
+		if len(tf) == 0 || len(tf) < cfg.EMAPeriod34 {
+			tf = barsTF(bars, cfg.EMALocationTFMinutes) // 2m line not formed yet: the 1m line stands
+		}
+	}
+	v := emaValue(tf, cfg.EMAPeriod34)
 	return Level{
 		Key:   string(KindEMA34HTF),
 		Kind:  KindEMA34HTF,

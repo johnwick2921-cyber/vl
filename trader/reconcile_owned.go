@@ -61,6 +61,23 @@ func (at *AutoTrader) reconcileRefusal(err error, rec *store.DecisionAction) err
 // ledgerExplainsPosition reports the ledger row that explains a held position
 // on this trader's account and symbol for side ("long"/"short"), if any.
 func (at *AutoTrader) ledgerExplainsPosition(symbol, side string, now time.Time) (string, bool) {
+	var readErr error
+	return at.ledgerExplainsPositionImpl(symbol, side, now, &readErr)
+}
+
+// ledgerExplainsPositionChecked is ledgerExplainsPosition plus the one fact the
+// reconcile's own reading throws away: whether the answer is "the ledger
+// explains it" or "the ledger could not be READ". Reconcile treats an unreadable
+// ledger as an explanation on purpose (never flatten on a read error). A check
+// that PAUSES entries must not: m447 broker_agreement reads readErr != nil as
+// "cannot judge" so an unreadable ledger never CLEARS a standing block.
+func (at *AutoTrader) ledgerExplainsPositionChecked(symbol, side string, now time.Time) (string, bool, error) {
+	var readErr error
+	reason, explained := at.ledgerExplainsPositionImpl(symbol, side, now, &readErr)
+	return reason, explained, readErr
+}
+
+func (at *AutoTrader) ledgerExplainsPositionImpl(symbol, side string, now time.Time, readErr *error) (string, bool) {
 	if at.store == nil {
 		return "", false
 	}
@@ -74,6 +91,7 @@ func (at *AutoTrader) ledgerExplainsPosition(symbol, side string, now time.Time)
 	signals := map[string]string{}
 	// W1b E10: a read that fails is an EXPLANATION, never "no owner".
 	unreadable := func(what string, err error) (string, bool) {
+		*readErr = fmt.Errorf("%s: %w", what, err)
 		return fmt.Sprintf("ledger unreadable (%s: %v) — fail-closed: never flattened on a read error", what, err), true
 	}
 	// W1b FOLD-11: now is captured by the caller BEFORE these reads, so a row

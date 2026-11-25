@@ -213,3 +213,35 @@ func TestApplyNT8ExitTakesTheWriteLockUpFront(t *testing.T) {
 		t.Fatalf("exactly one exit fill after the contended apply, got %d", len(fills))
 	}
 }
+
+// TestApplyNT8ExitPartialStampsPnlCorrected pins m232: a PARTIAL leg exit keeps
+// the row OPEN (residual qty) but must stamp pnl_corrected with the realized
+// leg P&L (not NULL) so the dashboard/history can show it labelled "partial".
+// MUTANT: drop the partial pnl_corrected stamp → the OPEN row stays NULL → RED.
+func TestApplyNT8ExitPartialStampsPnlCorrected(t *testing.T) {
+	st, err := New(filepath.Join(t.TempDir(), "f3partial.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := openNT8Row(t, st, 2)
+	out, err := st.Position().ApplyNT8Exit(receiptFor(row, 1, 105, 2))
+	if err != nil {
+		t.Fatalf("ApplyNT8Exit partial: %v", err)
+	}
+	if out.Closed || !out.Applied {
+		t.Fatalf("a 1-of-2 exit must apply and stay OPEN, got %+v", out)
+	}
+	var after TraderPosition
+	if err := st.GormDB().First(&after, row.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if after.Status != "OPEN" || after.Quantity != 1 || after.EntryQuantity != 2 {
+		t.Fatalf("the row must stay OPEN with the runner residual, got qty=%v entry=%v status=%s", after.Quantity, after.EntryQuantity, after.Status)
+	}
+	if after.PnlCorrected == nil {
+		t.Fatal("the partial leg P&L must be stamped on the OPEN row (pnl_corrected non-NULL)")
+	}
+	if *after.PnlCorrected != 10 { // (105−100)×1×$2 = +10
+		t.Fatalf("the partial pnl_corrected must be +10, got %.2f", *after.PnlCorrected)
+	}
+}

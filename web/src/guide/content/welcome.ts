@@ -13,7 +13,7 @@ export const welcome: GuideSection = {
       cards: [
         {
           title: PRODUCT_NAME,
-          body: 'One structure-permissioned, level-anchored MNQ SIM trader — advisory-first. The Go engine computes the map; the AI (deepseek-v4-pro) writes one day-plan per session, then decides every cycle against it. In MENTOR MODE (a per-strategy switch — the owner’s mentor trader runs it) the AI places no entries at all: the mentor rules engine places them and the AI plan is advice only (Section 17). You hold the knobs.',
+          body: 'One structure-permissioned, level-anchored MNQ SIM trader — advisory-first. The Go engine computes the map; the AI (deepseek-v4-pro) writes one day-plan per session, then decides every cycle against it. In MENTOR MODE (a per-strategy switch — the owner’s mentor trader runs it) the AI places no entries at all: the mentor rules engine places them and the AI plan is advice only (Section 17). PEP MODE (another per-strategy switch, OFF by default, SIM only) is a third choice: a trader is exactly one of AI planner, mentor or pep, and pep places its entries by two fixed opening-range rules from the owner’s PDF (Section 20). You hold the knobs.',
           tag: 'SIM',
         },
         {

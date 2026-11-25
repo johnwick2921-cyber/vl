@@ -3,7 +3,6 @@ package trader
 import (
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -91,8 +90,8 @@ func TestMentorRebuildSwingRegistersArmAndEvalPos(t *testing.T) {
 }
 
 // TestMentorRebuildSwingResumesBE — the core pin: after the rebuild the swing's
-// BE intent reaches moveStopWire (the registry lookup succeeds). A mutant that
-// skips the swing rebuild leaves the registry empty → moveStopWire never fires
+// BE intent reaches the signal-scoped move wire (the registry lookup succeeds). A mutant that
+// skips the swing rebuild leaves the registry empty → the move wire never fires
 // and this turns RED.
 func TestMentorRebuildSwingResumesBE(t *testing.T) {
 	at, st, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
@@ -111,23 +110,20 @@ func TestMentorRebuildSwingResumesBE(t *testing.T) {
 		t.Fatalf("rebuilt=%d refused=%d ran=%v want 1/0/true", rebuilt, refused, ran)
 	}
 
-	var mu sync.Mutex
-	var moved []float64
-	oldWire := moveStopWire
-	moveStopWire = func(nt *nttrader.TCPTrader, side string, newStop float64) error {
-		mu.Lock()
-		moved = append(moved, newStop)
-		mu.Unlock()
-		return nil
+	moves := &swingSignalMoves{}
+	moves.install(t)
+	// the rebuilt swing's bracket is in the broker book (the never-widen judge
+	// reads it; the position row was seeded above).
+	prevBook := mentorStopBook
+	mentorStopBook = func(*nttrader.TCPTrader) (ntwire.OrderSnapshotPayload, time.Time, bool) {
+		return ntwire.OrderSnapshotPayload{Orders: []ntwire.NT8Order{f2StopOrder(sig+"-sl", 31000, 3)}}, time.Now(), true
 	}
-	t.Cleanup(func() { moveStopWire = oldWire })
+	t.Cleanup(func() { mentorStopBook = prevBook })
 
 	resetMentorCounters(at)
 	at.mentorDispatchIntent(mentor.Intent{Action: mentor.ActionMoveStopBE, ArmID: armID, Reason: "swing +1R"}, mentorTierInputs{}, 1000, 1100)
-	mu.Lock()
-	defer mu.Unlock()
-	if len(moved) != 1 || moved[0] != 31020 {
-		t.Fatalf("moveStopWire must be called once with the entry price, got %v", moved)
+	if moves.n() != 1 || moves.calls[0].stop != 31020 || moves.calls[0].signalID != sig {
+		t.Fatalf("the signal-scoped move must be called once with the entry price, got %+v", moves.calls)
 	}
 	if c := at.mentorCountSnapshot()["move_be_sent"]; c != 1 {
 		t.Fatalf("move_be_sent = %d, want 1", c)
@@ -417,4 +413,110 @@ func TestMentorRebuildSwingDegenerateRiskRefused(t *testing.T) {
 		}
 	}
 	t.Fatal("no P0 mentor-swing-restart alert raised")
+}
+
+// m441 follow-up (FULL_DAY_REPLAY (c)): the swing BE rides mentorMoveLegStop,
+// whose never-widen judge ages the broker book against the MENTOR clock
+// (mentorClockNow — wall-clock live, the replay clock in the harness). It read
+// time.Since(recvAt) (always the wall clock), so any book stamped on a replay
+// clock read as years stale and a rebuilt swing's BE was refused forever.
+// Live the two clocks are the same; this pins the seam.
+func swingReplayClockBE(t *testing.T, bookAge time.Duration) (moves *swingSignalMoves, count func(string) int) {
+	t.Helper()
+	at, st, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
+	at.mentorEval = mentor.New(mentor.DefaultConfig())
+	sig := "swing-clock-sig"
+	armID := "swing-" + strconv.FormatInt(swingRestartOpenTime, 10)
+	arm := swingRestartArm(at.id, sig, armID, 3, 31020, 31000, 31080)
+	if err := ledger.UpsertArm(arm); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Position().CreateOpenPosition(swingRestartPos(at.id, sig, 3, 31020, swingRestartOpenTime)); err != nil {
+		t.Fatal(err)
+	}
+	// the replay clock: a fixed instant far from the wall clock.
+	replayNow := time.UnixMilli(swingRestartOpenTime + 6*3600*1000)
+	prevNow := getMentorNowSource()
+	setMentorNowSource(func() time.Time { return replayNow })
+	t.Cleanup(func() { setMentorNowSource(prevNow) })
+
+	f2PinBook(t, []ntwire.NT8Order{f2StopOrder(sig+"-sl", 31000, 3)}, true, 0)
+	if rebuilt, refused, ran := at.mentorRebuildLivePosAtBoot(replayNow); !ran || rebuilt != 1 || refused != 0 {
+		t.Fatalf("rebuilt=%d refused=%d ran=%v want 1/0/true", rebuilt, refused, ran)
+	}
+	moves = &swingSignalMoves{}
+	moves.install(t)
+	prevBook := mentorStopBook
+	mentorStopBook = func(*nttrader.TCPTrader) (ntwire.OrderSnapshotPayload, time.Time, bool) {
+		return ntwire.OrderSnapshotPayload{Orders: []ntwire.NT8Order{f2StopOrder(sig+"-sl", 31000, 3)}}, replayNow.Add(-bookAge), true
+	}
+	t.Cleanup(func() { mentorStopBook = prevBook })
+
+	resetMentorCounters(at)
+	at.mentorDispatchIntent(mentor.Intent{Action: mentor.ActionMoveStopBE, ArmID: armID, Reason: "swing +1R"}, mentorTierInputs{}, 1000, 1100)
+	return moves, func(k string) int { return int(at.mentorCountSnapshot()[k]) }
+}
+
+// TestMentorRebuiltSwingBEOnReplayClock — a swing rebuilt after a restart whose
+// fresh book is stamped on the mentor clock reaches +1R and the BE move is sent.
+// Mutant: time.Since(recvAt) in mentorBrokerLegStopRead / mentorSwingBracketAtBroker
+// → the book reads stale, nothing is sent, move_be_refused counts → RED.
+func TestMentorRebuiltSwingBEOnReplayClock(t *testing.T) {
+	moves, count := swingReplayClockBE(t, 5*time.Second)
+	if moves.n() != 1 || moves.calls[0].stop != 31020 || moves.calls[0].signalID != "swing-clock-sig" {
+		t.Fatalf("the rebuilt swing's BE must reach the signal-scoped wire once at the entry, got %+v (move_be_refused=%d)", moves.calls, count("move_be_refused"))
+	}
+	if count("move_be_sent") != 1 {
+		t.Fatalf("move_be_sent = %d, want 1", count("move_be_sent"))
+	}
+}
+
+// TestMentorRebuiltSwingBEStaleBookOnMentorClockRefused — the fix does not make
+// every book fresh: a book older than snapshotMaxAge ON THE MENTOR CLOCK still
+// refuses (fail closed, BE stays owed).
+func TestMentorRebuiltSwingBEStaleBookOnMentorClockRefused(t *testing.T) {
+	moves, count := swingReplayClockBE(t, snapshotMaxAge()+time.Minute)
+	if moves.n() != 0 {
+		t.Fatalf("a stale book must send nothing, got %+v", moves.calls)
+	}
+	if count("move_be_sent") != 0 {
+		t.Fatalf("move_be_sent = %d, want 0", count("move_be_sent"))
+	}
+}
+
+// TestMentorSwingBracketAtBrokerUsesMentorClock — the second reader of the same
+// fix: a CLOSED positions row with the bracket still working in a fresh book
+// (stamped on the mentor clock) is LIVE, not gone (the close has not been
+// confirmed at the broker). Mutant: time.Since in mentorSwingBracketAtBroker →
+// the book reads stale → "gone" → the swing state is cleared early → RED.
+func TestMentorSwingBracketAtBrokerUsesMentorClock(t *testing.T) {
+	at, st, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
+	at.mentorEval = mentor.New(mentor.DefaultConfig())
+	sig := "swing-bracket-clock-sig"
+	armID := "swing-" + strconv.FormatInt(swingRestartOpenTime, 10)
+	arm := swingRestartArm(at.id, sig, armID, 3, 31020, 31000, 31080)
+	if err := ledger.UpsertArm(arm); err != nil {
+		t.Fatal(err)
+	}
+	pos := swingRestartPos(at.id, sig, 3, 31020, swingRestartOpenTime)
+	if err := st.Position().CreateOpenPosition(pos); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := st.Position().ClosePosition(pos.ID, 31000, "stop", -60, 0, "stop"); err != nil || !ok {
+		t.Fatalf("close the position row: ok=%v err=%v", ok, err)
+	}
+	replayNow := time.UnixMilli(swingRestartOpenTime + 6*3600*1000)
+	prevNow := getMentorNowSource()
+	setMentorNowSource(func() time.Time { return replayNow })
+	t.Cleanup(func() { setMentorNowSource(prevNow) })
+	prevBook := mentorStopBook
+	mentorStopBook = func(*nttrader.TCPTrader) (ntwire.OrderSnapshotPayload, time.Time, bool) {
+		return ntwire.OrderSnapshotPayload{Orders: []ntwire.NT8Order{f2StopOrder(sig+"-sl", 31000, 3)}}, replayNow.Add(-5 * time.Second), true
+	}
+	t.Cleanup(func() { mentorStopBook = prevBook })
+
+	a := mentorLiveArm{RowID: arm.ID, Side: "long", Entry: 31020}
+	if _, _, own, why := at.mentorSwingOwnership(at.armedTrader(), a); own != mentorSwingLive {
+		t.Fatalf("closed row + a fresh working bracket must read LIVE, got %v (%s)", own, why)
+	}
 }

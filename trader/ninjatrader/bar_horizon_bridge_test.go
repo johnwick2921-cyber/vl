@@ -11,6 +11,7 @@ import (
 	"vl/kernel"
 	"vl/logger"
 	ntwire "vl/provider/ninjatrader"
+	"vl/telemetry"
 )
 
 // ── BARS HORIZON pins (2026-09-09) ───────────────────────────────────────────
@@ -109,28 +110,27 @@ func bhCountRe(lines []string, re *regexp.Regexp) int {
 	return n
 }
 
-// PIN 1 — a read served fewer bars than it asked for WARNS, and names the
-// consumer. Covers the two real 12000-bar sites (trader/auto_trader_planner.go
-// and trader/auto_trader_weekly.go) against a 2500-bar ring
-// (provider/ninjatrader/bar_cache.go:24 DefaultBarCacheMaxBars): 79% short on
-// every call since they were written, silently, forever.
+// PIN 1 — a read served fewer bars than it asked for, with the ask INSIDE the
+// ring, WARNS and names the consumer. (m452: an ask BEYOND the ring - the two
+// 12000-bar sites against a 2500-bar ring - is structural, spliced from the store
+// by its caller, and has its own pins below: it must NOT warn.)
 func TestBridgeWarnsWhenServedIsShortOfRequested(t *testing.T) {
 	resetBarHorizonWarnsForSessionDay(0)
 	get := bhWarnCapture(t)
 	cache := ntwire.NewBarCache(2500)
-	bhSeed(cache, "MNQ", "1m", bhCT(2026, time.September, 8, 9, 0), 2500)
+	bhSeed(cache, "MNQ", "1m", bhCT(2026, time.September, 8, 9, 0), 1000)
 	now := bhCT(2026, time.September, 9, 13, 18)
 
-	out := barsFromCache(cache, "MNQ", "1m", 12000, now)
+	out := barsFromCache(cache, "MNQ", "1m", 2500, now)
 
-	if len(out) != 2500 {
-		t.Fatalf("returned %d klines, want 2500 — the warn must change nothing that is RETURNED (A10)", len(out))
+	if len(out) != 1000 {
+		t.Fatalf("returned %d klines, want 1000 — the warn must change nothing that is RETURNED (A10)", len(out))
 	}
 	lines := bhFilter(get(), "bar_horizon_bridge_test.go")
 	if n := bhCountLines(lines, "bar horizon"); n != 1 {
-		t.Fatalf("want 1 bar-horizon warn, got %d captured lines (asked=12000 served=2500): %v", n, lines)
+		t.Fatalf("want 1 bar-horizon warn, got %d captured lines (asked=2500 served=1000): %v", n, lines)
 	}
-	for _, want := range []string{"asked=12000", "served=2500", "ring=2500", "SHORT", "MNQ", "callers=["} {
+	for _, want := range []string{"asked=2500", "served=1000", "ring=2500", "SHORT", "MNQ", "callers=["} {
 		if bhCountLines(lines, want) != 1 {
 			t.Fatalf("warn line missing %q: %v", want, lines)
 		}
@@ -138,6 +138,95 @@ func TestBridgeWarnsWhenServedIsShortOfRequested(t *testing.T) {
 	// The caller must be THIS test's file, not the bridge's own closure.
 	if bhCountLines(lines, "callers=[ninjatrader/bar_horizon_bridge_test.go:") != 1 {
 		t.Fatalf("warn line does not name this test as the caller: %v", lines)
+	}
+}
+
+// PIN 1-m452 — THE PRODUCTION CALL SITE (barsFromCache) for a depth request
+// BEYOND the ring: no WARN, no "short" count, one INFO per (symbol, tf) per boot,
+// a "beyond_ring" count per read, and the returned slice unchanged. Mutant: drop
+// the beyondRing branch in barHorizonWarn -> the WARN and the short count return.
+func TestBridgeDepthBeyondTheRingIsInfoOncePerBootNotAWarn(t *testing.T) {
+	resetBarHorizonWarnsForSessionDay(0)
+	armBarHorizonGrace(bhCT(2026, time.September, 9, 8, 0)) // a boot: clears the once-per-boot memory
+	noteBarHorizonBackfillLanded()
+	get := bhWarnCapture(t)
+	var infoMu sync.Mutex
+	var infos []string
+	prevInfof := barHorizonInfof
+	barHorizonInfof = func(format string, args ...interface{}) {
+		infoMu.Lock()
+		infos = append(infos, fmt.Sprintf(format, args...))
+		infoMu.Unlock()
+	}
+	t.Cleanup(func() { barHorizonInfof = prevInfof })
+	cache := ntwire.NewBarCache(2500)
+	bhSeed(cache, "MNQ", "1m", bhCT(2026, time.September, 8, 9, 0), 2500)
+	now := bhCT(2026, time.September, 9, 13, 18)
+	baseShort := telemetry.BarHorizonCounts()["short"]
+	baseBeyond := telemetry.BarHorizonCounts()["beyond_ring"]
+
+	for i := 0; i < 50; i++ { // 50 reads: the planner tape, the weekly shadow, every cycle
+		if out := barsFromCache(cache, "MNQ", "1m", 12000, now.Add(time.Duration(i)*time.Second)); len(out) != 2500 {
+			t.Fatalf("returned %d klines, want 2500 - the observation must change nothing that is RETURNED (A10)", len(out))
+		}
+	}
+	lines := bhFilter(get(), "bar_horizon_bridge_test.go")
+	if n := bhCountLines(lines, "bar horizon"); n != 0 {
+		t.Fatalf("a depth request beyond the ring WARNed %d time(s): %v", n, lines)
+	}
+	infoMu.Lock()
+	gotInfos := append([]string(nil), infos...)
+	infoMu.Unlock()
+	if n := bhCountLines(gotInfos, "beyond the ring", "MNQ 1m"); n != 1 || len(gotInfos) != 1 {
+		t.Fatalf("want exactly ONE INFO line per boot for MNQ 1m, got %d: %v", len(gotInfos), gotInfos)
+	}
+	if got := telemetry.BarHorizonCounts()["short"] - baseShort; got != 0 {
+		t.Fatalf("a beyond-the-ring ask must not count as short: short rose by %d", got)
+	}
+	if got := telemetry.BarHorizonCounts()["beyond_ring"] - baseBeyond; got != 50 {
+		t.Fatalf("beyond_ring rose by %d, want 50 - every read is counted, only the line is once", got)
+	}
+}
+
+// A beyond-the-ring ask that ALSO has a hole inside the served span stays LOUD:
+// the HOLED arm is untouched.
+func TestBridgeDepthBeyondTheRingStillWarnsOnARealHole(t *testing.T) {
+	resetBarHorizonWarnsForSessionDay(0)
+	noteBarHorizonBackfillLanded()
+	get := bhWarnCapture(t)
+	cache := ntwire.NewBarCache(2500)
+	bhSeed(cache, "MNQ", "1m", bhCT(2026, time.September, 9, 8, 30), 60)
+	bhSeed(cache, "MNQ", "1m", bhCT(2026, time.September, 9, 10, 50), 60) // an 80-minute open-market hole
+	barsFromCache(cache, "MNQ", "1m", 12000, bhCT(2026, time.September, 9, 12, 0))
+	lines := bhFilter(get(), "bar_horizon_bridge_test.go")
+	if bhCountLines(lines, "bar horizon", "HOLED", "gaps=80") != 1 {
+		t.Fatalf("a real hole under a beyond-the-ring ask must WARN as HOLED: %v", lines)
+	}
+	if bhCountLines(lines, "SHORT") != 0 {
+		t.Fatalf("the structural SHORT must not be named on the hole line: %v", lines)
+	}
+}
+
+// m452 - the boot grace silences the NUMBERS too. Live #54: 21,953 short/empty
+// counts in the first 2.6 minutes (about 500x the #53 rate) because the counters
+// were bumped before the grace check.
+func TestEmptyInBootGraceCountsOnlyGraced(t *testing.T) {
+	resetBarHorizonWarnsForSessionDay(0)
+	boot := bhCT(2026, time.September, 9, 13, 2)
+	armBarHorizonGrace(boot)
+	cache := ntwire.NewBarCache(2500) // nothing seeded: the AddOn's replay has not landed
+	c0 := telemetry.BarHorizonCounts()
+	for i := 0; i < 30; i++ {
+		barsFromCache(cache, "MNQ", "1m", 2000, boot.Add(time.Duration(i)*time.Second))
+	}
+	c1 := telemetry.BarHorizonCounts()
+	if d := c1["graced"] - c0["graced"]; d != 30 {
+		t.Fatalf("graced rose by %d, want 30", d)
+	}
+	for _, k := range []string{"empty", "short", "holed", "beyond_ring"} {
+		if d := c1[k] - c0[k]; d != 0 {
+			t.Fatalf("%s rose by %d inside the boot grace, want 0 (only graced counts there)", k, d)
+		}
 	}
 }
 

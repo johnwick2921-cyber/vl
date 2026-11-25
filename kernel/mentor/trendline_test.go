@@ -2,6 +2,7 @@ package mentor
 
 import (
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -137,7 +138,7 @@ func TestTrendlineSittingOnLineIsNotThirdTouch(t *testing.T) {
 	if tls[0].ValidAt != 0 {
 		t.Fatalf("ValidAt = %d — a touch by P1's own confirmation bars (price never left the line) was taken as the 3rd touch", tls[0].ValidAt)
 	}
-	if got := TrendlineLevels(tls, BoxesBuild(bars, DefaultBoxCfg(), now), bars); len(got) != 0 {
+	if got, _ := TrendlineLevels(tls, BoxesBuild(bars, DefaultBoxCfg(), now), nil, bars); len(got) != 0 {
 		t.Fatalf("a line price never left is not a location — levels=%+v", got)
 	}
 }
@@ -202,21 +203,33 @@ func TestTrendlineSwingInsideTouchBandIsNotALeave(t *testing.T) {
 	}
 }
 
-// TestTrendlineReturnThen5mCloseThroughKills — X9 @06:25 at the call site: the
-// 5m close through still discards the line AFTER the return made it valid. The
-// 09:10 bucket (bars 10–14) closes at 98.1, below the line at its open (98.6)
-// → Dead, no longer valid, not a location. Green on origin/dev too (the kill
-// is unchanged) — a preservation pin.
-func TestTrendlineReturnThen5mCloseThroughKills(t *testing.T) {
+// TestTrendlineReturnThenWholeCandleBeyondKills — X9 @06:28–06:45 at the call
+// site: the line is discarded AFTER the return made it valid, by a closed 5m
+// candle WHOLLY below it (owner ruling 2026-10-25). The 09:15 bucket (bars
+// 15–19) has its high (99.5) under the line at its open (≈99.6) and close (≈100.4) → Dead, no
+// longer valid, not a location. The 09:10 bucket (bars 10–14), which closes at
+// 98.1 with a wick far above the line, does NOT kill it.
+func TestTrendlineReturnThenWholeCandleBeyondKills(t *testing.T) {
 	bars, mk := trendlineReturnTape()
-	bars = append(bars, mk(14, 101.2, 101.3, 98.0, 98.1)) // bucket 10–14 closes 98.1
-	// the 09:10 5m bucket closes at bars[14].OpenTime+59_999 — now is after it.
+	bars = append(bars, mk(14, 101.2, 101.3, 98.0, 98.1)) // bucket 10–14: close 98.1, high 102
 	now := time.UnixMilli(bars[14].OpenTime + 60_000).In(ctime())
-	tls := TrendlinesBuild(bars, now)
-	if len(tls) != 1 || !tls[0].Dead || tls[0].ValidAt != 0 {
-		t.Fatalf("after the 5m close through = %+v, want Dead=true ValidAt=0", tls)
+	if tls := TrendlinesBuild(bars, now); len(tls) != 1 || tls[0].Dead || tls[0].ValidAt == 0 {
+		t.Fatalf("a close beyond the line with the wick back above it = %+v, want it alive and valid", tls)
 	}
-	if got := TrendlineLevels(tls, BoxesBuild(bars, DefaultBoxCfg(), now), bars); len(got) != 0 {
+	for i := 15; i <= 19; i++ {
+		bars = append(bars, mk(i, 99.4, 99.5, 98.5, 99.0)) // bucket 15–19 wholly under the line at its open (≈99.6) AND close (≈100.4) [m427]
+	}
+	now = time.UnixMilli(bars[19].OpenTime + 60_000).In(ctime())
+	var tls []Trendline
+	for _, tl := range TrendlinesBuild(bars, now) {
+		if tl.P1Idx == 8 { // the line this test follows (bar 14's low is a later anchor of its own)
+			tls = append(tls, tl)
+		}
+	}
+	if len(tls) != 1 || !tls[0].Dead || tls[0].ValidAt != 0 {
+		t.Fatalf("after the whole 5m candle beyond = %+v, want Dead=true ValidAt=0", tls)
+	}
+	if got, _ := TrendlineLevels(tls, BoxesBuild(bars, DefaultBoxCfg(), now), nil, bars); len(got) != 0 {
 		t.Fatalf("a dead line is not a location — levels=%+v", got)
 	}
 }
@@ -257,12 +270,13 @@ func TestTrendlineFractalNoiseDrawsNoLine(t *testing.T) {
 	}
 }
 
-// TestTrendlineBrokenBy5mCloseAtTheCloseTime — the course's break is a CLOSE
-// through the line ("nến nó đụng level mà nó ĐÓNG DƯỚI level — đó đụng
-// trendline… Nó GÃY level" [D2.3 p1 @14:36–15:17]; the 5m frame [X9 @06:25]),
-// the line read at the candle's CLOSE time. Line value: 98.6 at 10:00 (the
-// bucket open), ≈99.6 at its close; resistance ≈100.4 at the close.
-func TestTrendlineBrokenBy5mCloseAtTheCloseTime(t *testing.T) {
+// TestTrendlineBrokenByWholeCandleOverItsWholeLife — the break is a 5m candle
+// WHOLLY beyond the line, body and wicks (owner ruling 2026-10-25, "đóng dưới
+// NGUYÊN CÂY" [X9 @06:28–06:45]; the 5m frame [X9 @06:25]), the line read at the
+// candle's CLOSE time. Line value: 98.6 at 10:00 (the bucket open), ≈99.6 at its
+// close; resistance ≈100.4 at the close. A close beyond the line with a wick back
+// at it is NOT a break.
+func TestTrendlineBrokenByWholeCandleOverItsWholeLife(t *testing.T) {
 	tl := Trendline{Side: SideLong, P0Idx: 2, P0Px: 97, P0T: 2 * 60_000, P1Idx: 8, P1Px: 98.2, P1T: 8 * 60_000}
 	if got := tl.priceAt(10 * 60_000); math.Abs(got-98.6) > 0.0001 {
 		t.Fatalf("priceAt = %.4f, want 98.6", got)
@@ -270,21 +284,41 @@ func TestTrendlineBrokenBy5mCloseAtTheCloseTime(t *testing.T) {
 	b5 := func(h, l, c float64) market.Kline {
 		return market.Kline{OpenTime: 10 * 60_000, CloseTime: 15*60_000 - 1, High: h, Low: l, Close: c}
 	}
-	if !tl.brokenBy5m(b5(101, 98.0, 98.5)) {
-		t.Fatal("a close BELOW the support line breaks it — the wick above does not matter (the course's close test)")
+	if tl.brokenBy5m(b5(101, 98.0, 98.5)) {
+		t.Fatal("a close BELOW the support line with the high far above it is NOT a break (wholly-beyond ruling)")
 	}
-	if !tl.brokenBy5m(b5(99.9, 98.9, 99.0)) {
-		t.Fatal("a close below the line AT THE CLOSE TIME (99.0 < ≈99.6) breaks it, even above the line's value at the open (98.6)")
+	if tl.brokenBy5m(b5(99.4, 98.9, 99.0)) {
+		t.Fatal("m427: high 99.4 is above the line's value at the OPEN (98.6) — the candle traded on the support side, so it is not wholly beyond the line")
+	}
+	if !tl.brokenBy5m(b5(98.5, 97.9, 98.0)) {
+		t.Fatal("a candle wholly below the line at BOTH its open (98.6) and close (≈99.6) breaks it")
 	}
 	if tl.brokenBy5m(b5(100, 99.0, 99.7)) {
-		t.Fatal("a close ABOVE the support line at the close time is not a break")
+		t.Fatal("a candle that reaches the support line is not a break")
 	}
 	res := Trendline{Side: SideShort, P0Idx: 2, P0Px: 103, P0T: 2 * 60_000, P1Idx: 8, P1Px: 101.8, P1T: 8 * 60_000}
-	if !res.brokenBy5m(b5(102, 99.0, 101.5)) {
-		t.Fatal("a close ABOVE the resistance line breaks it — the wick below does not matter")
+	if res.brokenBy5m(b5(102, 99.0, 101.5)) {
+		t.Fatal("a close ABOVE the resistance line with the low far below it is NOT a break")
+	}
+	if res.brokenBy5m(b5(103, 100.5, 102.0)) {
+		t.Fatal("m427: low 100.5 is below the resistance line's value at the OPEN (101.4) — not wholly above it")
+	}
+	if !res.brokenBy5m(b5(103, 101.5, 102.0)) {
+		t.Fatal("a candle wholly above the resistance line at BOTH its open (101.4) and close (≈100.4) breaks it")
 	}
 	if res.brokenBy5m(b5(100.6, 99.9, 100.2)) {
-		t.Fatal("a close below the resistance line at the close time (100.2 < ≈100.4) is not a break")
+		t.Fatal("a candle below the resistance line is not a break")
+	}
+	htf := tl
+	htf.TFMin = 60
+	// m428 R1 (owner Q3, 2026-10-25): the persistent HTF line breaks like the
+	// intraday one — a closed 5m candle WHOLLY beyond it. The old HTF-close break
+	// (a close below with the high above) is overturned.
+	if htf.brokenBy5m(b5(101, 98.0, 98.5)) {
+		t.Fatal("m428 R1: an HTF line is NOT broken by a close beyond it while the wick is still back on it")
+	}
+	if !htf.brokenBy5m(b5(98.5, 97.9, 98.0)) {
+		t.Fatal("m428 R1: an HTF line is broken by a 5m candle wholly beyond it, like the intraday line")
 	}
 }
 
@@ -304,7 +338,7 @@ func TestTrendlineNeverTarget(t *testing.T) {
 // touch pre-classified at the trendline's key (the trendline itself is built
 // from the tape by TrendlinesBuild inside Tick).
 func trendlineEval(bars []market.Kline, now int64, key string, priceAt float64) *Evaluator {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.KeyLevelTFMinutes = 1
 	cfg.EMAPeriod34 = 0
@@ -337,8 +371,20 @@ func trendlineEval(bars []market.Kline, now int64, key string, priceAt float64) 
 // extreme on this tape) — the refusal PROVES the location gate passed, because
 // a non-location level is skipped silently before that step.
 func TestEvaluatorTrendlineLocationPHL(t *testing.T) {
-	bars, _ := trendlineReturnTape()
-	now := bars[13].OpenTime + 59_999
+	bars, mk := trendlineReturnTape()
+	// c52 W9 B7-R7: the FTGL box top (98.3) sits 0.9 pt under the fresh line, so
+	// ON ITS FIRST TEST the box edge beats the line (the mentor's FTGH/FTGL
+	// example). A 4th touch puts the line past its first test, where it is a
+	// location (m311) — the gate this test pins. m465 review (D2.3-R7): the
+	// 4th touch is a NEW touch, so price first LEAVES the line (bar 14, low
+	// 100.6 clear of the line 99.4–99.6 + band) and comes back (bar 15: low
+	// 99.5 vs the line's 99.6, a rejection; still inside the forming 09:10 5m
+	// bucket).
+	bars = append(bars,
+		mk(14, 101, 101.5, 100.6, 101),
+		mk(15, 101, 101.5, 99.5, 101),
+	)
+	now := bars[15].OpenTime + 59_999
 
 	tls := TrendlinesBuild(bars, time.UnixMilli(now).In(ctime()))
 	var tl Trendline
@@ -351,9 +397,12 @@ func TestEvaluatorTrendlineLocationPHL(t *testing.T) {
 		t.Fatalf("no valid support trendline in %+v", tls)
 	}
 
-	e := trendlineEval(bars, now, tl.key(), tl.priceAt(bars[13].OpenTime))
+	e := trendlineEval(bars, now, tl.key(), tl.priceAt(bars[15].OpenTime))
 	e.Tick(bars, now)
-	if e.State.Refusals["phl_no_old_extreme_on_side"] == 0 {
+	// Either downstream PHL refusal proves the location gate passed: bar 15
+	// closes the 09:10 5m bucket, so the 09:05/09:10 5m inside-bar box may
+	// refuse first (phl_5m_box_ban, read per level inside the PHL path).
+	if e.State.Refusals["phl_no_old_extreme_on_side"]+e.State.Refusals["phl_5m_box_ban"] == 0 || e.State.Refusals[trendlineThirdTouchIsTest+":"+tl.key()] != 0 {
 		t.Fatalf("valid trendline did not pass the location gate — refusals=%v", e.State.Refusals)
 	}
 }
@@ -380,9 +429,12 @@ func TestEvaluatorTrendlineSittingIsNotALocation(t *testing.T) {
 
 // TestTrendlineLevelsOnlyAfterThirdTouch — the "only after the 3rd test"
 // half: before the return the line is NOT in the level set (two points, and
-// the touches by P1's own confirmation bars, are not a location); after the
-// leave and the return it is. Mutant (3rd-touch gate off) makes the first
-// half FAIL.
+// the touches by P1's own confirmation bars, are not a location). m465 (#60,
+// D2.3-R7): on the return candle itself (the 3rd touch = the TEST) the line is
+// still not a location by default — refused trendline_third_touch_is_test — and
+// is one under the knob's "third" side (the pre-#60 behaviour); the later-touch
+// half is TestM60TrendlineThirdTouchDoesNotArm. Mutant (3rd-touch gate off)
+// makes the first half FAIL.
 func TestTrendlineLevelsOnlyAfterThirdTouch(t *testing.T) {
 	sit, _ := trendlineSittingTape()
 	before := time.UnixMilli(sit[10].OpenTime + 59_999).In(ctime())
@@ -391,7 +443,7 @@ func TestTrendlineLevelsOnlyAfterThirdTouch(t *testing.T) {
 	if len(tls) != 1 || tls[0].ValidAt != 0 {
 		t.Fatalf("want an unvalidated line, got %+v", tls)
 	}
-	if got := TrendlineLevels(tls, boxes, sit); len(got) != 0 {
+	if got, _ := TrendlineLevels(tls, boxes, nil, sit); len(got) != 0 {
 		t.Fatalf("before the 3rd touch the line must not be a location — levels=%+v", got)
 	}
 
@@ -402,8 +454,11 @@ func TestTrendlineLevelsOnlyAfterThirdTouch(t *testing.T) {
 	if len(tls2) != 1 || tls2[0].ValidAt != 13 {
 		t.Fatalf("want a validated line, got %+v", tls2)
 	}
-	if got := TrendlineLevels(tls2, boxes2, after); len(got) != 1 {
-		t.Fatalf("after the 3rd touch the line must be a location — levels=%+v", got)
+	if got, refused := TrendlineLevels(tls2, boxes2, nil, after); len(got) != 0 || len(refused) != 1 {
+		t.Fatalf("on the 3rd-touch candle (the test) the line is not yet a location by default — levels=%+v refused=%v", got, refused)
+	}
+	if got, _ := TrendlineLevelsTouch(tls2, boxes2, nil, after, TrendlineEntryThird); len(got) != 1 {
+		t.Fatalf("knob third: after the 3rd touch the line must be a location — levels=%+v", got)
 	}
 }
 
@@ -493,7 +548,9 @@ func TestLocationOfNamesTheTouchedPlace(t *testing.T) {
 		{trendlineMirror(bars), "trendline short"},
 	} {
 		tls := TrendlinesBuild(tc.bars, now)
-		lv := TrendlineLevels(tls, BoxesBuild(tc.bars, DefaultBoxCfg(), now), tc.bars)
+		// m465 (#60, D2.3-R7): on its 3rd-touch candle the line is a location
+		// only under the knob's "third" side; this pins the key's naming.
+		lv, _ := TrendlineLevelsTouch(tls, BoxesBuild(tc.bars, DefaultBoxCfg(), now), nil, tc.bars, TrendlineEntryThird)
 		if len(lv) != 1 {
 			t.Fatalf("want one trendline location, got %+v", lv)
 		}
@@ -629,5 +686,215 @@ func TestTrendlineSameRoleSwingIsNotALeave(t *testing.T) {
 	}
 	if tl, ok := supportLineP0P1(t, bars, time.UnixMilli(now).In(ctime())); ok && tl.ValidAt != 0 {
 		t.Fatalf("the P0/P1 line went valid off a same-role swing: %+v", tl)
+	}
+}
+
+// TestTrendlineLevelBeatsFreshTrendline (m186, D2.3 p1 @02:19–03:45) — a
+// trendline on its 3rd-touch candle (ValidAt == the current bar — the TEST,
+// D2.3-R7) whose current price sits at/near a RESPECTED level (key level /
+// old extreme) is refused: the level wins ("chọn cái mà nó đã respect nhiều
+// lần, đừng chọn cái nó mới tạo"). m465 (#60): by default that candle is never
+// a location anyway — "lần thứ ba đó, thì lần thứ tư mới dám tự tin mình vô"
+// [D2.3 p1 @02:34–02:47, 03:03–03:16] — so with NO level in the way it is now
+// refused trendline_third_touch_is_test (the flipped leg); the level-preference
+// legs run under the knob's "third" side, where the 3rd-touch candle arms.
+// FORMING lines stay non-locations (unchanged). The past-the-test case (m311)
+// is pinned in TestTrendlineLevelPrefersLevelOnlyOnFirstTest.
+func TestTrendlineLevelBeatsFreshTrendline(t *testing.T) {
+	bars, _ := trendlineReturnTape()
+	now := time.UnixMilli(bars[13].OpenTime + 59_999).In(ctime())
+	tls := TrendlinesBuild(bars, now)
+	if len(tls) != 1 || tls[0].ValidAt == 0 {
+		t.Fatalf("fixture: want one VALID trendline, got %+v", tls)
+	}
+	cur := bars[len(bars)-1]
+	price := tls[0].priceAt(cur.OpenTime)
+
+	// A respected key level AT the line → the trendline is refused (level wins).
+	respected := []Level{{Kind: KindKeyLevel, Price: price, Key: "kl:at-line"}}
+	got, refused := TrendlineLevelsTouch(tls, nil, respected, bars, TrendlineEntryThird)
+	if len(refused) != 1 || len(got) != 0 || !strings.HasPrefix(refused[0], "tl_first_test_level_preferred:") {
+		t.Fatalf("a respected level at the line must refuse it: got %+v refused %v", got, refused)
+	}
+
+	// A respected level 10 pts away → no refusal (it is not in the way).
+	far := []Level{{Kind: KindKeyLevel, Price: price + 10, Key: "kl:far"}}
+	got2, refused2 := TrendlineLevelsTouch(tls, nil, far, bars, TrendlineEntryThird)
+	if len(got2) != 1 || len(refused2) != 0 {
+		t.Fatalf("a far level must not refuse the line: got %+v refused %v", got2, refused2)
+	}
+
+	// m465 FLIP (D2.3-R7): no level in the way → by default the 3rd-touch
+	// candle is still the TEST, not a location.
+	got3, refused3 := TrendlineLevels(tls, nil, nil, bars)
+	if len(got3) != 0 || len(refused3) != 1 || !strings.HasPrefix(refused3[0], "trendline_third_touch_is_test:") {
+		t.Fatalf("no respected level: the 3rd-touch candle is the test — want 0 levels + trendline_third_touch_is_test; got %+v refused %v", got3, refused3)
+	}
+	// knob third: the pre-#60 behaviour — the trendline stays.
+	if got4, refused4 := TrendlineLevelsTouch(tls, nil, nil, bars, TrendlineEntryThird); len(got4) != 1 || len(refused4) != 0 {
+		t.Fatalf("knob third, no respected level: the trendline must stay; got %+v refused %v", got4, refused4)
+	}
+}
+
+// TestTrendlineLevelPrefersLevelOnlyOnFirstTest (m311 #46b) — the level beats
+// the trendline ONLY on its 3rd-touch candle (the TEST, D2.3-R7). Extend the
+// return tape two quiet bars past the 3rd touch (bar 13): the line is now VALID
+// and past its test, so a respected level AT the line must NOT suppress it —
+// under the default (m465 "fourth") this is also where the line first becomes a
+// location. Mutant (drop the first-test gate) refuses the line → RED.
+func TestTrendlineLevelPrefersLevelOnlyOnFirstTest(t *testing.T) {
+	bars, mk := trendlineReturnTape()
+	// Two quiet bars past the 3rd touch: lows (100.5) stay clear of the line
+	// (99.4 at bar 14, 99.6 at bar 15) plus its 0.5 touch band — price LEFT
+	// the line (m465 review: a low of 100 is still inside the band, the same
+	// 3rd-touch cluster), no 5m close through.
+	bars = append(bars,
+		mk(14, 101, 101.5, 100.5, 101),
+		mk(15, 101, 101.5, 100.5, 101),
+	)
+	now := time.UnixMilli(bars[15].OpenTime + 59_999).In(ctime())
+	tls := TrendlinesBuild(bars, now)
+	var tl Trendline
+	for _, x := range tls {
+		if x.Side == SideLong && x.ValidAt != 0 {
+			tl = x
+		}
+	}
+	if tl.ValidAt != 13 {
+		t.Fatalf("fixture: want the line valid at bar 13 (past its first test), got %+v", tls)
+	}
+	cur := bars[len(bars)-1]
+	price := tl.priceAt(cur.OpenTime)
+
+	// A respected key level AT the line, past the first test: the line stands.
+	respected := []Level{{Kind: KindKeyLevel, Price: price, Key: "kl:at-line"}}
+	got, refused := TrendlineLevels(tls, nil, respected, bars)
+	if len(got) != 1 || len(refused) != 0 {
+		t.Fatalf("past the first test a nearby level must NOT suppress the line: got %+v refused %v", got, refused)
+	}
+}
+
+// htfPersistenceTape: 40 hours of 1m bars (day 1 09:00 CT → day 2 01:00 CT)
+// with a single rising-lows 1h support line: the hour-2 low (97) and the
+// hour-5 low (97.5), both confirmed. Everything else is quiet (low 99.5,
+// high 111, close 110) so the only 1h swings are the two anchors and the line
+// (slope 0.5/3 ≈ 0.17 per hour) is never closed through across the 40 hours.
+func htfPersistenceTape() ([]market.Kline, func(i int, o, h, l, c float64) market.Kline) {
+	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
+	mk := trendlineMk(t0)
+	bars := make([]market.Kline, 40*60)
+	for i := range bars {
+		bars[i] = mk(i, 100, 111, 99.5, 110)
+	}
+	// one 1m bar per hour carries the hour's swing low; the rest of the hour
+	// stays at 99.5 so the bucketed 1h bar's Low is exactly that swing low.
+	bars[2*60].Low = 97   // hour-2 low (P0)
+	bars[3*60].Low = 98   // hour-3 confirms P0
+	bars[5*60].Low = 97.5 // hour-5 low (P1, higher)
+	bars[6*60].Low = 99   // hour-6 confirms P1
+	return bars, mk
+}
+
+// TestHTFTrendlinePersistsAcrossWindowScroll — D2.3 p1 @04:23–05:41: the 1h/4h
+// line "works forever, no need to delete". The evaluator keeps the anchors in
+// STATE, so a 1h line whose P0 anchor scrolled out of the 25-hour rebuild
+// window is still drawn. RED if the HTF line vanishes with its anchor.
+func TestHTFTrendlinePersistsAcrossWindowScroll(t *testing.T) {
+	bars, _ := htfPersistenceTape()
+	e := &Evaluator{}
+	open := bars[0].OpenTime
+	end := bars[len(bars)-1].OpenTime + 59_999
+	live1h := 0
+	for i, b := range bars {
+		now := BarCloseInstant(b)
+		if now <= open || now > end {
+			continue
+		}
+		live, _ := e.htFTrendlines(lrWindow(bars, i), time.UnixMilli(now))
+		live1h = 0
+		for _, tl := range live {
+			if tl.TFMin == 60 {
+				live1h++
+			}
+		}
+	}
+	// At the last tick the window starts ~15 hours in; the hour-2 P0 anchor is
+	// long gone from the rebuild window, yet the line must still be held.
+	if live1h == 0 {
+		t.Fatalf("the 1h line vanished once its anchor scrolled out of the window — want it held in evaluator state")
+	}
+}
+
+// TestSeedTrendlinesSeedsHTF — a restart restores the persistent 1h/4h lines
+// from the full history: SeedTrendlines folds the bucketed swing pairs into
+// e.tlHTF, so the live tick starts with the anchors that predate its window.
+func TestSeedTrendlinesSeedsHTF(t *testing.T) {
+	bars, _ := htfPersistenceTape()
+	e := &Evaluator{}
+	SeedTrendlines(e, bars, bars[len(bars)-1].OpenTime+59_999)
+	if len(e.tlHTF) == 0 {
+		t.Fatalf("seed did not populate tlHTF — want the 1h/4h anchors restored from history")
+	}
+	for k, tl := range e.tlHTF {
+		if tl.TFMin == 60 && (tl.P0Px != 97 || tl.P1Px != 97.5) {
+			t.Fatalf("seeded 1h line %s = %+v, want P0Px=97 P1Px=97.5", k, tl)
+		}
+	}
+}
+
+// m427/4 — a SLOPED line read over the candle's whole life. Rising support
+// 100 at the 5m open -> 105 at its close (1 pt/min): High 104 traded 4 pts above
+// the line at the open, so the candle is NOT wholly below it. High 99.9 is below
+// the line at both ends: broken. Mirror for a falling resistance 105 -> 100.
+// Production path: the Tick-facing break test brokenBy5m.
+// Mutant: read only the close-time value (b.High < pc) -> the High-104 case turns RED.
+func TestM427SlopedLineBreakNeedsTheWholeCandleBeyondBothEnds(t *testing.T) {
+	const open, closeT = int64(10 * 60_000), int64(15*60_000 - 1)
+	sup := Trendline{Side: SideLong, P0Px: 100, P0T: open, P1Px: 105, P1T: open + 5*60_000}
+	cand := func(h, l float64) market.Kline {
+		return market.Kline{OpenTime: open, CloseTime: closeT, High: h, Low: l, Close: l}
+	}
+	if sup.brokenBy5m(cand(104, 98)) {
+		t.Fatal("rising support 100->105, High 104: the candle traded above the line at the open — NOT broken")
+	}
+	if !sup.brokenBy5m(cand(99.9, 98)) {
+		t.Fatal("High 99.9 is below the line at the open (100) and the close (≈105): broken")
+	}
+	res := Trendline{Side: SideShort, P0Px: 105, P0T: open, P1Px: 100, P1T: open + 5*60_000}
+	if res.brokenBy5m(cand(110, 101)) {
+		t.Fatal("falling resistance 105->100, Low 101: the candle traded below the line at the open — NOT broken")
+	}
+	if !res.brokenBy5m(cand(110, 105.1)) {
+		t.Fatal("Low 105.1 is above the line at the open (105) and the close (≈100): broken")
+	}
+}
+
+// TestC52W9B7R7FTGBoxEdgeBeatsFreshTrendline (c52 W9 B7-R7) — the mentor's own
+// example is the FAILURE-TO-GO-HIGHER / LOWER box that "nó đang rất là respect"
+// against a trendline price "về test lần đầu tiên" [D2.3 p1 @01:44–01:52,
+// @02:19]. An FTGH/FTGL box EDGE at the line's price therefore refuses the
+// fresh line, exactly like a key level; a far edge does not. MUTANT: drop
+// KindFTGHEdge/KindFTGLEdge from trendlineBeatenByLevel → the line stays → RED.
+func TestC52W9B7R7FTGBoxEdgeBeatsFreshTrendline(t *testing.T) {
+	bars, _ := trendlineReturnTape()
+	now := time.UnixMilli(bars[13].OpenTime + 59_999).In(ctime())
+	tls := TrendlinesBuild(bars, now)
+	if len(tls) != 1 || tls[0].ValidAt == 0 {
+		t.Fatalf("fixture: want one VALID trendline, got %+v", tls)
+	}
+	price := tls[0].priceAt(bars[len(bars)-1].OpenTime)
+	// m465 (#60, D2.3-R7): by default the 3rd-touch candle is never a location;
+	// the level preference on it is pinned under the knob's "third" side.
+	for _, kind := range []LevelKind{KindFTGLEdge, KindFTGHEdge} {
+		at := []Level{{Kind: kind, Price: price + 1.5, Key: "box:edge"}}
+		got, refused := TrendlineLevelsTouch(tls, nil, at, bars, TrendlineEntryThird)
+		if len(refused) != 1 || len(got) != 0 {
+			t.Fatalf("%s edge 1.5 pt from the fresh line must refuse it: got %+v refused %v", kind, got, refused)
+		}
+		far := []Level{{Kind: kind, Price: price + 10, Key: "box:far"}}
+		got, refused = TrendlineLevelsTouch(tls, nil, far, bars, TrendlineEntryThird)
+		if len(got) != 1 || len(refused) != 0 {
+			t.Fatalf("%s edge 10 pts away must not refuse: got %+v refused %v", kind, got, refused)
+		}
 	}
 }

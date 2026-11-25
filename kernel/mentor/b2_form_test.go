@@ -11,7 +11,7 @@ import (
 // break fires at the MINUTE it happens (confirmation rule (a) — never from
 // the bucket open, and never lost). Same-direction re-breaks are idempotent.
 func TestTriggerFormingBucketReevaluatedEachTick(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	// bucket 17:00 recorded; bucket 17:05 partial (no break yet)
 	first := TriggerTick(TriggerLine{}, []market.Kline{

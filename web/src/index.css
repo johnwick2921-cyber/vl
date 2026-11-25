@@ -941,6 +941,11 @@ tr:hover {
 
 /* Responsive utilities */
 @media (max-width: 768px) {
+  /* C12: the 1.25rem card padding left the chart canvas ~234px wide at 390px. */
+  .chart-container {
+    padding: 0.25rem;
+  }
+
   .binance-card {
     padding: 1rem;
   }

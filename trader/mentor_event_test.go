@@ -143,7 +143,8 @@ func TestMentorWindowActivePure(t *testing.T) {
 // places; the SWING4H setup is exempt at any hour. The mutant that drops the
 // gate makes the recorder fire at 10:00 CT and this test goes RED.
 func TestMentorWindowGateAtPlacementCallSite(t *testing.T) {
-	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
+	// explicit 08:30+60 (m472 A6: unset is now window-off [Oct D5.2 @ 01:00-01:20])
+	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorWindowMinutes: 60})
 	wireMentorPlacementSeams(t, at)
 	ct := kernel.CTLocation()
 	setMentorNowSource(func() time.Time { return time.Date(2026, 10, 2, 10, 0, 0, 0, ct) })
@@ -188,8 +189,8 @@ func TestMentorDoneAfterWinGateAtPlacementCallSite(t *testing.T) {
 		t.Fatal("the pure rule: only a winning close AND a positive day end the day")
 	}
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
-	// owner order 2026-10-16: nil → OFF — this test exercises the ON path, so
-	// the switch is explicit true.
+	// m186: nil → ON — this test exercises the ON path explicitly, so the
+	// switch is set true regardless of the default.
 	on := true
 	at.config.StrategyConfig.RiskControl.MentorDoneAfterWin = &on
 	wireMentorPlacementSeams(t, at)
@@ -486,15 +487,17 @@ func TestMentorIntentExpiry(t *testing.T) {
 		t.Fatalf("a level touch expires at the next 1m candle close, got %d", got)
 	}
 	// 08:00 CT → the current 4h candle is [05:00, 09:00) → the swing expires
-	// at 09:00 CT.
-	want := time.Date(2026, 10, 2, 9, 0, 0, 0, ct).UnixMilli()
+	// at its close, 08:59:59.999 CT (m463: the kernel's one definition).
+	want := time.Date(2026, 10, 2, 9, 0, 0, 0, ct).UnixMilli() - 1
 	if got := mentorIntentExpiry(mentor.Intent{Setup: "SWING4H"}, base); got != want {
 		t.Fatalf("the swing expires at the 4h candle close 09:00 CT, got %d want %d", got, want)
 	}
 }
 
 // TestMentorSwingExpiry (RULING [C]): the 4h candles chain from the 17:00 CT
-// anchor — the swing order lives until the close of the CURRENT 4h candle.
+// anchor — the swing order lives until the close of the CURRENT 4h candle
+// (minus 1 ms — the kernel's one definition). m463 D5.2-R27: 2026-10-02 is a
+// FRIDAY, so the 13:00 candle ends at the 16:00 weekend close, not 17:00.
 func TestMentorSwingExpiry(t *testing.T) {
 	ct := kernel.CTLocation()
 	cases := []struct {
@@ -506,10 +509,7 @@ func TestMentorSwingExpiry(t *testing.T) {
 		{"01:15", "05:00", "2026-10-02"},
 		{"08:00", "09:00", "2026-10-02"},
 		{"11:30", "13:00", "2026-10-02"},
-		{"15:00", "17:00", "2026-10-02"},
-		{"17:00", "21:00", "2026-10-02"},
-		{"19:00", "21:00", "2026-10-02"},
-		{"22:30", "01:00", "2026-10-03"},
+		{"15:00", "16:00", "2026-10-02"}, // m463: the CME closes inside the 13:00 candle
 	}
 	for _, c := range cases {
 		t.Run(c.hhmm, func(t *testing.T) {
@@ -524,12 +524,29 @@ func TestMentorSwingExpiry(t *testing.T) {
 			if c.wantDay != now.Format("2006-01-02") {
 				wd, _ = time.ParseInLocation("2006-01-02", c.wantDay, ct)
 			}
-			want := time.Date(wd.Year(), wd.Month(), wd.Day(), wh, wm, 0, 0, ct).UnixMilli()
+			want := time.Date(wd.Year(), wd.Month(), wd.Day(), wh, wm, 0, 0, ct).UnixMilli() - 1
 			if got := mentorSwingExpiry(now.UnixMilli()); got != want {
 				t.Fatalf("mentorSwingExpiry(%s CT) = %s, want %s CT", c.hhmm,
 					time.UnixMilli(got).In(ct).Format("15:04"), c.want)
 			}
 		})
+	}
+}
+
+// TestMentorSwingExpiryEvening — the evening candles, on a WEEKDAY evening
+// (Thu 2026-10-01; the old table used Friday 2026-10-02 evening, which is the
+// weekend — the market is closed and, m463, no swing order can outlive it).
+func TestMentorSwingExpiryEvening(t *testing.T) {
+	ct := kernel.CTLocation()
+	for _, c := range []struct{ h, m, wd, wh int }{
+		{17, 0, 1, 21}, {19, 0, 1, 21}, {22, 30, 2, 1},
+	} {
+		now := time.Date(2026, 10, 1, c.h, c.m, 0, 0, ct)
+		want := time.Date(2026, 10, c.wd, c.wh, 0, 0, 0, ct).UnixMilli() - 1
+		if got := mentorSwingExpiry(now.UnixMilli()); got != want {
+			t.Fatalf("mentorSwingExpiry(Thu %02d:%02d CT) = %s, want %s", c.h, c.m,
+				time.UnixMilli(got).In(ct).Format("01-02 15:04:05.000"), time.UnixMilli(want).In(ct).Format("01-02 15:04:05.000"))
+		}
 	}
 }
 
@@ -959,6 +976,7 @@ func TestMentorNewsHold(t *testing.T) {
 func TestMentorNewsGateAtPlacementCallSite(t *testing.T) {
 	// the trading window (b) runs first: 07:00–09:00 CT covers every now below.
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorWindowStart: "07:00", MentorWindowMinutes: 120})
+	octNewsHoldOn(t, at) // OCT-EXACT A1 row 7: pin the hold's mechanics under the revert knob
 	wireMentorPlacementSeams(t, at)
 
 	ct := kernel.CTLocation()

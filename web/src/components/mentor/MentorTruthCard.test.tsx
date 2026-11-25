@@ -72,6 +72,18 @@ describe('MentorTruthCard', () => {
 
   // UG-8 (release #24): since r22 nothing is merged (level_display.go
   // DisplayLevels clears merged_from), so the card never claims a 20-pt fold.
+  it('m422: shows "as of last close" only while the boot display seed is set', () => {
+    const at = Date.UTC(2026, 9, 23, 20, 59) // 15:59 CT
+    const { rerender } = render(
+      <MentorTruthCard truth={truth({ chart_seeded_at: at })} />
+    )
+    expect(screen.getByTestId('mentor-chart-seeded').textContent).toContain(
+      'as of last close 15:59 CT'
+    )
+    rerender(<MentorTruthCard truth={truth({})} />)
+    expect(screen.queryByTestId('mentor-chart-seeded')).toBeNull()
+  })
+
   it('never claims a "closer than 20 pts" fold', () => {
     render(
       <LanguageProvider>

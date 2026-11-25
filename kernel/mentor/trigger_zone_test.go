@@ -94,7 +94,7 @@ func TestTriggerBoxZoneFilter(t *testing.T) {
 // TestTriggerLineOneLineOnly — B1: a reversal moves the line; there is never a
 // second line in the state.
 func TestTriggerLineOneLineOnly(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	tl := TriggerLine{Dir: SideLong, Price: 100, LastBucket: b5(0, 0, 0, 0).OpenTime, LastBar: b5(0, 102, 101, 102)}
 	got := TriggerTick(tl, []market.Kline{b5(5, 99, 97, 97)}, 5, cfg)

@@ -1,0 +1,7 @@
+{
+  "total_count": 2,
+  "check_runs": [
+    {"id": 126301797070, "name": "Frontend Tests", "status": "completed", "conclusion": "success", "details_url": "https://github.com/example/repo/actions/runs/41746818352/job/126301797070"},
+    {"id": 126301796745, "name": "Go Unit Tests & Coverage", "status": "completed", "conclusion": "success", "details_url": "https://github.com/example/repo/actions/runs/41746818453/job/126301796745"}
+  ]
+}

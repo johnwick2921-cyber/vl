@@ -99,8 +99,8 @@ func (at *AutoTrader) entryLatchBook(now time.Time) ntTrader.EntryLatchBookVerdi
 		return ntTrader.EntryLatchBookVerdict{Verifiable: false, Detail: v.Why}
 	case contractLive:
 		return ntTrader.EntryLatchBookVerdict{Verifiable: true, Live: true,
-			Detail: fmt.Sprintf("%d working entry order(s) (first %s %q) and %d position(s) on %s; book age %s",
-				v.WorkingEntries, v.FirstOrderID, v.FirstName, positions, root, age.Round(time.Second))}
+			Detail: fmt.Sprintf("%d working entry order(s), %d limit exit(s) with no position (first %s %q) and %d position(s) on %s; book age %s",
+				v.WorkingEntries, v.OrphanExits, v.FirstOrderID, v.FirstName, positions, root, age.Round(time.Second))}
 	}
 	return ntTrader.EntryLatchBookVerdict{Verifiable: true}
 }

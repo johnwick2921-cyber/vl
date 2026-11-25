@@ -61,6 +61,14 @@ import (
 //     so the freeze ends before the boundary.
 //  6. SHOW. /api/health serves the open holes as read values.
 
+// WHY 1m ONLY (m424 P3, decided not extended). A gap re-request is the AddOn's
+// bars_subscribe resend: it rebuilds EVERY timeframe's BarsRequest and replays
+// ≈bars_back bars per tf, so the refill a 1m hole triggers already heals the
+// 2m/5m bars spanning it. A separate 2m/5m detector would send the same single
+// request on the same budget, and would need its own reach arithmetic (the
+// retire rule counts 1m open minutes) and a per-tf minute width in findBarHoles
+// — new code paths for no additional healing. A 5m-only hole (1m intact) is not
+// a real shape: the 5m bar is built by NT8 from the same ticks.
 const (
 	barHoleTF            = "1m"
 	barHoleMinGapDefault = 3
@@ -78,9 +86,36 @@ const (
 	barHoleSendWindow = barHoleTickEvery
 	barHoleSpacing    = 60 * time.Second // one gap re-request per symbol per minute, at most
 	barHoleMaxOpen    = 32
+	// barHoleMaxRetired bounds the RETIRED holes the tracker keeps LISTED (m444
+	// review round 2): a retired hole is not being worked on, so it must not eat
+	// one of the barHoleMaxOpen slots that new holes need — but the list is not
+	// unbounded either.
+	barHoleMaxRetired = 128
+
+	// A hole older than the subscription's own replay (bars_back = 2000) is not
+	// given up on (m444 review round 2): the bot asks NT8 for it with a DEEP
+	// 1m re-request (provider RequestDeepGapBackfillAt, up to
+	// DeepGapBackfillMaxBarsBack bars). A deep replay is ~4x a standard one, so
+	// it gets a SMALLER budget: barHoleDeepScheduled scheduled asks, then
+	// UNFILLED, then barHoleDeepSlowCap slow ones.
+	barHoleDeepScheduled = 2
+	barHoleDeepSlowCap   = 2
+	// barHoleDeepMargin — bars added to the open minutes between the hole's
+	// first missing minute and now, so the replay reaches a little past it.
+	barHoleDeepMargin = 30
 
 	holeStateRefilling = "refilling"
 	holeStateUnfilled  = "unfilled"
+	// holeStateRetired (m444): the hole's first missing minute lies beyond NT8's
+	// replay window, so no re-request can reach it. It used to be DROPPED from
+	// the tracker (and so from /api/health) the moment it was retired; the
+	// persistent gap audit would then re-find it every pass. It now stays
+	// LISTED — unfillable by the bot, still missing, still owed to the owner —
+	// and is never scheduled again.
+	holeStateRetired = "retired"
+
+	holeSourceLive  = "live"  // found by observeLive (a live 1m arrival / the boot scan)
+	holeSourceAudit = "audit" // found by the persistent gap audit (bar_gap_audit.go)
 )
 
 // barHoleSchedule — the scheduled attempts, as offsets from the moment the hole
@@ -104,6 +139,12 @@ func barHoleMinGap() (int, string) {
 type holeStore interface {
 	PrevOpenTimeOn(symbol, tf, contract string, beforeMs int64) (int64, bool, error)
 	BarsBetweenOn(symbol, tf, contract string, fromMs, toMs int64) ([]store.BarHistoryDB, error)
+}
+
+// deepHoleWire is the optional deep re-request (*ntwire.TCPServer has it). A
+// wire without it (a fake) leaves a hole beyond the standard replay RETIRED.
+type deepHoleWire interface {
+	RequestDeepGapBackfillAt(symbol string, barsBack int, now time.Time) error
 }
 
 // holeWire is the wire the tracker needs (*ntwire.TCPServer).
@@ -133,16 +174,7 @@ func barHoleInSendWindow(now time.Time) bool {
 // closed Monday — reads open by the instant alone. Found by this wave's own
 // holiday pin: Good Friday 2026-04-03 came out as a 420-minute "hole"
 // (Thu 04-02 17:00–24:00). A minute is expected only when BOTH say it trades.
-func barHoleExpected(m time.Time) bool {
-	if !kernel.IsCMEOpen(m) {
-		return false
-	}
-	day, err := time.ParseInLocation("2006-01-02", kernel.CMETradingDateKey(m), kernel.CTLocation())
-	if err != nil {
-		return true // the instant said open; an unreadable key never invents a closure
-	}
-	return kernel.SessionStateAt(day.Add(12*time.Hour)).Class != kernel.SessionClosed
-}
+func barHoleExpected(m time.Time) bool { return kernel.IsCMETradingExpected(m) }
 
 // barHoleSpan is one stretch with no stored bar between two stored bars.
 type barHoleSpan struct {
@@ -184,6 +216,13 @@ type barHole struct {
 	DetectedAt       time.Time
 	Attempts         int
 	State            string
+	Source           string // holeSourceLive | holeSourceAudit
+
+	// deep (m444 review round 2): the hole is older than the subscription's
+	// standard replay but inside DeepGapBackfillMaxBarsBack, so its re-requests
+	// are DEEP ones for deepBarsBack 1m bars (recomputed at every send).
+	deep         bool
+	deepBarsBack int
 
 	nextAttemptAt time.Time // zero = nothing scheduled until the pending measure
 	measureAt     time.Time // zero = no measure pending
@@ -192,8 +231,37 @@ type barHole struct {
 	slowCount     int       // slow re-requests SENT, in total (cap barHoleSlowCapTotal)
 	saidSlowCap   bool      // the "slow retries spent" line was said
 
+	// disagreedAtDetect is the cache's disagreeing-replay count FOR THIS SYMBOL when this hole
+	// was detected (m438): the owner push reports only the disagreements that
+	// happened SINCE, not the process-lifetime total.
+	disagreedAtDetect int64
+
 	reachCountedMs int64 // replay-reach walk: next minute to count (0 = from FromMs)
 	reachOpen      int   // open minutes counted in [FromMs, reachCountedMs)
+}
+
+// schedLen is how many scheduled attempts the hole gets before it is declared
+// unfilled; slowCap is how many slow re-requests it gets after that.
+func (h *barHole) schedLen() int {
+	if h.deep {
+		return barHoleDeepScheduled
+	}
+	return len(barHoleSchedule)
+}
+
+// spentFix is what the "slow retries spent" line tells the log reader to do.
+func (h *barHole) spentFix() string {
+	if h.deep {
+		return "an NT8 history reload, then POST /api/nt/bar-arbiter {action: backfill, timeframe: 1m, bars_back: N} (the deep ask by hand) — a bot restart re-reads only the last 2000 1m bars and does not reach this hole"
+	}
+	return "an NT8 history reload plus a bot restart (which re-subscribes) is the fix while it is inside NT8's replay window"
+}
+
+func (h *barHole) slowCap() int {
+	if h.deep {
+		return barHoleDeepSlowCap
+	}
+	return barHoleSlowCapTotal
 }
 
 type barHoleTracker struct {
@@ -205,11 +273,38 @@ type barHoleTracker struct {
 	say       func(level, msg string)
 	minGap    int
 	minGapSrc string
+	// receiptClock is the instant the live-bar receipt age is measured against.
+	// The receipts carry the monotonic clock, so this is time.Now in production
+	// and never the tracker's (possibly fixed) schedule clock.
+	receiptClock func() time.Time
+
+	// the persistent gap audit (bar_gap_audit.go) — same tracker, same holes
+	auditDays     int // CME session days read per pass; 0 = audit off
+	auditDaysSrc  string
+	auditEvery    time.Duration
+	auditEverySrc string
+	audit         barGapAuditState
+
+	// repair (m467) receives the 1..(minGap-1) open-minute gaps this detector
+	// sees but does not call holes (nil = no repair driver wired).
+	repair *barRepairDriver
 
 	holes    []*barHole
 	checked  map[string]int64     // symbol|contract -> newest live 1m open time judged
 	lastFire map[string]time.Time // symbol -> last gap re-request this tracker SENT
 	saidErr  map[string]bool      // one WARN per store-read failure kind
+
+	// DATA-INTEGRITY GATE (m445, bar_integrity.go): the verdict every entry path
+	// asks. The tracker keeps what it needs to answer — all additive:
+	retired       []*barHole         // holes no re-request can reach (kept: a retirement is NOT a fill)
+	judgeErr      map[string]string  // symbol|contract -> the store-read failure that left a minute unjudged (cleared by the next good judgement)
+	coveredFrom   map[string]int64   // symbol|contract -> oldest minute any judgement read back to
+	integ         integrityMemo      // the window-start walk, memoised per wall minute
+	clearsMemo    map[[2]int64]int64 // (last missing open minute, window) -> instant it leaves the window; under t.mu
+	lastRemeasure time.Time          // the retired holes' last store re-read
+	// retiredEvicted — the retained list overflowed and its oldest entries were
+	// dropped: the verdict is UNKNOWN (blocked) from then on, until a restart.
+	retiredEvicted bool
 }
 
 // barHoles is the process tracker: the persister reports to it, the health
@@ -223,7 +318,10 @@ var barHolesServer atomic.Pointer[ntwire.TCPServer]
 
 func newBarHoleTracker(st holeStore, server func() *ntwire.TCPServer) *barHoleTracker {
 	n, src := barHoleMinGap()
+	days, daysSrc := barGapAuditDays()
+	every, everySrc := barGapAuditEvery()
 	return &barHoleTracker{
+		auditDays: days, auditDaysSrc: daysSrc, auditEvery: every, auditEverySrc: everySrc,
 		st: st,
 		wire: func() holeWire {
 			s := server()
@@ -232,14 +330,17 @@ func newBarHoleTracker(st holeStore, server func() *ntwire.TCPServer) *barHoleTr
 			}
 			return s
 		},
-		clock:     time.Now,
-		isOpen:    barHoleExpected,
-		say:       sayToLogger,
-		minGap:    n,
-		minGapSrc: src,
-		checked:   map[string]int64{},
-		lastFire:  map[string]time.Time{},
-		saidErr:   map[string]bool{},
+		clock:        time.Now,
+		receiptClock: time.Now,
+		isOpen:       barHoleExpected,
+		say:          sayToLogger,
+		minGap:       n,
+		minGapSrc:    src,
+		checked:      map[string]int64{},
+		lastFire:     map[string]time.Time{},
+		saidErr:      map[string]bool{},
+		judgeErr:     map[string]string{},
+		coveredFrom:  map[string]int64{},
 	}
 }
 
@@ -312,6 +413,7 @@ func (t *barHoleTracker) observeLive(symbol, tf, contract string, rows []store.B
 	} else {
 		prev, ok, err := t.st.PrevOpenTimeOn(symbol, barHoleTF, contract, oldest)
 		if err != nil {
+			t.noteJudgeErrLocked(key, err)
 			t.sayErrOnce("prev", fmt.Sprintf("🕳 bar-hole detector: store read failed for %s %s on %s (%v) — this minute is not judged; the next one is", symbol, barHoleTF, contract, err))
 			return
 		}
@@ -326,18 +428,40 @@ func (t *barHoleTracker) observeLive(symbol, tf, contract string, rows []store.B
 		}
 		bootScan, bootBound = true, bound
 	}
-	got, err := t.st.BarsBetweenOn(symbol, barHoleTF, contract, from, newest+1)
+	// m445: the BOOT SCAN's first read starts at the session open, with no bar
+	// before it to measure the first gap against — so a hole that STARTS at the
+	// open (the 17:00 reopen lag; 2026-10-26 17:00–21:57 CT) was invisible to a
+	// restart: the scan saw bars from 21:57 and no gap. Anchor it on the stored
+	// bar just before the scan's first minute (one bar back; `from` stays the
+	// scan's reach for the boot line and the coverage).
+	readFrom := from
+	if bootScan {
+		if p, ok, perr := t.st.PrevOpenTimeOn(symbol, barHoleTF, contract, from); perr != nil {
+			t.noteJudgeErrLocked(key, perr)
+			t.sayErrOnce("prev", fmt.Sprintf("🕳 bar-hole detector: store read failed for %s %s on %s (%v) — this minute is not judged; the next one is", symbol, barHoleTF, contract, perr))
+			return
+		} else if ok {
+			readFrom = p
+		}
+	}
+	got, err := t.st.BarsBetweenOn(symbol, barHoleTF, contract, readFrom, newest+1)
 	if err != nil {
+		t.noteJudgeErrLocked(key, err)
 		t.sayErrOnce("scan", fmt.Sprintf("🕳 bar-hole detector: store read failed for %s %s on %s (%v) — this minute is not judged; the next one is", symbol, barHoleTF, contract, err))
 		return
 	}
 	t.checked[key] = newest
+	t.noteJudgedLocked(key, from)
+	if bootScan {
+		got = trimPreRecording(got)
+	}
 	times := make([]int64, 0, len(got))
 	for _, r := range got {
 		times = append(times, r.OpenTimeMs)
 	}
 	now := t.clock()
 	spans := findBarHoles(times, t.minGap, t.isOpen)
+	noteSmallGaps(t.repair, symbol, contract, times, t.minGap, t.isOpen) // m467: below the threshold = a repair, never a hole
 	if bootScan {
 		t.say(bootScanLevel(spans), bootScanLine(symbol, contract, from, newest, bootBound, spans))
 	}
@@ -345,8 +469,9 @@ func (t *barHoleTracker) observeLive(symbol, tf, contract string, rows []store.B
 		if t.trackedLocked(symbol, contract, sp) {
 			continue
 		}
-		if len(t.holes) >= barHoleMaxOpen {
+		if t.atCapLocked() {
 			telemetry.IncBarsHoleOverflow()
+			t.retainLocked(symbol, contract, sp.FromMs, sp.ToMs, sp.OpenMissing, "untracked") // m445: not tracked is NOT filled — still a hole the gate must see
 			t.say("WARN", fmt.Sprintf("🕳 bars hole NOT tracked: %s %s %s on %s (%d open minute(s) missing) — %d holes already open, the cap; it will be seen again once one closes",
 				symbol, barHoleTF, holeWindowCT(sp.FromMs, sp.ToMs), contract, sp.OpenMissing, barHoleMaxOpen))
 			continue
@@ -354,8 +479,9 @@ func (t *barHoleTracker) observeLive(symbol, tf, contract string, rows []store.B
 		h := &barHole{
 			Symbol: symbol, Contract: contract, FromMs: sp.FromMs, ToMs: sp.ToMs,
 			MissingAtDetect: sp.OpenMissing, Missing: sp.OpenMissing,
-			DetectedAt: now, State: holeStateRefilling,
-			nextAttemptAt: now.Add(barHoleSchedule[0]),
+			DetectedAt: now, State: holeStateRefilling, Source: holeSourceLive,
+			nextAttemptAt:     now.Add(barHoleSchedule[0]),
+			disagreedAtDetect: t.disagreedNowLocked(symbol),
 		}
 		t.holes = append(t.holes, h)
 		telemetry.IncBarsHoleDetected()
@@ -364,12 +490,47 @@ func (t *barHoleTracker) observeLive(symbol, tf, contract string, rows []store.B
 	}
 }
 
+// trimPreRecording drops the LEADING rows of a boot-scan read that the bot did
+// not record: the history-import snapshots (store.BarSourceHistoricalImport)
+// that stand in the store before the contract's first recorded (live / replayed)
+// bar. A contract that has just rolled in is stored sparsely before the bot
+// subscribes to it — on the live store 12-26 holds one import row a day for
+// 09-07..09-10 and then dense data from 09-14 — and those stretches are not
+// minutes the bot lost: it was not on that contract yet, and the stitched
+// history takes them from the older contract. Read as holes they pause the
+// gate for the whole window after every roll (verified by replaying the real
+// 12-26 rows). Only LEADING import rows go; an import row after the first
+// recorded bar is data like any other, and a store with no recorded bar at all
+// is judged whole. (Review round 2, window + false pauses.)
+func trimPreRecording(rows []store.BarHistoryDB) []store.BarHistoryDB {
+	for i, r := range rows {
+		if r.Source != store.BarSourceHistoricalImport {
+			return rows[i:]
+		}
+	}
+	return rows
+}
+
 // bootScanFromLocked is the boot scan's first minute for a key whose newest
-// live minute is newestMs: the current CME session day's open (17:00 CT,
-// kernel.CMESessionDayStart), or — when it is shorter — the oldest minute a
-// bars_back replay reaches (bars_back READ off the wire; absent → the session
-// bound alone). Returns the bound and its name for the boot line.
+// live minute is newestMs. m445 (review round 1, D2): it reaches back as far as
+// the DEEPEST data window the data-integrity gate judges (IntegritySwingOpenMin
+// open minutes) — before, it stopped at the current CME session day's open, so a
+// restart after the session roll judged only that day and every older hole was
+// silently clear in the deep window (the 10-26 17:00–21:57 hole, booted at
+// 10-28 06:00: blocked=false). One BarsBetweenOn read of at most ~25k rows
+// (IntegritySwingOpenMin open minutes) per key, once per process. The shorter bounds (session open,
+// bars_back replay window) are kept for the line and never reached less far.
+// Returns the bound and its name for the boot line.
 func (t *barHoleTracker) bootScanFromLocked(newestMs int64) (int64, string) {
+	deep := t.windowFromLocked(IntegritySwingOpenMin, time.UnixMilli(newestMs))
+	shallow, bound := t.bootScanShallowLocked(newestMs)
+	if deep < shallow {
+		return deep, fmt.Sprintf("the deepest integrity window (%d open min back)", IntegritySwingOpenMin)
+	}
+	return shallow, bound
+}
+
+func (t *barHoleTracker) bootScanShallowLocked(newestMs int64) (int64, string) {
 	const minute = int64(60_000)
 	start := kernel.CMESessionDayStart(time.UnixMilli(newestMs)).UnixMilli()
 	bb := 0
@@ -389,6 +550,30 @@ func (t *barHoleTracker) bootScanFromLocked(newestMs int64) (int64, string) {
 		}
 	}
 	return start, fmt.Sprintf("the session open (inside the bars_back %d replay window)", bb)
+}
+
+// rthMissing counts the OPEN minutes in [fromMs, toMs) that lie inside the
+// regular trading hours the key-level walk reads: 08:30 <= CT time of day < 15:00.
+func (t *barHoleTracker) rthMissing(fromMs, toMs int64) int {
+	const minute = int64(60_000)
+	n := 0
+	for m := fromMs; m < toMs; m += minute {
+		if isRTHMinute(time.UnixMilli(m)) && t.isOpen(time.UnixMilli(m)) {
+			n++
+		}
+	}
+	return n
+}
+
+// isRTHMinute — the 1m bar opening at m belongs to a 1H RTH key-level candle
+// (kernel/mentor keyLevel1HBars: anchored 08:30 CT, ends 15:00 CT).
+func isRTHMinute(m time.Time) bool {
+	in := m.In(kernel.CTLocation())
+	if wd := in.Weekday(); wd == time.Saturday || wd == time.Sunday {
+		return false
+	}
+	tod := in.Hour()*60 + in.Minute()
+	return tod >= 8*60+30 && tod < 15*60
 }
 
 func bootScanLevel(spans []barHoleSpan) string {
@@ -427,6 +612,67 @@ func (t *barHoleTracker) sayErrOnce(kind, msg string) {
 	}
 	t.saidErr[kind] = true
 	t.say("WARN", msg)
+}
+
+// atCapLocked reports whether a NEW hole cannot be tracked: barHoleMaxOpen
+// holes being worked on, or the retired list full. A RETIRED hole is listed but
+// not worked on, so it does not take one of the working slots.
+func (t *barHoleTracker) atCapLocked() bool {
+	retired := 0
+	for _, h := range t.holes {
+		if h.State == holeStateRetired {
+			retired++
+		}
+	}
+	return len(t.holes)-retired >= barHoleMaxOpen || retired >= barHoleMaxRetired
+}
+
+// retireLocked marks a hole beyond every reach RETIRED: listed, never asked
+// again. With the audit OFF nothing would ever close or age it out, so it is
+// dropped as before m444 (a retired hole kept forever would also eat the
+// tracker's slots).
+func (t *barHoleTracker) retireLocked(h *barHole) {
+	h.nextAttemptAt, h.measureAt = time.Time{}, time.Time{}
+	if t.auditDays <= 0 {
+		t.retainRetiredLocked(h) // m445: dropped from the tracker is NOT filled — the data-integrity gate keeps it until it ages out of the window or is measured filled
+		t.removeLocked(h)
+		return
+	}
+	h.State = holeStateRetired
+}
+
+// placeBeyondReplayLocked decides what a hole older than the standard replay
+// becomes: DEEP (the wire can ask for it and it is within
+// DeepGapBackfillMaxBarsBack — the hole continues on its schedule) or RETIRED
+// (listed, never asked). Returns true when it was retired.
+func (t *barHoleTracker) placeBeyondReplayLocked(h *barHole, w holeWire, bb, open int, now time.Time) (retired bool) {
+	if _, ok := w.(deepHoleWire); ok {
+		if need := t.openMinutesSince(h.FromMs, now, ntwire.DeepGapBackfillMaxBarsBack) + barHoleDeepMargin; need <= ntwire.DeepGapBackfillMaxBarsBack {
+			h.deep, h.deepBarsBack = true, need
+			t.say("WARN", fmt.Sprintf("🕳 bars hole needs a DEEP re-request: %s %s %s on %s — older than NT8's standard replay (the last %d 1m bars; %d open minute(s) have passed since %s), so its re-requests ask NT8 for the last %d 1m bars instead (%d scheduled, then %d slow; %d open minute(s) missing)",
+				h.Symbol, barHoleTF, holeWindowCT(h.FromMs, h.ToMs), h.Contract, bb, open-1, kernel.TableTimeCT(time.UnixMilli(h.FromMs)), need, barHoleDeepScheduled, barHoleDeepSlowCap, h.Missing))
+			return false
+		}
+	}
+	telemetry.IncBarsHoleRefused()
+	t.say("WARN", fmt.Sprintf("🕳 bars hole RETIRED: %s %s %s on %s — older than the bot can ask NT8 for: the standard re-request replays the last %d 1m bars, a deep one at most %d, and more than %d open minute(s) have passed since %s, so this hole stays (%d open minute(s) missing; %d re-request(s) made). Nothing more is asked for it; it stays LISTED in /api/health bars_holes and on the dashboard until the store holds the bars or it leaves the audit window.",
+		h.Symbol, barHoleTF, holeWindowCT(h.FromMs, h.ToMs), h.Contract, bb, ntwire.DeepGapBackfillMaxBarsBack, open-1, kernel.TableTimeCT(time.UnixMilli(h.FromMs)), h.Missing, h.Attempts))
+	t.retireLocked(h)
+	return true
+}
+
+// openMinutesSince counts the 1m open minutes in [fromMs, now), stopping once it
+// passes limit (the caller only needs to know "more than limit").
+func (t *barHoleTracker) openMinutesSince(fromMs int64, now time.Time, limit int) int {
+	const minute = int64(60_000)
+	end := now.UnixMilli() / minute * minute
+	n := 0
+	for m := fromMs; m < end && n <= limit; m += minute {
+		if t.isOpen(time.UnixMilli(m)) {
+			n++
+		}
+	}
+	return n
 }
 
 // trackedLocked reports whether an open hole already covers any of sp.
@@ -519,6 +765,17 @@ func (t *barHoleTracker) beyondReplayLocked(h *barHole, barsBack int, now time.T
 	return h.reachOpen > barsBack, h.reachOpen
 }
 
+// disagreedNowLocked is the cache's disagreeing-replay count for ONE symbol right
+// now (0 with no wire / no cache) — the per-hole baseline. Per SYMBOL, not the
+// cache-wide total: another symbol's scale story is not this hole's (m438).
+func (t *barHoleTracker) disagreedNowLocked(symbol string) int64 {
+	w := t.wire()
+	if w == nil || w.BarCache() == nil {
+		return 0
+	}
+	return w.BarCache().OverlapDisagreedFor(symbol)
+}
+
 // overlapNoteLocked READS the ring's same-minute replay verdicts for the
 // unfilled line: a replay that DISAGREED with the live minutes it overlapped
 // was kept out of the store by the replay-hold, so the window can be empty for
@@ -537,8 +794,19 @@ func (t *barHoleTracker) overlapNoteLocked() string {
 	return note
 }
 
-// gateLocked names why a re-request may not go out NOW ("" = it may).
-func (t *barHoleTracker) gateLocked(w holeWire, now time.Time) string {
+// reRequestGateWire is the slice of the wire the re-request admission reads.
+type reRequestGateWire interface {
+	IsConnected() bool
+	IsFeedConnected() bool
+}
+
+// reRequestGateReason names why a gap re-request may not go out NOW ("" = it
+// may): no wire, link down, feed down, or CME closed. It is THE gate every
+// automatic re-request shares - the m444 tracker (gateLocked) and the m449
+// ingest_loss hook (datatruth_rerequest.go) - so the two cannot drift. The
+// other half of the shared admission is barHoleInSendWindow (send timing); the
+// per-symbol spacing and the per-day budget live in the wire itself.
+func reRequestGateReason(w reRequestGateWire, isOpen func(time.Time) bool, now time.Time) string {
 	switch {
 	case w == nil:
 		return "no NT8 wire"
@@ -546,10 +814,18 @@ func (t *barHoleTracker) gateLocked(w holeWire, now time.Time) string {
 		return "NT8 link down"
 	case !w.IsFeedConnected():
 		return "NT8 feed down (a BarsRequest now returns bars=0)"
-	case !t.isOpen(now):
+	case isOpen == nil || !isOpen(now):
 		return "CME closed"
 	}
 	return ""
+}
+
+// gateLocked names why a re-request may not go out NOW ("" = it may).
+func (t *barHoleTracker) gateLocked(w holeWire, now time.Time) string {
+	if w == nil {
+		return reRequestGateReason(nil, t.isOpen, now)
+	}
+	return reRequestGateReason(w, t.isOpen, now)
 }
 
 // tick runs the schedule at `now` (A28: the caller's clock). Production calls
@@ -560,6 +836,7 @@ func (t *barHoleTracker) tick(now time.Time) {
 	if t == nil {
 		return
 	}
+	t.remeasureRetired(now) // m445: a retired / untracked hole that NT8 has since filled lets the gate resume
 	w, due := t.collectDue(now)
 	if len(due) == 0 {
 		return
@@ -570,8 +847,19 @@ func (t *barHoleTracker) tick(now time.Time) {
 	}
 	sort.Strings(syms)
 	sent := make(map[string]error, len(syms))
+	deepBack := map[string]int{} // symbol -> bars_back of the DEEP ask (absent = the standard one)
 	for _, sym := range syms {
-		sent[sym] = w.RequestGapBackfillAt(sym, now)
+		for _, h := range due[sym] {
+			if h.deep && h.deepBarsBack > deepBack[sym] {
+				deepBack[sym] = h.deepBarsBack
+			}
+		}
+		// one send per symbol: a deep ask covers the standard window too
+		if dw, ok := w.(deepHoleWire); ok && deepBack[sym] > 0 {
+			sent[sym] = dw.RequestDeepGapBackfillAt(sym, deepBack[sym], now)
+		} else {
+			sent[sym] = w.RequestGapBackfillAt(sym, now)
+		}
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -598,12 +886,12 @@ func (t *barHoleTracker) tick(now time.Time) {
 			case h.State == holeStateUnfilled:
 				h.slowCount++
 				h.nextAttemptAt = now.Add(barHoleSlowEvery)
-				if h.slowCount >= barHoleSlowCapTotal {
+				if h.slowCount >= h.slowCap() {
 					// the cap, in TOTAL: nothing further is scheduled — the
 					// measure after this one says so once (collectDue, step 1)
 					h.nextAttemptAt = time.Time{}
 				}
-			case h.Attempts < len(barHoleSchedule):
+			case h.Attempts < h.schedLen():
 				// the slot, or — after an outage held this attempt back — the
 				// schedule's own spacing from now, so a late start never
 				// crowds four asks into the minutes after the feed returns
@@ -612,8 +900,12 @@ func (t *barHoleTracker) tick(now time.Time) {
 			default:
 				h.nextAttemptAt = time.Time{} // the measure after this one decides
 			}
-			t.say("INFO", fmt.Sprintf("🧯 bars hole re-request #%d SENT for %s %s %s on %s (%d open minute(s) missing) — bars_subscribe resent, the AddOn rebuilds its BarsRequests and NT8 replays its window; re-measured from the store at %s",
-				h.Attempts, sym, barHoleTF, holeWindowCT(h.FromMs, h.ToMs), h.Contract, h.Missing, kernel.ClockCTSeconds(h.measureAt)))
+			how := "bars_subscribe resent, the AddOn rebuilds its BarsRequests and NT8 replays its window"
+			if h.deep {
+				how = fmt.Sprintf("DEEP bars_subscribe for 1m only, bars_back %d (older than the standard replay), the AddOn rebuilds the 1m BarsRequest", deepBack[sym])
+			}
+			t.say("INFO", fmt.Sprintf("🧯 bars hole re-request #%d SENT for %s %s %s on %s (%d open minute(s) missing) — %s; re-measured from the store at %s",
+				h.Attempts, sym, barHoleTF, holeWindowCT(h.FromMs, h.ToMs), h.Contract, h.Missing, how, kernel.ClockCTSeconds(h.measureAt)))
 		}
 	}
 }
@@ -636,14 +928,16 @@ func (t *barHoleTracker) collectDue(now time.Time) (holeWire, map[string][]*barH
 				t.removeLocked(h)
 				continue
 			}
-			// 0b. a hole whose first minute is outside NT8's replay window
-			//     cannot be refilled by a re-request, ever (#23 review P2-3)
-			if bb := w.BarsBackAsked(); bb > 0 {
-				if beyond, open := t.beyondReplayLocked(h, bb, now); beyond {
-					telemetry.IncBarsHoleRefused()
-					t.say("WARN", fmt.Sprintf("🕳 bars hole RETIRED: %s %s %s on %s — outside NT8's replay window: a re-request replays the last %d 1m bars and more than %d open minute(s) have passed since %s, so this hole stays (%d open minute(s) missing; %d re-request(s) made). Nothing more is asked for it.",
-						h.Symbol, barHoleTF, holeWindowCT(h.FromMs, h.ToMs), h.Contract, bb, open-1, kernel.TableTimeCT(time.UnixMilli(h.FromMs)), h.Missing, h.Attempts))
-					t.removeLocked(h)
+			// 0b. a hole whose first minute is outside NT8's standard replay window
+			//     cannot be refilled by the standard re-request (#23 review P2-3).
+			//     m444 review round 2: it is not given up on — a DEEP 1m re-request
+			//     reaches DeepGapBackfillMaxBarsBack bars back. Only a hole beyond
+			//     THAT (or on a wire with no deep path) is retired.
+			if h.State == holeStateRetired {
+				continue // beyond every reach: listed, never scheduled again (m444)
+			}
+			if bb := w.BarsBackAsked(); bb > 0 && !h.deep {
+				if beyond, open := t.beyondReplayLocked(h, bb, now); beyond && t.placeBeyondReplayLocked(h, w, bb, open, now) {
 					continue
 				}
 			}
@@ -660,19 +954,22 @@ func (t *barHoleTracker) collectDue(now time.Time) (holeWire, map[string][]*barH
 				continue
 			}
 			h.Missing = missing
-			if h.State == holeStateRefilling && h.Attempts >= len(barHoleSchedule) {
+			if h.State == holeStateRefilling && h.Attempts >= h.schedLen() {
 				t.declareUnfilledLocked(h, now)
 			}
 			// the slow cap is IN TOTAL (#23 review P2-3) — checked here, before
-			// any later store read: a spent hole is never measured again (its
-			// nextAttemptAt is zero) and stays listed until it leaves the
-			// replay window (step 0b) or the process ends.
-			if h.State == holeStateUnfilled && h.slowCount >= barHoleSlowCapTotal && !h.saidSlowCap {
+			// any later store read: a spent hole is never RE-REQUESTED again
+			// (its nextAttemptAt is zero) and stays listed until it leaves the
+			// replay window (step 0b) or the process ends. m445: the data-
+			// integrity gate still RE-MEASURES it from the store, at most once a
+			// minute and with no wire send (remeasureRetired), so a history
+			// reload that refills it lifts the pause.
+			if h.State == holeStateUnfilled && h.slowCount >= h.slowCap() && !h.saidSlowCap {
 				h.saidSlowCap = true
 				h.nextAttemptAt = time.Time{}
 				telemetry.IncBarsHoleRefused()
-				t.say("WARN", fmt.Sprintf("🕳 bars hole slow retries spent: %s %s %s on %s still has %d open minute(s) missing after %d re-requests (cap %d slow re-requests per hole, in total) — nothing more is asked; an NT8 history reload plus a bot restart (which re-subscribes) is the fix while it is inside NT8's replay window",
-					h.Symbol, barHoleTF, holeWindowCT(h.FromMs, h.ToMs), h.Contract, h.Missing, h.Attempts, barHoleSlowCapTotal))
+				t.say("WARN", fmt.Sprintf("🕳 bars hole slow retries spent: %s %s %s on %s still has %d open minute(s) missing after %d re-requests (cap %d slow re-requests per hole, in total) — nothing more is asked; %s",
+					h.Symbol, barHoleTF, holeWindowCT(h.FromMs, h.ToMs), h.Contract, h.Missing, h.Attempts, h.slowCap(), h.spentFix()))
 			}
 		}
 		if h.nextAttemptAt.IsZero() || now.Before(h.nextAttemptAt) || !h.measureAt.IsZero() {
@@ -698,6 +995,19 @@ func (t *barHoleTracker) collectDue(now time.Time) (holeWire, map[string][]*barH
 		// 4. one send per symbol per minute (holes on one symbol share it)
 		if last, ok := t.lastFire[h.Symbol]; ok && now.Sub(last) < barHoleSpacing {
 			continue
+		}
+		// 4b. a DEEP ask is sized to the hole NOW (the minutes keep passing); a
+		//     hole that has slid beyond the deepest reach is retired
+		if h.deep {
+			need := t.openMinutesSince(h.FromMs, now, ntwire.DeepGapBackfillMaxBarsBack) + barHoleDeepMargin
+			if need > ntwire.DeepGapBackfillMaxBarsBack {
+				telemetry.IncBarsHoleRefused()
+				t.say("WARN", fmt.Sprintf("🕳 bars hole RETIRED: %s %s %s on %s — it has slid beyond the deepest re-request (%d 1m bars) after %d re-request(s); %d open minute(s) stay missing. Nothing more is asked for it; it stays LISTED until the store holds the bars or it leaves the audit window.",
+					h.Symbol, barHoleTF, holeWindowCT(h.FromMs, h.ToMs), h.Contract, ntwire.DeepGapBackfillMaxBarsBack, h.Attempts, h.Missing))
+				t.retireLocked(h)
+				continue
+			}
+			h.deepBarsBack = need
 		}
 		// 5. measure before asking — another replay may have carried it (the
 		//    store read comes AFTER every cheap check: #23 review P3-5)
@@ -738,7 +1048,9 @@ type BarHoleView struct {
 	To            string  `json:"to"`   // the bar that closed it (exclusive), RFC3339 CT
 	MissingMin    int     `json:"missing_min"`
 	Attempts      int     `json:"attempts"`
-	State         string  `json:"state"` // refilling | unfilled
+	State         string  `json:"state"`  // refilling | unfilled | retired (m444: beyond NT8's replay window — listed, never re-asked)
+	Source        string  `json:"source"` // live | audit (m444: found by the persistent gap audit)
+	Window        string  `json:"window"` // "10-26 17:00–21:57 CT" (holeWindowCT) — the dashboard banner's text
 	DetectedAt    string  `json:"detected_at"`
 	NextAttemptAt *string `json:"next_attempt_at,omitempty"` // absent = waiting on the measure of the last attempt, or the slow retries are spent
 }
@@ -754,6 +1066,7 @@ func (t *barHoleTracker) snapshot() []BarHoleView {
 			From:       time.UnixMilli(h.FromMs).In(loc).Format(time.RFC3339),
 			To:         time.UnixMilli(h.ToMs).In(loc).Format(time.RFC3339),
 			MissingMin: h.Missing, Attempts: h.Attempts, State: h.State,
+			Source: h.Source, Window: holeWindowCT(h.FromMs, h.ToMs),
 			DetectedAt: h.DetectedAt.In(loc).Format(time.RFC3339),
 		}
 		if !h.nextAttemptAt.IsZero() {
@@ -781,4 +1094,130 @@ func BarHolesSnapshot() ([]BarHoleView, bool) {
 func SetBarHolesWiredForTest() (restore func()) {
 	prev := barHoles.Swap(newBarHoleTracker(nil, func() *ntwire.TCPServer { return nil }))
 	return func() { barHoles.Store(prev) }
+}
+
+// TestHole is one unfilled hole for SetBarHolesWithHolesForTest ([FromMs, ToMs)).
+type TestHole struct {
+	Symbol, Contract string
+	FromMs, ToMs     int64
+}
+
+// SetBarHolesWithHolesForTest installs a tracker that has judged every symbol
+// named in `holes` over [judgedFromMs, judgedToMs] and holds those holes as
+// retired ones (nothing re-requests them), so a HANDLER test can see a scoped
+// pause without a live wire. TEST-ONLY.
+func SetBarHolesWithHolesForTest(judgedFromMs, judgedToMs int64, holes []TestHole) (restore func()) {
+	t := newBarHoleTracker(nil, func() *ntwire.TCPServer { return nil })
+	for _, h := range holes {
+		k := holeKey(h.Symbol, h.Contract)
+		t.checked[k] = judgedToMs
+		t.coveredFrom[k] = judgedFromMs
+		if h.ToMs <= h.FromMs {
+			continue // judged only: the symbol is known to the detector, no hole
+		}
+		n := int((h.ToMs - h.FromMs) / 60_000)
+		t.retired = append(t.retired, &barHole{Symbol: h.Symbol, Contract: h.Contract, FromMs: h.FromMs, ToMs: h.ToMs,
+			MissingAtDetect: n, Missing: n, State: "retired"})
+	}
+	prev := barHoles.Swap(t)
+	return func() { barHoles.Store(prev) }
+}
+
+// ── UNFILLABLE HOLE -> the owner (release #52, m432) ────────────────────────
+//
+// 2026-10-26: NT8 was linked and its Tradovate data connection came back at
+// 03:40 CT, but the 640-minute hole (Sun 17:00 -> Mon 03:40) never refilled:
+// NT8 itself had no history for that span. The tracker declared it UNFILLED
+// after the fourth re-request and said so — in the LOG. The only fix is the
+// owner's, in NinjaTrader (an MNQ 1-minute chart -> right-click -> Reload All
+// Historical Data), and nothing told him. UnfilledHolesFeeding is the pull
+// side: the trader's 60 s monitor beat reads it and raises ONE P1 alert (+ owner
+// push) per hole. The tracker keeps re-requesting on its own schedule — but only
+// barHoleSlowCapTotal slow re-requests IN TOTAL (about 2 hours after the hole is
+// declared unfilled), so a reload heals the hole by itself only inside that span;
+// after it, a reload needs a bot restart. SlowSpent tells the trader side which
+// side of that line it is on (m438: the owner message used to promise a pick-up
+// that no longer happened).
+
+// liveBarFreshness — how recent the newest accepted LIVE 1m frame must be for
+// the feed to count as "feeding live bars" (two bar intervals plus the usual
+// delivery grace: a feed that is alive delivers a forming-bar update every few
+// seconds; a minute-old one has stalled).
+const liveBarFreshness = 3 * time.Minute
+
+// UnfilledHole is one hole that stayed empty after the re-request budget while
+// the data provider is demonstrably up. Every field is READ.
+type UnfilledHole struct {
+	Symbol, Contract string
+	FromMs, ToMs     int64
+	Missing          int    // open minutes still missing at the last measure
+	Attempts         int    // re-requests made
+	Window           string // "10-25 17:00–10-26 03:40 CT" (holeWindowCT)
+	ReplayDisagreed  int    // disagreeing-replay verdicts SINCE THIS HOLE WAS DETECTED (m438: per hole, not the process lifetime): >0 = a scale story, not a missing-history one
+	// SlowSpent — the slow re-requests are used up (barHoleSlowCapTotal) and the
+	// hole is still open: the tracker asks NT8 for nothing more, so a history
+	// reload is only picked up after a bot restart. ReaskEvery / ReaskHorizon are
+	// the slow cadence and the span it covers after the hole is declared unfilled
+	// (READ off the constants, so the owner message cannot drift from them).
+	SlowSpent bool
+	// OutsideReplay (m444) — the hole is RETIRED: its first missing minute is
+	// beyond NT8's replay window, so the bot cannot re-ask for it at all and a
+	// bot restart does not help. Audit-found old holes arrive in this state.
+	OutsideReplay bool
+	// Deep (m444 review round 2) — the hole is older than the standard replay,
+	// so the bot's re-requests were DEEP ones (1m only, up to
+	// DeepGapBackfillMaxBarsBack bars). A bot restart does NOT reach such a hole:
+	// the owner's lever after a reload is the deep ask, not a restart.
+	Deep         bool
+	ReaskEvery   time.Duration
+	ReaskHorizon time.Duration
+}
+
+// UnfilledHolesFeeding returns the tracked holes on `symbol` that are
+// UNFILLED (budget spent) while NT8 is linked AND feeding live bars. Nil when
+// the tracker is not wired.
+func UnfilledHolesFeeding(symbol string, now time.Time) []UnfilledHole {
+	return barHoles.Load().unfilledFeeding(symbol, now)
+}
+
+func (t *barHoleTracker) unfilledFeeding(symbol string, now time.Time) []UnfilledHole {
+	if t == nil {
+		return nil
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	w := t.wire()
+	if w == nil || !w.IsConnected() || !w.IsFeedConnected() || !t.isOpen(now) {
+		return nil
+	}
+	cache := w.BarCache()
+	if cache == nil {
+		return nil
+	}
+	recv, ok := cache.LastLiveReceipt(symbol, barHoleTF)
+	rc := t.receiptClock
+	if rc == nil {
+		rc = time.Now
+	}
+	if !ok || rc().Sub(recv) > liveBarFreshness {
+		return nil // NT8 is not delivering live bars: that is FEED DOWN's story, not a missing-history one
+	}
+	var out []UnfilledHole
+	for _, h := range t.holes {
+		if (h.State != holeStateUnfilled && h.State != holeStateRetired) || !strings.EqualFold(h.Symbol, symbol) {
+			continue
+		}
+		out = append(out, UnfilledHole{
+			Symbol: h.Symbol, Contract: h.Contract, FromMs: h.FromMs, ToMs: h.ToMs,
+			Missing: h.Missing, Attempts: h.Attempts,
+			Window:          holeWindowCT(h.FromMs, h.ToMs),
+			ReplayDisagreed: int(max(cache.OverlapDisagreedFor(h.Symbol)-h.disagreedAtDetect, 0)),
+			SlowSpent:       h.saidSlowCap,
+			OutsideReplay:   h.State == holeStateRetired,
+			Deep:            h.deep,
+			ReaskEvery:      barHoleSlowEvery,
+			ReaskHorizon:    barHoleSlowEvery * time.Duration(h.slowCap()),
+		})
+	}
+	return out
 }

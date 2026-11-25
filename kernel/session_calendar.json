@@ -25,7 +25,8 @@
     "FOLD 2026-09-07 (owner ruling): half_days.json was a SECOND dated calendar with its own key convention and, on three dates, different times. It is folded in here verbatim WITH its archived CME citations, and deleted. One fact, one owner: the gate, the session registry and the EOD flat now read this file. Where the two disagreed, half_days.json's SOURCED close times win (12:15, not the 12:00 convention guess). Rows whose only basis was 'the equity-index convention' are demoted to closed and flagged unestablished — a guessed trading day is worse than a missed one."
   ],
   "covered_years": [
-    2026
+    2026,
+    2027
   ],
   "dates": [
     {
@@ -120,6 +121,90 @@
       "class": "normal",
       "name": "New Year's Eve",
       "source": "CME Group holiday calendar (archived): NORMAL equity session — only rates settle early, so this is NOT a half-day — https://www.cmegroup.com/tools-information/holiday-calendar/files/2026/new-years-eve-holiday-settlement-times-2027.pdf. Listed explicitly as NORMAL rather than omitted: the superseded boolean closed this date, and an absent row would leave a reader unable to tell a researched normal day from an unconsidered one. This CORRECTS an earlier unestablished-CLOSED default in this file: the date IS established, by the citation above."
+    },
+    {
+      "date": "2027-01-01",
+      "class": "closed",
+      "name": "New Year's Day",
+      "source": "2027 CME holiday block. Dates and weekdays computed from the 2026 CME Globex schedule (https://www.cmegroup.com/trading-hours.html). Each class is ERRING CLOSED until the published 2027 holiday PDFs are checked — a guessed trading day is worse than a missed one (owner rule). RESOLVE before 2027-01-01: verify each row against CME Group's 2027 holiday calendar and set closed/shortened + close_ct.",
+      "unestablished": true
+    },
+    {
+      "date": "2027-01-18",
+      "class": "closed",
+      "name": "MLK Day",
+      "source": "2027 CME holiday block. Dates and weekdays computed from the 2026 CME Globex schedule (https://www.cmegroup.com/trading-hours.html). Each class is ERRING CLOSED until the published 2027 holiday PDFs are checked — a guessed trading day is worse than a missed one (owner rule). RESOLVE before 2027-01-01: verify each row against CME Group's 2027 holiday calendar and set closed/shortened + close_ct.",
+      "unestablished": true
+    },
+    {
+      "date": "2027-02-15",
+      "class": "closed",
+      "name": "Presidents Day",
+      "source": "2027 CME holiday block. Dates and weekdays computed from the 2026 CME Globex schedule (https://www.cmegroup.com/trading-hours.html). Each class is ERRING CLOSED until the published 2027 holiday PDFs are checked — a guessed trading day is worse than a missed one (owner rule). RESOLVE before 2027-01-01: verify each row against CME Group's 2027 holiday calendar and set closed/shortened + close_ct.",
+      "unestablished": true
+    },
+    {
+      "date": "2027-03-26",
+      "class": "closed",
+      "name": "Good Friday",
+      "source": "2027 CME holiday block. Dates and weekdays computed from the 2026 CME Globex schedule (https://www.cmegroup.com/trading-hours.html). Each class is ERRING CLOSED until the published 2027 holiday PDFs are checked — a guessed trading day is worse than a missed one (owner rule). RESOLVE before 2027-01-01: verify each row against CME Group's 2027 holiday calendar and set closed/shortened + close_ct.",
+      "unestablished": true
+    },
+    {
+      "date": "2027-05-31",
+      "class": "closed",
+      "name": "Memorial Day",
+      "source": "2027 CME holiday block. Dates and weekdays computed from the 2026 CME Globex schedule (https://www.cmegroup.com/trading-hours.html). Each class is ERRING CLOSED until the published 2027 holiday PDFs are checked — a guessed trading day is worse than a missed one (owner rule). RESOLVE before 2027-01-01: verify each row against CME Group's 2027 holiday calendar and set closed/shortened + close_ct.",
+      "unestablished": true
+    },
+    {
+      "date": "2027-06-18",
+      "class": "closed",
+      "name": "Juneteenth (observed)",
+      "source": "2027 CME holiday block. Dates and weekdays computed from the 2026 CME Globex schedule (https://www.cmegroup.com/trading-hours.html). Each class is ERRING CLOSED until the published 2027 holiday PDFs are checked — a guessed trading day is worse than a missed one (owner rule). RESOLVE before 2027-01-01: verify each row against CME Group's 2027 holiday calendar and set closed/shortened + close_ct.",
+      "unestablished": true
+    },
+    {
+      "date": "2027-07-05",
+      "class": "closed",
+      "name": "Independence Day (observed)",
+      "source": "2027 CME holiday block. Dates and weekdays computed from the 2026 CME Globex schedule (https://www.cmegroup.com/trading-hours.html). Each class is ERRING CLOSED until the published 2027 holiday PDFs are checked — a guessed trading day is worse than a missed one (owner rule). RESOLVE before 2027-01-01: verify each row against CME Group's 2027 holiday calendar and set closed/shortened + close_ct.",
+      "unestablished": true
+    },
+    {
+      "date": "2027-09-06",
+      "class": "closed",
+      "name": "Labor Day",
+      "source": "2027 CME holiday block. Dates and weekdays computed from the 2026 CME Globex schedule (https://www.cmegroup.com/trading-hours.html). Each class is ERRING CLOSED until the published 2027 holiday PDFs are checked — a guessed trading day is worse than a missed one (owner rule). RESOLVE before 2027-01-01: verify each row against CME Group's 2027 holiday calendar and set closed/shortened + close_ct.",
+      "unestablished": true
+    },
+    {
+      "date": "2027-11-25",
+      "class": "closed",
+      "name": "Thanksgiving Day",
+      "source": "2027 CME holiday block. Dates and weekdays computed from the 2026 CME Globex schedule (https://www.cmegroup.com/trading-hours.html). Each class is ERRING CLOSED until the published 2027 holiday PDFs are checked — a guessed trading day is worse than a missed one (owner rule). RESOLVE before 2027-01-01: verify each row against CME Group's 2027 holiday calendar and set closed/shortened + close_ct.",
+      "unestablished": true
+    },
+    {
+      "date": "2027-11-26",
+      "class": "closed",
+      "name": "Day after Thanksgiving",
+      "source": "2027 CME holiday block. Dates and weekdays computed from the 2026 CME Globex schedule (https://www.cmegroup.com/trading-hours.html). Each class is ERRING CLOSED until the published 2027 holiday PDFs are checked — a guessed trading day is worse than a missed one (owner rule). RESOLVE before 2027-01-01: verify each row against CME Group's 2027 holiday calendar and set closed/shortened + close_ct.",
+      "unestablished": true
+    },
+    {
+      "date": "2027-12-24",
+      "class": "closed",
+      "name": "Christmas Eve",
+      "source": "2027 CME holiday block. Dates and weekdays computed from the 2026 CME Globex schedule (https://www.cmegroup.com/trading-hours.html). Each class is ERRING CLOSED until the published 2027 holiday PDFs are checked — a guessed trading day is worse than a missed one (owner rule). RESOLVE before 2027-01-01: verify each row against CME Group's 2027 holiday calendar and set closed/shortened + close_ct.",
+      "unestablished": true
+    },
+    {
+      "date": "2027-12-25",
+      "class": "closed",
+      "name": "Christmas Day",
+      "source": "2027 CME holiday block. Dates and weekdays computed from the 2026 CME Globex schedule (https://www.cmegroup.com/trading-hours.html). Each class is ERRING CLOSED until the published 2027 holiday PDFs are checked — a guessed trading day is worse than a missed one (owner rule). RESOLVE before 2027-01-01: verify each row against CME Group's 2027 holiday calendar and set closed/shortened + close_ct.",
+      "unestablished": true
     }
   ]
 }

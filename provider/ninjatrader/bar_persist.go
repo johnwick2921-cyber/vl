@@ -43,7 +43,8 @@ var (
 	persistOnce          sync.Once
 	persistDropped       atomic.Int64 // queue-full drops (self-healing via cache tail)
 	persistDroppedCloses atomic.Int64 // CLOSED bars lost on queue-full drops (must stay 0)
-	persistFlushed       atomic.Int64 // closed bars handed to the persister
+	persistFlushed       atomic.Int64 // closed bars handed to the persister (NOT counted when the persister panicked)
+	persistFlushPanics   atomic.Int64 // m424: persister panics the worker survived (must stay 0)
 	persistLastSum       atomic.Int64 // unix seconds of the last drop summary
 	// Reported-baselines: the counter values as of the last PUBLISHED summary.
 	// The interval is measured against these, so the summary never has to zero
@@ -54,10 +55,32 @@ var (
 	persistLastFrameAt           atomic.Int64 // unix seconds of the last LIVE bar frame (W1 quiet-wire awareness)
 	persistAlarmAt               atomic.Int64 // unix seconds of the last watchdog ERROR (dedup)
 	ingestDropOld                atomic.Int64 // ingest channel drop-oldest events
+	ingestFinalKept              atomic.Int64 // m416: final-carrying frames spared by an eviction
+	ingestFinalDropped           atomic.Int64 // m416: final-carrying frames lost (queue held only finals)
 	ingestDropCur                atomic.Int64 // ingest channel drop-current events
 	ingestDropHist               atomic.Int64 // historical batch drops
 	ingestLastSum                atomic.Int64
+
+	// m448 (nightly data report): the ingest counters above are SWAPPED to zero
+	// once a minute by ingestDropSummary, so none of them can answer "how many
+	// final frames were lost today". These are the cumulative twins: each
+	// summary folds what it swapped out into them, and IngestDropTotals adds
+	// the not-yet-swapped remainder, all under ingestTotMu so a reader never
+	// sees a value that is between the Swap and the fold. Counters record,
+	// never infer (class 35): nothing here is zeroed, ever.
+	ingestTotMu          sync.Mutex
+	ingestFinalDropTotal int64
+	ingestHistDropTotal  int64
 )
+
+// IngestDropTotals returns the since-boot totals of ingest frames lost that
+// carried a FINAL bar (the unavoidable loss, must stay 0) and of historical
+// batches dropped. Exact: summarised drops plus the live remainder.
+func IngestDropTotals() (finalDropped, historicalDropped int64) {
+	ingestTotMu.Lock()
+	defer ingestTotMu.Unlock()
+	return ingestFinalDropTotal + ingestFinalDropped.Load(), ingestHistDropTotal + ingestDropHist.Load()
+}
 
 type persistMsg struct {
 	historical bool
@@ -74,6 +97,29 @@ func SetBarPersister(fn func(historical bool, symbol, tf string, bars []Bar)) {
 	}
 	barPersister.Store(fn)
 }
+
+// runPersister invokes the persister for one queued message and reports whether
+// it returned normally. m424 (P3): the old flush wore a bare recover() — a
+// panicking persister was swallowed with no line, no counter, and the bars it
+// was handed were still added to persistFlushed, so the books said "flushed"
+// for rows that never reached the store. A panic is now WARNed with its value,
+// counted, and not credited as flushed. The worker still survives it.
+func runPersister(fn func(bool, string, string, []Bar), m persistMsg) (ok bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			n := persistFlushPanics.Add(1)
+			logger.Warnf("bars: persister PANICKED on %s %s (%d bar(s), historical=%v): %v — worker kept alive, bars NOT counted as flushed, panics since boot=%d (m424)",
+				m.symbol, m.tf, len(m.bars), m.historical, r, n)
+			ok = false
+		}
+	}()
+	fn(m.historical, m.symbol, m.tf, m.bars)
+	return true
+}
+
+// PersistFlushPanics is the count of persister panics the worker survived
+// (read by the persist summary line and the health surface; must stay 0).
+func PersistFlushPanics() int64 { return persistFlushPanics.Load() }
 
 // startPersistWorker launches the single queue-consuming worker (once).
 func startPersistWorker() {
@@ -96,15 +142,9 @@ func startPersistWorker() {
 				fn, ok := barPersister.Load().(func(bool, string, string, []Bar))
 				if ok && fn != nil {
 					for _, m := range batch {
-						func() {
-							defer func() {
-								if r := recover(); r != nil {
-									// never take the worker down
-								}
-							}()
-							fn(m.historical, m.symbol, m.tf, m.bars)
-						}()
-						persistFlushed.Add(int64(len(m.bars)))
+						if runPersister(fn, m) {
+							persistFlushed.Add(int64(len(m.bars)))
+						}
 					}
 					// S1 WIRE-UP — stamp EVERY successful flush (this one
 					// closure serves both the 256-batch and the 300ms ticker
@@ -184,8 +224,8 @@ func barPersistSummaryAt(nowT time.Time) {
 		dropped, closes := persistIntervalDelta()
 		persistDroppedReported.Store(persistDropped.Load())
 		persistDroppedClosesReported.Store(persistDroppedCloses.Load())
-		logger.Warnf("bars: persist queue summary: queue_drops=%d closes_dropped=%d flushed=%d (closes_dropped must be 0 — queue-full drops self-heal via the cache tail)",
-			dropped, closes, persistFlushed.Load())
+		logger.Warnf("bars: persist queue summary: queue_drops=%d closes_dropped=%d flushed=%d persister_panics=%d (closes_dropped and persister_panics must be 0 — queue-full drops self-heal via the cache tail)",
+			dropped, closes, persistFlushed.Load(), persistFlushPanics.Load())
 	}
 }
 
@@ -257,6 +297,26 @@ func ClosedCacheTail(get func(symbol, tf string) []Bar, symbol, tf string, nowMs
 		closed[l], closed[r] = closed[r], closed[l]
 	}
 	return closed
+}
+
+// BreakFlushTail (m424, P1a) returns up to `window` of the most-recent bars the
+// ring holds whose CLOSE time is at or before nowMs and whose feed is the live
+// one. A bar the ring still labels historical is a replay and is NEVER offered
+// here: it belongs to the replay hold and its scale verdict, and handing it to
+// the live door would stamp it live_partial and skip that judgement.
+func BreakFlushTail(get func(symbol, tf string) []Bar, symbol, tf string, nowMs int64, window int) []Bar {
+	tail := ClosedCacheTail(get, symbol, tf, nowMs, window*4)
+	out := make([]Bar, 0, window)
+	for i := len(tail) - 1; i >= 0 && len(out) < window; i-- {
+		if tail[i].Source == BarSourceHistorical {
+			continue
+		}
+		out = append(out, tail[i])
+	}
+	for l, r := 0, len(out)-1; l < r; l, r = l+1, r-1 {
+		out[l], out[r] = out[r], out[l]
+	}
+	return out
 }
 
 // fanOutBarPersist enqueues closed bars for the persist worker. Empty batch
@@ -354,16 +414,22 @@ func ingestDropSummary() {
 		return
 	}
 	if ingestLastSum.CompareAndSwap(ingestLastSum.Load(), now) {
+		ingestTotMu.Lock()
 		old := ingestDropOld.Swap(0)
+		fKept := ingestFinalKept.Swap(0)
+		fLost := ingestFinalDropped.Swap(0)
 		cur := ingestDropCur.Swap(0)
 		hist := ingestDropHist.Swap(0)
-		if old == 0 && cur == 0 && hist == 0 {
+		ingestFinalDropTotal += fLost
+		ingestHistDropTotal += hist
+		ingestTotMu.Unlock()
+		if old == 0 && cur == 0 && hist == 0 && fLost == 0 {
 			// Zero-drop minute: silent (the peak keeps sampling for the next
 			// non-zero minute; no line).
 			return
 		}
-		logger.Warnf("bars: ingest drop summary: intrabar_dropped=%d current_dropped=%d historical_dropped=%d peak_depth=%d/%d (1-line/min; intra-bar drops self-heal on the next tick — closed bars are NEVER dropped on this path)",
-			old, cur, hist,
+		logger.Warnf("bars: ingest drop summary: intrabar_dropped=%d current_dropped=%d historical_dropped=%d final_kept=%d final_dropped=%d peak_depth=%d/%d (1-line/min; intra-bar drops self-heal on the next tick; a frame carrying a final bar is evicted only when the queue holds nothing else — final_dropped must be 0)",
+			old, cur, hist, fKept, fLost,
 			ingestPeakDepth.Swap(0), ingestQueueCap())
 	}
 }

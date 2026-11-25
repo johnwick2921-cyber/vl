@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"vl/kernel"
 	"vl/logger"
 	ntwire "vl/provider/ninjatrader"
 	"vl/store"
@@ -153,22 +154,12 @@ func pullOne(ctx context.Context, srv *ntwire.TCPServer, st *store.Store, symbol
 				return imported, skipped, first, last, fmt.Sprintf("contract mismatch: asked %s, AddOn served %s — nothing written", contract, p.Contract)
 			}
 			if len(p.Bars) > 0 {
-				sort.SliceStable(p.Bars, func(i, j int) bool { return p.Bars[i].T < p.Bars[j].T })
-				rows := make([]store.BarHistoryDB, 0, len(p.Bars))
-				for _, b := range p.Bars {
-					if first == 0 || b.T < first {
-						first = b.T
-					}
-					if b.T > last {
-						last = b.T
-					}
-					rows = append(rows, store.BarHistoryDB{
-						Symbol: symbol, TF: tf, OpenTimeMs: b.T,
-						O: b.O, H: b.H, L: b.L, C: b.C, V: b.V,
-						Convention: "epoch_floor", // intraday buckets align on epoch floors
-						Contract:   contract,
-						Source:     store.BarSourceHistoricalImport,
-					})
+				rows, chunkFirst, chunkLast := importRowsFromChunk(symbol, tf, contract, p.Bars)
+				if first == 0 || chunkFirst < first {
+					first = chunkFirst
+				}
+				if chunkLast > last {
+					last = chunkLast
 				}
 				ins, skp, err := st.BarHistory().ImportBars(rows)
 				if err != nil {
@@ -183,6 +174,47 @@ func pullOne(ctx context.Context, srv *ntwire.TCPServer, st *store.Store, symbol
 			}
 		}
 	}
+}
+
+// importRowsFromChunk turns ONE chunk of AddOn bars into store rows, OPEN-stamped.
+//
+// m460 (2026-10-30): NT8's Bars.GetTime(i) is the bar's CLOSE (VLHistoryPull.cs
+// sends it verbatim), while every row in the bars table is keyed by the bar's
+// OPEN (the canonical time contract in provider/ninjatrader/bar_cache.go). The
+// live ingest converts at the door (openStampBars + reanchorStubBars); this
+// importer stored b.T raw, so every imported row of 2022-2026 sat one full
+// timeframe late (1m volume peaked at label 08:31 CT, live at 08:30; the 5m
+// label 08:30 equalled the sum of the 1m labels 08:26..08:30). This helper is
+// the importer's twin of the live door: same two functions, same order. Rows it
+// returns carry Convention=store.ConventionEpochFloorOpen so a later migration
+// run can never shift a row that is already right.
+//
+// first/last are the OPEN stamps of the chunk (the A9 log line names open times).
+func importRowsFromChunk(symbol, tf, contract string, bars []ntwire.Bar) (rows []store.BarHistoryDB, first, last int64) {
+	opened := ntwire.OpenStampBars(bars, tf) // close-stamp -> OPEN-stamp, a copy
+	for i := range opened {
+		if o := kernel.ReanchorCMEStub(tf, opened[i].T); o != opened[i].T { // #34: 2h+ 16:00-close stub
+			opened[i].T = o
+		}
+	}
+	sort.SliceStable(opened, func(i, j int) bool { return opened[i].T < opened[j].T })
+	rows = make([]store.BarHistoryDB, 0, len(opened))
+	for _, b := range opened {
+		if first == 0 || b.T < first {
+			first = b.T
+		}
+		if b.T > last {
+			last = b.T
+		}
+		rows = append(rows, store.BarHistoryDB{
+			Symbol: symbol, TF: tf, OpenTimeMs: b.T,
+			O: b.O, H: b.H, L: b.L, C: b.C, V: b.V,
+			Convention: store.ConventionEpochFloorOpen, // intraday buckets align on epoch floors, stamped at the OPEN
+			Contract:   contract,
+			Source:     store.BarSourceHistoricalImport,
+		})
+	}
+	return rows, first, last
 }
 
 // newRequestID is a random hex correlation id — the C# side keys its in-flight

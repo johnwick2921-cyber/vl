@@ -36,11 +36,12 @@ func dayStartCT(t int64) int64 {
 // LEAST… nếu như mà cái THÂN NẾN nó chỉ nằm ở cái thân nến nằm bên ngoài mà
 // cái râu nến nằm bên trong cái box ok bình thường không sao hết. Cái đó là at
 // least" [D4.1 p1 @20:36–21:03] — the course's minimum, the same test as the
-// bot's own box escape (box.go escaped: open AND close outside). X5 asks for
-// more ("COMPLETELY nằm ở ngoài mình mới trade" [X5 @07:04]); the course,
-// later, sets the minimum and calls the whole candle "hoàn toàn hợp lý" — a
-// close one tick outside with the open inside is NOT an escape (the pre-10-14
-// close-only test was looser than both).
+// bot's own box escape (box.go escaped: open AND close outside). The ORB
+// source asks for more ("COMPLETELY nằm ở ngoài mình mới trade" [extra
+// "Routine trước khi trade" part1 @06:47–07:16]); the knob
+// orb_escape_completely (release #52 B19, default OFF) selects that wick-
+// inclusive test. A close one tick outside with the open inside is NOT an
+// escape either way (the pre-10-14 close-only test was looser than both).
 //
 // The side is the side of the LATEST escape: above the high → longs only;
 // below the low → shorts only — "Nó thoát ra khỏi đầu nào, nó sẽ đi theo đầu
@@ -52,6 +53,15 @@ func dayStartCT(t int64) int64 {
 // an entry — it only picks the side [X5 @03:29–03:47]. A new session day
 // resets the ORB.
 func ORBAdvance(orb ORB, bars []market.Kline, now int64) ORB {
+	return ORBAdvanceMode(orb, bars, now, false)
+}
+
+// ORBAdvanceMode is ORBAdvance with the escape test chosen by `completely`
+// (knob orb_escape_completely, release #52 B19, default OFF): false = the
+// body test (open AND close beyond the edge), true = the candle COMPLETELY
+// outside, wicks included (low above the high / high below the low). The
+// production caller (Evaluator.Tick) passes Cfg.OrbEscapeCompletely.
+func ORBAdvanceMode(orb ORB, bars []market.Kline, now int64, completely bool) ORB {
 	day := dayStartCT(now)
 	if orb.Day != day {
 		orb = ORB{Day: day} // new session day
@@ -75,9 +85,23 @@ func ORBAdvance(orb ORB, bars []market.Kline, now int64) ORB {
 		} else {
 			return orb
 		}
-		// P5 (493c7ead8): fall through — the escape test runs on the SAME closed
-		// candle that completed the 2m ORB. Returning here skipped the 08:32
-		// escape candle and latched one tick late (08:33).
+		// P5 (493c7ead8): the escape test runs on the SAME closed candle that
+		// completed the 2m ORB — the 08:32 candle is in the replay below.
+		// m202 #8: a mid-RTH restart (or reload) loses the in-memory escape, and
+		// the old code tested only the LAST bar, so Escaped came from one candle
+		// instead of the latest escape in history. Walk EVERY closed 1m candle
+		// from the 08:32 open to `now` through orbBodyEscape — Escaped ends as
+		// the latest escape [X5 @02:57; X7 @07:42].
+		start := day + int64(rthOpen+2)*60_000 // the 08:32 candle open
+		for _, b := range bars {
+			if b.OpenTime < start || b.CloseTime > now {
+				continue
+			}
+			if side := orbEscapeSide(orb, b, completely); side != "" {
+				orb.Escaped = side
+			}
+		}
+		return orb
 	}
 	if len(bars) == 0 {
 		return orb
@@ -86,7 +110,7 @@ func ORBAdvance(orb ORB, bars []market.Kline, now int64) ORB {
 	if cur.CloseTime > now {
 		return orb // the last 1m candle has not closed — no escape test yet
 	}
-	if side := orbBodyEscape(orb, cur); side != "" {
+	if side := orbEscapeSide(orb, cur, completely); side != "" {
 		orb.Escaped = side // the latest escape picks the side [X5 @02:57; X7 @07:42]
 	}
 	return orb
@@ -106,6 +130,28 @@ func orbBodyEscape(orb ORB, c market.Kline) Side {
 	return ""
 }
 
+// orbEscapeSide picks the escape test: the body test by default, the
+// wick-inclusive "completely outside" test when the knob orb_escape_completely
+// is ON (release #52 B19). The ORB source says the candle must be COMPLETELY
+// outside the 2-minute ORB — "Completely nằm ở ngoài, completely nằm ở ngoài
+// mình mới trade. Còn không nếu mà nó vẫn còn vòng vòng trong ORB 2 phút mình
+// không trade" [extra "Routine trước khi trade" part1 @06:47–07:16]; X7 defines
+// the word for the ping-pong box (not touching at all, a touching wick does not
+// count) [X7 @09:21–11:07], so carrying it to the ORB is an analogy [B] and the
+// default stays the body test until the owner flips it.
+func orbEscapeSide(orb ORB, c market.Kline, completely bool) Side {
+	if !completely {
+		return orbBodyEscape(orb, c)
+	}
+	switch {
+	case c.Low > orb.High:
+		return SideLong
+	case c.High < orb.Low:
+		return SideShort
+	}
+	return ""
+}
+
 // ORBVerdict gates one intraday entry on the ORB: nothing trades until the ORB
 // is drawn and price has LEFT it with a 1m BODY wholly outside, after the
 // escape ONLY the side of the LATEST escape trades (a body escape beyond the
@@ -114,6 +160,19 @@ func orbBodyEscape(orb ORB, c market.Kline) Side {
 // upstream, not here).
 func ORBVerdict(orb ORB, side Side, price float64, cfg Config) (ok bool, reason string) {
 	if !cfg.OrbGateEnabled {
+		return true, ""
+	}
+	if !cfg.OrbPart2Enabled {
+		// OCT-EXACT A1 row 4: ORB part 2 (not drawn / not escaped / wrong side) is
+		// OFF; ONLY part 1 stays — no entry priced inside the 2-minute range
+		// [Oct D4.3 @ 61:44 R63 "nến đang nằm trong vòng ORB 2 phút, đừng trade"].
+		// Before the range is drawn there is no range to be inside of.
+		if orb.Drawn && price >= orb.Low && price <= orb.High {
+			return false, "ORB gate: no trade inside the opening range [Oct D4.3 @ 61:44 R63]"
+		}
+		if orb.Drawn && orbEdgeTooNear(orb, side, price, cfg) {
+			return false, "ORB gate: the entry sits too near the ORB edge [X5 @08:52–09:09]"
+		}
 		return true, ""
 	}
 	if !orb.Drawn {
@@ -247,6 +306,13 @@ func orbGateFilter(ints []Intent, orb ORB, now int64, cfg Config) (out []Intent,
 func orbRefusalStage(orb ORB, side Side, price float64, cfg Config) string {
 	if !cfg.OrbGateEnabled {
 		return ""
+	}
+	if !cfg.OrbPart2Enabled {
+		// OCT-EXACT A1 row 4: part 1 only — inside, or (knob, default off) too near the edge.
+		if orb.Drawn && price >= orb.Low && price <= orb.High {
+			return "orb_inside"
+		}
+		return "orb_edge_too_near"
 	}
 	if !orb.Drawn {
 		return "orb_not_drawn"

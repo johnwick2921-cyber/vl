@@ -340,7 +340,7 @@ func TestMaxDailyTradesEnforcedOnMentorPath(t *testing.T) {
 // mentor_ai_entries_off/mentor_ai_closes_off ever reached the table.
 func TestMentorPlacementRefusalReachesGateBlocks(t *testing.T) {
 	telemetry.ResetGateBlocksForTest()
-	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
+	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorWindowMinutes: 60}) // explicit 08:30+60 (m472 A6: unset is window-off [Oct D5.2 @ 01:00-01:20])
 	at.id = "dl-mentor-window"
 	wireMentorPlacementSeams(t, at)
 	setMentorNowSource(func() time.Time { return time.Date(2026, 10, 2, 10, 0, 0, 0, kernel.CTLocation()) })

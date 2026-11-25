@@ -11,7 +11,7 @@ import (
 // rel30Cfg is the production evaluator config with the non-box machinery turned
 // down so the synthetic tapes exercise only the target path.
 func rel30Cfg() Config {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.KeyLevelTFMinutes = 1
 	cfg.EMAPeriod34 = 0
@@ -28,8 +28,9 @@ func rel30Cfg() Config {
 // the day-gate check, so the same return re-fired box_day_off every tick (10-15:
 // 798 refusals from 24 returns) and was walked as fresh once the ban lifted.
 func TestBoxReturnConsumedWhenDayGateRefuses(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
+	cfg.Exec2mAfter30m = false // m410: this fixture pins the 1m box geometry (boxes now draw on the traded 2m frame after 09:00)
 	cfg.KeyLevelTFMinutes = 1
 	cfg.EMAPeriod34 = 0
 	cfg.EMAPeriod9 = 0
@@ -111,7 +112,7 @@ func TestBoxReturnConsumedWhenDayGateRefuses(t *testing.T) {
 // only the first (the old `break` counted 1). Mutant: re-insert the `break`
 // after the first `e.refuse("phl_tf_conflict")` → the counter stays 1 → RED.
 func TestPhlTfConflictCountsEveryRejectedLevel(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.KeyLevelTFMinutes = 1
 	cfg.EMAPeriod34 = 0

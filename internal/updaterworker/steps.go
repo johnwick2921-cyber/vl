@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -39,6 +40,28 @@ const (
 	// wall-clock step.
 	ackDistinct = time.Second
 )
+
+// gitStatusPorcelain runs `git -C dir status --porcelain` and returns the first
+// three non-empty lines (best-effort: a non-git install dir yields ""). A
+// package var so tests can stub it. m385: it names WHAT a dirty install tree
+// holds, instead of the preflight refusing with a bare "modified=true".
+var gitStatusPorcelain = func(dir string) string {
+	cmd := exec.Command("git", "-C", dir, "status", "--porcelain")
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	var lines []string
+	for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			lines = append(lines, l)
+		}
+		if len(lines) == 3 {
+			break
+		}
+	}
+	return strings.Join(lines, "; ")
+}
 
 // preflightFlatLegs: the pre-hold flat probe (C22) — every non-hold leg that
 // can fail on a live position, a working order, an arm or a planner read, or
@@ -266,6 +289,13 @@ func (w *Worker) stepPreflight(ctx context.Context, j updaterjob.Job) stepResult
 		}
 		ev["install_sha"], ev["install_modified"] = rev, orNA(mod)
 		if rev != inst.SHA || mod != "false" {
+			// m385: a dirty install tree refuses every Update — name WHAT is
+			// dirty (the first git status lines) instead of a bare modified=true.
+			if mod == "true" {
+				if dirty := gitStatusPorcelain(w.cfg.Target.InstallDir); dirty != "" {
+					return fmt.Errorf("the install binary was built from a dirty tree — %s (rev %s, recorded clean %s)", dirty, rev, inst.SHA)
+				}
+			}
 			return fmt.Errorf("the install binary is %s (modified=%s), not the clean %s the job recorded", rev, orNA(mod), inst.SHA)
 		}
 		marker, err := os.ReadFile(inst.ReleaseFile)
@@ -1002,16 +1032,21 @@ func (w *Worker) stepRollback(ctx context.Context, j updaterjob.Job) stepResult 
 	// restore or restart makes the rollback fail → recovery_needed.
 	if j.Addon != nil && j.Addon.BackupDir != "" {
 		as := w.host.Now()
-		docsDir, derr := addonDocsDir()
-		if derr != nil {
-			receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir}, derr))
-			return stepResult{receipts: receipts, err: derr, reason: clipText("the previous AddOn could not be restored after the rollback: " + derr.Error())}
+		// m343: a job that already boot-verified must never touch the AddOn again.
+		if j.AddonProven() {
+			receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir, "skipped": "boot_verified"}, nil))
+		} else {
+			docsDir, derr := addonDocsDir()
+			if derr != nil {
+				receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir}, derr))
+				return stepResult{receipts: receipts, err: derr, reason: clipText("the previous AddOn could not be restored after the rollback: " + derr.Error())}
+			}
+			if aerr := w.host.AddonRestore(docsDir, j.Addon.BackupDir, w.preJobBuild(j)); aerr != nil {
+				receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir}, aerr))
+				return stepResult{receipts: receipts, err: aerr, reason: clipText("the previous AddOn could not be restored after the rollback: " + aerr.Error())}
+			}
+			receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir, "outcome": "restored"}, nil))
 		}
-		if aerr := w.host.AddonRestore(docsDir, j.Addon.BackupDir); aerr != nil {
-			receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir}, aerr))
-			return stepResult{receipts: receipts, err: aerr, reason: clipText("the previous AddOn could not be restored after the rollback: " + aerr.Error())}
-		}
-		receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir, "outcome": "restored"}, nil))
 		// The place step restarted NT8 — restart it again so the old DLL loads.
 		if j.Addon.Restarted {
 			rs := w.host.Now()
@@ -1074,11 +1109,13 @@ func (w *Worker) stepReleaseHold(ctx context.Context, j updaterjob.Job) stepResu
 	// is advisory: it never returns an error, so a friend failure can never
 	// send the owner's proven install to recovery_needed.
 	var friends []updaterjob.FriendResult
-	if err == nil && j.State == updaterjob.StateComplete {
-		sha := ""
-		if j.Release != nil {
-			sha = j.Release.SHA
-		}
+	// A CATCH-UP job (AddOn rebuild only) swaps no binary and carries no
+	// Release: sweeping then restarted every friend against an empty expected
+	// sha, so each restart was followed by a "boot check: \"\" is not a
+	// release sha" failure (2026-10-21 18:31:08, catchup-dmawoxw8lv4t). Friends
+	// are swept only by an install that has a release sha to prove.
+	if err == nil && j.State == updaterjob.StateComplete && !j.Catchup && j.Release != nil {
+		sha := j.Release.SHA
 		freceipts, fresults := w.updateFriends(ctx, sha)
 		receipts = append(receipts, freceipts...)
 		friends = fresults
@@ -1088,6 +1125,38 @@ func (w *Worker) stepReleaseHold(ctx context.Context, j updaterjob.Job) stepResu
 		res.set = func(k *updaterjob.Job) { k.Friends = friends }
 	}
 	return res
+}
+
+// ensureNT8RunningAfterStop (m246) brings NinjaTrader back up after the updater
+// stopped it earlier in the job. If NT8 is already running (the migration
+// fallback restarts it on the old files before a revert), it does nothing. If
+// the start cannot be proven, it sends the loud owner alert and returns the
+// error so the caller fails the job to recovery_needed — a revert must never
+// silently strand the owner on a closed NinjaTrader.
+func (w *Worker) ensureNT8RunningAfterStop(ctx context.Context) error {
+	const alert = "NT8 is CLOSED — open it"
+	r := newNT8Restart(w.winSeam(), addonExe(), w.host.Sleep)
+	running, err := r.isRunning(ctx)
+	if err != nil {
+		// One transient probe error: retry once, then decide. We must never
+		// Start-Process over an NT8 that is actually still up (a second
+		// instance).
+		if serr := w.host.Sleep(ctx, nt8RestartPoll); serr == nil {
+			running, err = r.isRunning(ctx)
+		}
+		if err != nil {
+			w.notify(alert)
+			return fmt.Errorf("%s (could not confirm whether NinjaTrader is running: %v)", alert, err)
+		}
+	}
+	if running {
+		return nil
+	}
+	if err := w.startAndVerifyNT8(ctx, r, map[string]string{}); err != nil {
+		w.notify(alert + ": " + err.Error())
+		return fmt.Errorf("%s (%v)", alert, err)
+	}
+	return nil
 }
 
 // stepRevertClean is the pre-activation self-recovery (W-ADDON-ONE-CLICK,
@@ -1127,16 +1196,34 @@ func (w *Worker) stepRevertClean(ctx context.Context, j updaterjob.Job) stepResu
 	// back, never delete). Empty means the place step never ran: nothing to do.
 	if j.Addon != nil && j.Addon.BackupDir != "" {
 		as := w.host.Now()
-		docsDir, derr := addonDocsDir()
-		if derr != nil {
-			receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir}, derr))
-			return stepResult{receipts: receipts, err: derr, reason: "revert_clean: the AddOn could not be restored: " + clipText(derr.Error())}
+		// m343: a job that already boot-verified must never touch the AddOn again.
+		if j.AddonProven() {
+			receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir, "skipped": "boot_verified"}, nil))
+		} else {
+			docsDir, derr := addonDocsDir()
+			if derr != nil {
+				receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir}, derr))
+				return stepResult{receipts: receipts, err: derr, reason: "revert_clean: the AddOn could not be restored: " + clipText(derr.Error())}
+			}
+			if rerr := w.host.AddonRestore(docsDir, j.Addon.BackupDir, w.preJobBuild(j)); rerr != nil {
+				receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir}, rerr))
+				return stepResult{receipts: receipts, err: rerr, reason: "revert_clean: the AddOn could not be restored: " + clipText(rerr.Error())}
+			}
+			receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir, "outcome": "restored"}, nil))
 		}
-		if rerr := w.host.AddonRestore(docsDir, j.Addon.BackupDir); rerr != nil {
-			receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir}, rerr))
-			return stepResult{receipts: receipts, err: rerr, reason: "revert_clean: the AddOn could not be restored: " + clipText(rerr.Error())}
+	}
+
+	// 2b. m246: the nt8_restart step stopped NinjaTrader and the job is now
+	// reverting — restoring the old AddOn alone leaves NT8 closed. Bring it
+	// back up (or loudly alert the owner), so a revert never strands the owner
+	// on a closed NinjaTrader.
+	if j.Addon != nil && j.Addon.StoppedNT8 {
+		rs := w.host.Now()
+		if nerr := w.ensureNT8RunningAfterStop(ctx); nerr != nil {
+			receipts = append(receipts, w.receipt("nt8_restart_after_revert", rs, map[string]string{"outcome": "failed"}, nerr))
+			return stepResult{receipts: receipts, err: nerr, reason: "revert_clean: " + clipText(nerr.Error())}
 		}
-		receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir, "outcome": "restored"}, nil))
+		receipts = append(receipts, w.receipt("nt8_restart_after_revert", rs, map[string]string{"outcome": "running"}, nil))
 	}
 
 	// 3. Release OUR main-tree lock (a foreign holder is never touched).

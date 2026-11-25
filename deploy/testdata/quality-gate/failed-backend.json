@@ -1,0 +1,8 @@
+{
+  "total_count": 3,
+  "check_runs": [
+    {"id": 122838886676, "name": "Frontend Tests", "status": "completed", "conclusion": "success", "details_url": "https://github.com/example/repo/actions/runs/40694885384/job/122838886676"},
+    {"id": 122838886282, "name": "Backend Tests", "status": "completed", "conclusion": "failure", "details_url": "https://github.com/example/repo/actions/runs/40694885384/job/122838886282"},
+    {"id": 122838886266, "name": "Go Unit Tests & Coverage", "status": "completed", "conclusion": "success", "details_url": "https://github.com/example/repo/actions/runs/40694885280/job/122838886266"}
+  ]
+}

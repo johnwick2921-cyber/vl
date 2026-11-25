@@ -104,6 +104,7 @@ func TestMentorISBEntryIsOnePointFivePastTheExtremeOnTheWire(t *testing.T) {
 		})
 	}
 }
+
 // TestStopEntryWireOffsetIsPlannerOnly — the ONE definition of the hidden
 // stop-entry offset, read by the production placement branch. A planner
 // stop entry keeps the E7 offset by spec (kernel/entry_law.go

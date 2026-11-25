@@ -11,7 +11,7 @@ import (
 // that DROPS an intent carries a named reason + counter, like the replay
 // funnel stages, so DS-105 can diff refusals against the replay.
 func TestEveryRefusalNamesReason(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 
 	entry := func(side Side, price float64) Intent {
@@ -84,7 +84,7 @@ func TestEveryRefusalNamesReason(t *testing.T) {
 // TestRefusalLedgerInTick — the Tick call site records refusals on the state:
 // a seeded-missing evaluator refuses every entry and the ledger names it.
 func TestRefusalLedgerInTick(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.RoomMultiple = 0 // item 25: this fixture pins the seed fail-closed ledger, not the room rule
 	e := New(cfg)

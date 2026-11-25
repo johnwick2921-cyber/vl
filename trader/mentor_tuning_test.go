@@ -1,6 +1,7 @@
 package trader
 
 import (
+	"strings"
 	"testing"
 
 	"vl/kernel/mentor"
@@ -38,7 +39,7 @@ func TestMentorTuningReachesTheEvaluator(t *testing.T) {
 		LevelMaxVisits:         intPtr(5),
 		OrbGateEnabled:         &off,
 		ISBReverseEMA9Enabled:  &off,
-		HTFGateNewsOnly:        &on,
+		HTFGateNewsOnly:        &off,
 		Exec2mAfter30m:         &on,
 		DayGateSpentPts:        420,
 		DayGateTargetCapPts:    12,
@@ -57,7 +58,7 @@ func TestMentorTuningReachesTheEvaluator(t *testing.T) {
 		{"level_max_visits=5", cfg.LevelMaxVisits == 5},
 		{"orb_gate_enabled=false", !cfg.OrbGateEnabled},
 		{"isb_reverse_ema9_enabled=false", !cfg.ISBReverseEMA9Enabled},
-		{"htf_gate_news_only=true (D4.4-11 Studio switch)", cfg.HTFGateNewsOnly},
+		{"htf_gate_news_only=false (stored: the m462 all-session gate; default is true since D2-G7)", !cfg.HTFGateNewsOnly},
 		{"exec_2m_after_30m=true (X5-10 Studio switch)", cfg.Exec2mAfter30m},
 		{"day_gate_spent_pts=420", cfg.DayGateSpentPts == 420},
 		{"day_gate_target_cap_pts=12", cfg.DayGateTargetCapPts == 12},
@@ -84,9 +85,19 @@ func TestMentorTuningReachesTheEvaluator(t *testing.T) {
 	if got := tuningTick(t, &store.MentorTuning{OrbISBFractionOutside: floatPtr(0)}).OrbISBFractionOutside; got != 0 {
 		t.Errorf("explicit orb_isb_fraction_outside=0 must turn the rule off, got %.2f", got)
 	}
-	// unset stays the 0.80 default.
-	if got := tuningTick(t, &store.MentorTuning{}).OrbISBFractionOutside; got != 0.80 {
-		t.Errorf("unset orb_isb_fraction_outside must stay 0.80, got %.2f", got)
+	// OCT-EXACT A1 row 4: unset is now 0 (orb_isb_mostly_inside OFF); a stored 0.80 reverts.
+	if got := tuningTick(t, &store.MentorTuning{}).OrbISBFractionOutside; got != 0 {
+		t.Errorf("unset orb_isb_fraction_outside must be 0 (OFF, A1 row 4), got %.2f", got)
+	}
+	// m465 P1 (release #60): a STORED pre-#60 value reaches the evaluator —
+	// 15m_early_read=false, mtf_confluence_source=last_pair,
+	// trigger_escalation=false; unset = the #60 defaults (ON / standing_boxes / ON).
+	on = true
+	if c := tuningTick(t, &store.MentorTuning{Early15mRead: &off, MTFConfluenceSource: "last_pair", TriggerEscalation: &on}); c.Early15mRead || c.MTFConfluenceSource != mentor.MTFConfluenceLastPair || !c.TriggerEscalation {
+		t.Errorf("stored m465 knobs did not reach the evaluator: early=%v source=%q escalation=%v", c.Early15mRead, c.MTFConfluenceSource, c.TriggerEscalation)
+	}
+	if c := tuningTick(t, &store.MentorTuning{}); c.Early15mRead || c.MTFConfluenceSource != mentor.MTFConfluenceStandingBoxes || c.TriggerEscalation {
+		t.Errorf("unset m465 knobs must run the #60 defaults (trigger_escalation OFF since G3): early=%v source=%q escalation=%v", c.Early15mRead, c.MTFConfluenceSource, c.TriggerEscalation)
 	}
 }
 
@@ -94,6 +105,7 @@ func TestMentorTuningReachesTheEvaluator(t *testing.T) {
 // 2026-10-04 rulings: school 1, spent 300, cap 15 (R-B), ISB reverse ON (R-C),
 // swing max stop 100 (R-D). No block, an empty block and a nil strategy agree.
 func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
+	octBEDefault(t) // OCT-EXACT B7: the production default (4 ticks), not the test binary's 0
 	at := funnelAT(t)
 	for name, rc := range map[string]*store.RiskControlConfig{
 		"nil":   nil,
@@ -104,22 +116,92 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 		want := mentorTuned{
 			TriggerSchool: 1, PingPongMinGapPts: 50, PingPongCandleMaxPts: 20, PingPongCandleLookback: 30,
 			LevelMaxVisits: 3, OrbGateEnabled: true, ISBReverseEMA9Enabled: true,
-			HTFGateNewsOnly:       false, // D4.4-11: all-day default OFF (owner decision A 2026-10-21 m134)
-			Exec2mAfter30m:        true,  // X5-10 rule 4 (release #31): 1m for the first 30 min, then the 2m
-			OrbISBFractionOutside: 0.80,  // rule 5 (release #31): the ORB-edge ISB candle must be ≥ 80% outside
-			DayGateSpentPts:       300, DayGateTargetCapPts: 15, SwingMaxStopPts: 100,
+			HTFGateNewsOnly:       true,                                               // D2-G7 oct round 2: the 4h/1h gate only in news + open by default (October: the 5m is the only big frame, OctD4.3-R9)
+			Exec2mAfter30m:        false,                                              // m472 A1 [Oct D4.2 @ 22:56-23:46]: the 1m all day (was ON, X5-10 rule 4 release #31)
+			OrbISBFractionOutside: 0,                                                  // OCT-EXACT A1 row 4: orb_isb_mostly_inside OFF (was 0.80, rule 5 release #31)
+			DayGateSpentPts:       265, DayGateTargetCapPts: 15, SwingMaxStopPts: 100, // m465 (#60) D5.1-R18: spent line 265
 			// Release #25 course-entry knobs (course-defaults-30 changes).
-			FifteenMinIBRule: mentor.FifteenMinRequire5mISB, TFConflictEnd: mentor.TFConflictBothBoxes,
-			NewsWaitBothLines: true, // CE-3 — course-defaults-30 [D4.4 p1 @21:55–22:12]
-			NewsBarsExcluded:  true, // CE-4 (a, release #29 rework: freeze the pre-print read, candles whole)
-			ISBBoxEscapeMode:  mentor.ISBBoxEscapeBody, EmaLossRelock: mentor.EmaRelockUntilZoneExit,
-			D43TrendSource: mentor.D43TrendStructure, TrendlineIsTarget: true,
-			TrendlineBetweenBoxes: true, // CE-11/B13 — course-defaults-30 [D3.2 p2 @10:56–11:04]
-			FlagWallTarget:        true, // CE-11 — course-defaults-30 [X9 @05:59–06:12]
+			FifteenMinIBRule: mentor.FifteenMinOff, TFConflictEnd: mentor.TFConflictBothBoxes,
+			// m465 P1 (release #60): early 15m read ON (D4.2-R2), mode C from the
+			// standing boxes (D4.2-R17), trigger escalation ON (D3.4-R43).
+			Early15mRead: false, MTFConfluenceSource: mentor.MTFConfluenceStandingBoxes, TriggerEscalation: false, // OCT-EXACT A2 row 1: 15m_early_read OFF (was ON, D4.2-R2); G3 oct round 2: was true (D3.4-R43)
+			NewsWaitBothLines: false,                                                             // OCT-EXACT A1 row 6 (was true, CE-3 course-defaults-30 [D4.4 p1 @21:55–22:12])
+			NewsBarsExcluded:  false,                                                             // OCT-EXACT A1 row 6 (was true, CE-4 release #29 rework)
+			ISBBoxEscapeMode:  mentor.ISBBoxEscapeCloseBoxTF, EmaLossRelock: mentor.EmaRelockOff, // OCT-EXACT A2 row 6 (was until_zone_exit); m473 B3 OctD4.3-R67 [Oct D4.3 @ 65:00-66:13] (was close, m466 G20/G49 D4.1-R34)
+			D43TrendSource: mentor.D43TrendStructure, TrendlineIsTarget: false, // OCT-EXACT A2 row 16 (was true)
+			TrendlineBetweenBoxes: false, // D3-G8 oct round 2: OctD3.3-R59 [@ 46:27] (was true, CE-11/B13)
+			FlagWallTarget:        false, // OCT-EXACT A2 row 8 (was true, CE-11 course-defaults-30 [X9 @05:59–06:12])
 			LegResetOnWaveBreak:   true,
 			// Release #29 B52: a new zone after a range escape — course, no
 			// ruling against → ON (COMMON-25).
 			BoxNewZoneAfterEscape: true,
+			// Release #52 W11 invented-constant knobs: every default is the value
+			// the kernel hard-coded before (all "ours", none from the course).
+			ISBStackCancelCandle2m: 4, EveningSlowPts: 100, EveningSlowFromHour: 15,
+			NearBoxRoomMultiple: 0.5, NearBoxRoomPHL: false, PHLTargetShyPts: 5, ISBOldExtremePts: 2, // W3 P2-volume: ISB leg ON, PHL leg OFF
+			NearBoxRoomPHLMultiple: 0.5, // answers-1112 Q2: follows near_box_room_multiple (W3: 0.5)
+			// OCT-EXACT A2: box room 1 (row 11), key-level prune 0 (row 14), trendline fan 3 / level-prefer 0 (row 15).
+			BoxRoomMultiple: 1, KeyLevelPrunePts: 0, TrendlineMaxLinesPerAnchor: 3, TrendlineLevelPreferPts: 0, BoxTouchBandPts: 0,
+			// m465 P3 (release #60): the course defaults from the full video read.
+			ISBStackTinyStopPts:  0,                          // G2 oct round 2: OFF (was 12.5, D5.1-R26)
+			TrendlineEntryTouch:  mentor.TrendlineEntryThird, // m472 A2 [Oct D3.2 @ 31:00-31:17] supersedes Sept D2.3-R7
+			NearBoxBetweenExempt: false,                      // D3.2-R29/R30
+			PHLFlatLow:           mentor.PHLFlatLowNear,      // D2.2-R64
+			ISBReverseTouch:      mentor.ISBReverseTouchPair, // D5.4-R7
+			// m466 P2 (release #61): the course defaults.
+			UnoKeyLevels:       mentor.UnoKeyLevelsOn,            // G2 D1.3-R21
+			SessionOpenLevels:  mentor.SessionOpenLevelsOn,       // G10/G11 D3.1-R26/R20
+			LevelArmLineCancel: mentor.LevelArmLineCancelCurrent, // G17 D2.3-R34
+			PHLPullbackLow:     mentor.PHLPullbackLowSignal,      // OCT-EXACT A2 row 10 (was pullback, G41 D2.2-R59)
+			// m466 P1 (release #61): boxes, breaks, ranges — the course defaults.
+			FiveMinBoxSource:   mentor.FiveMinBoxMerge, // ISB5-F1 OctD4.3-R59 (October wins over D4.1-R37)
+			BreakDirectionLock: false,                  // OCT-EXACT A1 row 12 (was true, D4.1-R31/R33, D4.1-R55)
+			SmallRangeGuard:    false,                  // D4.2-R33 — OFF since #61 final (count / margin unstated)
+			MidRangeRejectSide: false,                  // OCT-EXACT A1 row 11 (was true, D2.2-R71)
+			// isbTF audit F4/F6: today's values, [B] readings (the course states none).
+			SwingISBOnePerCandle: true, CrossingISBLookback: 3, CrossingISBMin: 2,
+			// phl audit PHL-1: the 1m swing width that reproduces the four Oct D2.3 worked examples.
+			PHLOldExtreme1mK:           4,
+			KeyLevelDeleteOn1HClose:    mentor.KeyLevelDeleteOn1HCloseOff, // LL-1
+			PHLRoomMultiple:            1,                                 // answers-1112 Q2: October 1:1 [Oct D2.3 @49:37-49:56]; 2 reverts
+			ISBTargetFillClose:         true,                              // OCT-EXACT B5: ON (was OFF, D2-G3) [Oct D2.2 @28:37]; false reverts
+			ISBNoLevelFillClose:        true,                              // answers-1112 Q3: no-level ISB traded [Oct D2.2 @28:37-28:56, @30:24-30:43]; false reverts
+			TouchStopCoverLaterWick:    true,                              // OCT-EXACT B2: ON (was OFF, answers-1112 Q7) [Oct D5.2-R33 @19:40]; false reverts
+			BoxTrendlinePartialNotRoom: true,                              // OCT-EXACT B8: ON (was OFF, answers-1112 Q12) [Sept D3.3 p1 @05:15-07:46]; false reverts
+			RollingStaleTouchReleases:  true,                              // OCT-EXACT B3: ON (was OFF)
+			RollingKeypairTapeExempt:   true,                              // OCT-EXACT B4: ON (was OFF)
+			BEOffsetTicks:              4,                                 // OCT-EXACT B7: 4 ticks = 1 pt (was 0) [Oct D4.2 @13:00-13:25]; stored 0 reverts
+			ISBRoomMultiple:            1,                                 // OCT-EXACT C4: ISB room 1R (was the shared 2) [Oct D2.3-R48 @49:38]; 2 reverts
+			Counter5mScalpPts:          15,                                // OCT-EXACT C1: counter-5m EMA 34 scalp first target 15 [Oct D5.4 Ex.1 @04:47-05:00]; 0 reverts
+			ISBJustBrokenLevel:         true,                              // OCT-EXACT D1: ISB at a box it just broke refused until the retest [OctD3.3-R47 @38:10]; false reverts
+			BoxCarryFirstLatched:       true,                              // OCT-EXACT P3-missesA E9: the carried box is the RTH box the mentor drew that morning [Oct D3.3-R27 @17:00]; false reverts
+			BoxCounter5mScalp:          true,                              // OCT-EXACT P3-missesA E9: a box return against the 5m is the counter-5m scalp [Oct D5.4-R20 @07:51]; false reverts
+			ISBRevOldExtremeRoom:       true,                              // OCT-EXACT P4-missesB WE8: D2.3-R53 @54:00; false reverts
+			ISBRevFillClose:            true,                              // OCT-EXACT close r1: the reverse ISB takes the ISB first target (fill-close +1R) when no level gives room [Oct D5.3-R39 @16:43; D2.2 @28:37]; false reverts
+			FTGLBodyEdgePartner:        true,                              // OCT-EXACT D3: FTGL partner by body edge [OctD3.3-R54 @43:14]; false reverts
+			NewsFlattenEnabled:         true,                              // review fix: the news cancel+flatten is its own knob, default ON (safety stays); false holds through the print
+			Box15mNoTrade:              true,                              // review fix: the 15m ISB-box no-trade stays ON [OctD4.3-R60 @58:38]; false reverts to the R9-only read
+			Leg1FixedPts:               0,                                 // OCT-EXACT D2: production 15 (mentorLeg1FixedPtsDefault); this test binary pins 0 in TestMain, oct_d_test.go pins the 15
+			ResonanceTrail:             true,                              // OCT-EXACT C6: the mode-A runner trails after BE [Oct D4.2-R31/R32 @08:11]; false reverts
+			HTFOpposedRangeHaltPts:     0,                                 // answers-1112 Q1 extra rule: OFF — "300-400 điểm" is a range, and September [Sept D5.1 p1 @19:22-19:26]
+			PHL5mBoxSameDirAllowed:     true,                              // OCT-EXACT B1: ON (was OFF, answers-1112 Q9) [Oct D4.3-R70/R71 @68:24]; false reverts
+			TriggerFromOpen:            true,                              // G4 October [OctD4.3-R5 @ 03:10]
+			RollingLeftBreakCancel:     true,                              // D2-G6 October [OctD2.3-R69 @ 78:10]
+			HTFTrendlineFlip:           true,                              // D3-G12
+			TrendlineMaxSlopePtsPerBar: 0,                                 // D3-G14
+			TrendlineMinBouncePts:      0,                                 // D3-G10
+			KnockKnockZone:             true,                              // D2-G10
+			TrendlineFirstBottomAnchor: true,                              // D3-G9
+			BoxFlipReversible:          true,                              // D3-G7
+			BoxCarriedStaysLive:        true,                              // D3-G4
+			BoxSwingBothRoles:          true,                              // D3-G2
+			BoxPreOpenLookbackMin:      10,                                // D3-G1
+			PHLMinAbovePriorPts:        15,                                // OCT-EXACT B6: 15 (was 0 = OFF, G7) [OctD4.2-R41 @36:45]; 0 reverts
+			KeyLevelBreakRetest:        mentor.KeyLevelBreakRetestOn,      // LL-2
+			KeyLevelRearm:              mentor.KeyLevelRearmOff,           // D3-G15
+			ISBReverseTrend:            mentor.ISBReverseTrendEMA,         // D5.3-R43/R44
+			Counter5mReduceSize:        mentor.Counter5mReduceOn,          // D5.4-SCALP
+			KeyLevelHistorySource:      mentor.KeyLevelHistoryOwn,         // LL-4
 		}
 		if got != want {
 			t.Errorf("%s: resolved %+v, want %+v", name, got, want)
@@ -174,7 +256,11 @@ func TestMentorISBMaxKnobReachesR8AndBand(t *testing.T) {
 			Price: 30000, Stop: 30000 - stop, Target: 30000 + 2*stop, StopPts: stop, TargetPts: 2 * stop, ExpiryMs: 100_000}
 	}
 	// knob 35: a 32-pt ISB passes R8 (35) and sizes the reduced band (20–<35).
-	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorISBMaxPts: 35})
+	// Ladder OFF: these pin the pre-2026-11-10 meaning of a stored
+	// mentor_isb_max_pts (with the ladder ON a 32-pt stop sizes 1 MNQ —
+	// stop_size_ladder_test.go).
+	off := false
+	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorISBMaxPts: 35, MentorStopSizeLadder: &off})
 	if cfg := at.mentorEvaluatorConfig(); cfg.CourseExits.ISBMaxStopPts != 35 {
 		t.Fatalf("kernel ISB max = %g, want 35 (one knob, not two)", cfg.CourseExits.ISBMaxStopPts)
 	}
@@ -189,7 +275,7 @@ func TestMentorISBMaxKnobReachesR8AndBand(t *testing.T) {
 	}
 
 	// knob 25: a 28.25-pt ISB is refused R8 (25).
-	at2 := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorISBMaxPts: 25})
+	at2 := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorISBMaxPts: 25, MentorStopSizeLadder: &off})
 	if cfg := at2.mentorEvaluatorConfig(); cfg.CourseExits.ISBMaxStopPts != 25 {
 		t.Fatalf("kernel ISB max = %g, want 25", cfg.CourseExits.ISBMaxStopPts)
 	}
@@ -202,7 +288,7 @@ func TestMentorISBMaxKnobReachesR8AndBand(t *testing.T) {
 
 // TestRetaggedPHLInRangeSizesThree (re-gate D3) — the P2-2 trader half: the ISB
 // location size flags are read for ANY setup, so a reverse ISB retagged PHL that
-// carries isb_in_range still sizes the reduced 4, never base 4. Mutant M13
+// carries isb_in_range still sizes the reduced 3, never base 5. Mutant M13
 // (flags read only for Setup "ISB") → RED.
 func TestRetaggedPHLInRangeSizesThree(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
@@ -212,16 +298,18 @@ func TestRetaggedPHLInRangeSizesThree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Contracts != 4 || got.Tier != "isb_in_range" {
-		t.Fatalf("a retagged PHL in a range: got %d %s, want 4 isb_in_range", got.Contracts, got.Tier)
+	if got.Contracts != 3 || got.Tier != "isb_in_range" {
+		t.Fatalf("a retagged PHL in a range: got %d %s, want 3 isb_in_range", got.Contracts, got.Tier)
 	}
 }
 
 // TestMentorTuningOneValueForGateAndKernel — the trader rule gate and the
-// kernel read the SAME number: with swing_max_stop_pts=80 / day_gate_target_cap
-// =12 the dispatch path refuses at exactly those values, and the evaluator
-// config carries them. Mutant: the dispatch stops filling extra.* from the
-// resolver (gate falls back to 100 / 15) → RED.
+// kernel read the SAME number: the resolver fills extra.* and the evaluator
+// config carries the same values. The swing ~100-pt skip is GONE (m186 D5.2
+// @21:25-21:43: take 1-2 MNQ and sit), so a swing stop of 80 passes even with
+// swing_max_stop_pts=80; the spent-day R9 cap still shares its number with
+// the kernel. Mutant: the dispatch stops filling extra.* from the resolver →
+// RED (the R9 cap falls back to 15 and the spent-day stop passes).
 func TestMentorTuningOneValueForGateAndKernel(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorTuning: &store.MentorTuning{
 		SwingMaxStopPts: 80, DayGateTargetCapPts: 12,
@@ -237,8 +325,8 @@ func TestMentorTuningOneValueForGateAndKernel(t *testing.T) {
 	}
 	resetMentorCounters(at)
 	at.mentorDispatchIntent(swing(80), mentorTierInputs{}, 1000, 1100)
-	if n := at.mentorCountSnapshot()["refused_r8"]; n != 1 {
-		t.Errorf("a swing stop of 80 with swing_max_stop_pts=80 must be refused at the gate (refused_r8=%d)", n)
+	if n := at.mentorCountSnapshot()["refused_r8"]; n != 0 {
+		t.Errorf("a swing stop of 80 must PASS now (no skip, m186 D5.2 @21:25-21:43) (refused_r8=%d)", n)
 	}
 	resetMentorCounters(at)
 	at.mentorDispatchIntent(swing(79), mentorTierInputs{}, 1000, 1100)
@@ -255,17 +343,27 @@ func TestMentorTuningOneValueForGateAndKernel(t *testing.T) {
 	}
 }
 
-// The bare table (no strategy) falls back to the kernel defaults, never to a
-// second constant: SWING4H stop 99 passes, 100 refuses (R-D).
+// The bare table (no strategy) falls back to the kernel defaults. m463
+// D5.2-R31 (REVERSES m186, owner order 2026-11-01 "full of it"): the swing
+// skip default is 80 since answers-1112 Q13 ("7-80 điểm … cứ vô 1-2" [Sept
+// D5.2 p2 @05:25-05:33]) — an 80-pt stop passes, 80.25 / 90 / 99 / 100 are
+// refused ("100 điểm quá nhiều rủi ro… đừng vô" [D5.2 p2 @19:34–21:43]); at the
+// revert value 90 a 90-pt stop passes again. The 100 of the old name is the B5
+// SIZING ceiling (swing_max_stop_pts), not a skip.
 func TestMentorRuleGateSwingDefaultIs100(t *testing.T) {
 	in := func(stop float64) mentor.Intent {
 		return mentor.Intent{Setup: "SWING4H", Side: "long", Price: 30000, Stop: 30000 - stop, StopPts: stop, TargetPts: 2 * stop}
 	}
-	if why := mentorRuleGate(in(99), mentorTierInputs{}); why != "" {
-		t.Errorf("SWING4H 99-pt stop must pass under the 100 default: %q", why)
+	if why := mentorRuleGate(in(80), mentorTierInputs{}); why != "" {
+		t.Errorf("SWING4H 80-pt stop must pass under the 80 skip default: %q", why)
 	}
-	if why := mentorRuleGate(in(100), mentorTierInputs{}); why == "" {
-		t.Error("SWING4H 100-pt stop must be skipped (R-D: skip at >= 100)")
+	if why := mentorRuleGate(in(90), mentorTierInputs{SwingSkipStopPts: 90}); why != "" {
+		t.Errorf("SWING4H 90-pt stop must pass at the revert mentor_swing_max_stop_pts=90: %q", why)
+	}
+	for _, stop := range []float64{80.25, 90, 90.25, 99, 100} {
+		if why := mentorRuleGate(in(stop), mentorTierInputs{}); !strings.HasPrefix(why, "R31") {
+			t.Errorf("SWING4H %.2f-pt stop must be REFUSED R31 (m463): %q", stop, why)
+		}
 	}
 }
 
@@ -277,5 +375,301 @@ func TestMentorRuleGateSwingDefaultIs100(t *testing.T) {
 func TestMentorLiveEvaluatorIsRealFillOnly(t *testing.T) {
 	if cfg := tuningTick(t, nil); !cfg.RealFillOnly {
 		t.Fatal("the live mentor evaluator must be RealFillOnly (FU-1): a candle touch must never fill a live arm")
+	}
+}
+
+// TestISBTFKnobsReachTheEvaluator — isbTF-F4/F6: the three new mentor_tuning
+// knobs reach the evaluator config through the ONE resolver (production
+// mentorTuningResolve → applyMentorTuning), unset = today's values, out of
+// range fails closed to the default and is counted.
+func TestISBTFKnobsReachTheEvaluator(t *testing.T) {
+	off := false
+	if c := tuningTick(t, &store.MentorTuning{}); c.Swing.ISBRepeatAfterFill || c.CrossingISBLookback != 3 || c.CrossingISBMin != 2 {
+		t.Fatalf("unset isbTF knobs must keep today's values (one per candle, 3 / 2): repeat=%v lookback=%d min=%d", c.Swing.ISBRepeatAfterFill, c.CrossingISBLookback, c.CrossingISBMin)
+	}
+	if c := tuningTick(t, &store.MentorTuning{MentorSwingISBOnePerCandle: &off, CrossingISBLookback: 5, CrossingISBMin: 3}); !c.Swing.ISBRepeatAfterFill || c.CrossingISBLookback != 5 || c.CrossingISBMin != 3 {
+		t.Fatalf("stored isbTF knobs did not reach the evaluator: repeat=%v lookback=%d min=%d", c.Swing.ISBRepeatAfterFill, c.CrossingISBLookback, c.CrossingISBMin)
+	}
+	if c := tuningTick(t, &store.MentorTuning{CrossingISBLookback: 2, CrossingISBMin: 3}); c.CrossingISBLookback != 3 || c.CrossingISBMin != 2 {
+		t.Fatalf("out-of-range crossing knobs must fail closed to 3 / 2: lookback=%d min=%d", c.CrossingISBLookback, c.CrossingISBMin)
+	}
+}
+
+// TestPHL1OldExtremeKnobReachesTheEvaluator — phl audit PHL-1: the rolling
+// PHL/PLH 1m old-extreme width reaches the evaluator through the ONE resolver
+// (production mentorEvalOnce → mentorTuningResolve → applyMentorTuning):
+// unset = 4, -1 = the pre-PHL-1 5m/15m source (Config 0), 1..10 = k, anything
+// else fails closed to 4.
+func TestPHL1OldExtremeKnobReachesTheEvaluator(t *testing.T) {
+	for _, c := range []struct{ stored, want int }{{0, 4}, {-1, 0}, {2, 2}, {10, 10}, {11, 4}, {-2, 4}} {
+		if got := tuningTick(t, &store.MentorTuning{PHLOldExtreme1mK: c.stored}).PHLOldExtreme1mK; got != c.want {
+			t.Fatalf("stored phl_old_extreme_1m_k=%d → Config.PHLOldExtreme1mK %d, want %d", c.stored, got, c.want)
+		}
+	}
+}
+
+// TestLL1KeyLevelDeleteKnobReachesTheEvaluator — levels audit LL-1: the
+// knob reaches the evaluator config through the ONE resolver (production
+// mentorTuningResolve → applyMentorTuning): unset = off (October keeps the
+// level), "on" = the deck deletion, a bad value fails closed to off.
+func TestLL1KeyLevelDeleteKnobReachesTheEvaluator(t *testing.T) {
+	for _, c := range []struct{ stored, want string }{
+		{"", mentor.KeyLevelDeleteOn1HCloseOff},
+		{"on", mentor.KeyLevelDeleteOn1HCloseOn},
+		{"off", mentor.KeyLevelDeleteOn1HCloseOff},
+		{"sometimes", mentor.KeyLevelDeleteOn1HCloseOff},
+	} {
+		if got := tuningTick(t, &store.MentorTuning{KeyLevelDeleteOn1HClose: c.stored}).KeyLevelDeleteOn1HClose; got != c.want {
+			t.Errorf("stored key_level_delete_on_1h_close=%q → Config %q, want %q", c.stored, got, c.want)
+		}
+	}
+}
+
+// TestLL2KeyLevelBreakRetestKnobReachesTheEvaluator — levels audit LL-2: unset
+// = on (October break-and-retest), "off" = the September ISB-only, a bad value
+// fails closed to on — through the production resolver.
+func TestLL2KeyLevelBreakRetestKnobReachesTheEvaluator(t *testing.T) {
+	for _, c := range []struct{ stored, want string }{
+		{"", mentor.KeyLevelBreakRetestOn},
+		{"off", mentor.KeyLevelBreakRetestOff},
+		{"on", mentor.KeyLevelBreakRetestOn},
+		{"twice", mentor.KeyLevelBreakRetestOn},
+	} {
+		if got := tuningTick(t, &store.MentorTuning{KeyLevelBreakRetest: c.stored}).KeyLevelBreakRetest; got != c.want {
+			t.Errorf("stored key_level_break_retest=%q → Config %q, want %q", c.stored, got, c.want)
+		}
+	}
+}
+
+// TestD3G15KeyLevelRearmKnobReachesTheEvaluator — oct round 2 D3-G15: unset =
+// off (today), "on" re-arms an ISB-only key level on departure, a bad value
+// fails closed to off — through the production resolver.
+func TestD3G15KeyLevelRearmKnobReachesTheEvaluator(t *testing.T) {
+	for _, c := range []struct{ stored, want string }{
+		{"", mentor.KeyLevelRearmOff},
+		{"off", mentor.KeyLevelRearmOff},
+		{"on", mentor.KeyLevelRearmOn},
+		{"always", mentor.KeyLevelRearmOff},
+	} {
+		if got := tuningTick(t, &store.MentorTuning{KeyLevelRearm: c.stored}).KeyLevelRearm; got != c.want {
+			t.Errorf("stored key_level_rearm=%q → Config %q, want %q", c.stored, got, c.want)
+		}
+	}
+}
+
+// TestRound2D53D54KnobsReachTheEvaluator — oct round 2: isb_reverse_trend
+// (unset = ema, "trigger" = today) and counter_5m_reduce_size (unset = on, "off"
+// = today); a bad value fails closed to the default — through the resolver.
+func TestRound2D53D54KnobsReachTheEvaluator(t *testing.T) {
+	for _, c := range []struct{ stored, want string }{
+		{"", mentor.ISBReverseTrendEMA},
+		{"ema", mentor.ISBReverseTrendEMA},
+		{"trigger", mentor.ISBReverseTrendTrigger},
+		{"fish", mentor.ISBReverseTrendEMA},
+	} {
+		if got := tuningTick(t, &store.MentorTuning{ISBReverseTrend: c.stored}).ISBReverseTrend; got != c.want {
+			t.Errorf("stored isb_reverse_trend=%q → Config %q, want %q", c.stored, got, c.want)
+		}
+	}
+	for _, c := range []struct{ stored, want string }{
+		{"", mentor.Counter5mReduceOn},
+		{"on", mentor.Counter5mReduceOn},
+		{"off", mentor.Counter5mReduceOff},
+		{"half", mentor.Counter5mReduceOn},
+	} {
+		if got := tuningTick(t, &store.MentorTuning{Counter5mReduceSize: c.stored}).Counter5mReduceSize; got != c.want {
+			t.Errorf("stored counter_5m_reduce_size=%q → Config %q, want %q", c.stored, got, c.want)
+		}
+	}
+}
+
+// TestLL4KeyLevelHistorySourceKnobReachesTheEvaluator — levels audit LL-4:
+// unset = own, "stitched" = the pre-LL-4 back-adjusted history, a bad value
+// fails closed to own — through the production resolver.
+func TestLL4KeyLevelHistorySourceKnobReachesTheEvaluator(t *testing.T) {
+	for _, c := range []struct{ stored, want string }{
+		{"", mentor.KeyLevelHistoryOwn},
+		{"stitched", mentor.KeyLevelHistoryStitched},
+		{"own", mentor.KeyLevelHistoryOwn},
+		{"native", mentor.KeyLevelHistoryOwn},
+	} {
+		if got := tuningTick(t, &store.MentorTuning{KeyLevelHistorySource: c.stored}).KeyLevelHistorySource; got != c.want {
+			t.Errorf("stored key_level_history_source=%q → Config %q, want %q", c.stored, got, c.want)
+		}
+	}
+}
+
+// TestD2G2PHLRoomMultipleKnob — D2-G2 / answers-1112 Q2: unset = 1 (October
+// 1:1 [Oct D2.3 @49:37-49:56 "Risk reward 1-1"; WE10 s_04126 R:R 1.71]), a
+// stored 2 reaches the evaluator (the revert value = today before
+// answers-1112), an out-of-range value fails closed to the default 1.
+func TestD2G2PHLRoomMultipleKnob(t *testing.T) {
+	two, bad := 2.0, 50.0
+	if c := tuningTick(t, &store.MentorTuning{}); c.PHLRoomMultiple != 1 {
+		t.Fatalf("unset phl_room_multiple = %v, want 1", c.PHLRoomMultiple)
+	}
+	if c := tuningTick(t, &store.MentorTuning{PHLRoomMultiple: &two}); c.PHLRoomMultiple != 2 {
+		t.Fatalf("stored phl_room_multiple=2 (revert) → %v", c.PHLRoomMultiple)
+	}
+	if c := tuningTick(t, &store.MentorTuning{PHLRoomMultiple: &bad}); c.PHLRoomMultiple != 1 {
+		t.Fatalf("out-of-range phl_room_multiple must fail closed to 1, got %v", c.PHLRoomMultiple)
+	}
+}
+
+// TestAnswers1112NearBoxPHLMultipleKnob — answers-1112 Q2 (owner question):
+// unset follows near_box_room_multiple (today exactly, including an owner who
+// tuned near_box_room_multiple), a stored value reaches the evaluator for the
+// PHL/PLH leg only, an out-of-range value fails closed to follow.
+func TestAnswers1112NearBoxPHLMultipleKnob(t *testing.T) {
+	one, zero, three, bad := 1.0, 0.0, 3.0, 50.0
+	if c := tuningTick(t, &store.MentorTuning{}); c.NearBoxRoomPHLMultiple != 0.5 || c.NearBoxRoomMultiple != 0.5 { // W3 P2-volume: ISB leg ON at 0.5 (PHL leg stays off via near_box_room_phl=false)
+		t.Fatalf("unset: PHL multiple %v / ISB multiple %v, want 0.5 / 0.5", c.NearBoxRoomPHLMultiple, c.NearBoxRoomMultiple)
+	}
+	if c := tuningTick(t, &store.MentorTuning{NearBoxRoomMultiple: &three}); c.NearBoxRoomPHLMultiple != 3 {
+		t.Fatalf("unset PHL multiple must follow a stored near_box_room_multiple=3, got %v", c.NearBoxRoomPHLMultiple)
+	}
+	if c := tuningTick(t, &store.MentorTuning{NearBoxRoomMultiple: &zero}); c.NearBoxRoomPHLMultiple != 0 {
+		t.Fatalf("unset PHL multiple must follow near_box_room_multiple=0 (off), got %v", c.NearBoxRoomPHLMultiple)
+	}
+	if c := tuningTick(t, &store.MentorTuning{NearBoxRoomPHLMultiple: &one}); c.NearBoxRoomPHLMultiple != 1 || c.NearBoxRoomMultiple != 0.5 { // W3 P2-volume: the ISB leg default is 0.5
+		t.Fatalf("stored near_box_room_phl_multiple=1: PHL %v / ISB %v, want 1 / 0.5", c.NearBoxRoomPHLMultiple, c.NearBoxRoomMultiple)
+	}
+	if c := tuningTick(t, &store.MentorTuning{NearBoxRoomPHLMultiple: &bad}); c.NearBoxRoomPHLMultiple != 0.5 { // W3 P2-volume: follows the (0.5) ISB multiple
+		t.Fatalf("out-of-range near_box_room_phl_multiple must fail closed to follow (0.5), got %v", c.NearBoxRoomPHLMultiple)
+	}
+}
+
+// TestD2G6RollingLeftBreakCancelKnob — D2-G6: unset = ON (October), a stored
+// false reaches the evaluator (the pre-round-2 per-rung refusal).
+func TestD2G6RollingLeftBreakCancelKnob(t *testing.T) {
+	off := false
+	if c := tuningTick(t, &store.MentorTuning{}); !c.RollingLeftBreakCancel {
+		t.Fatal("unset rolling_left_break_cancel must be ON")
+	}
+	if c := tuningTick(t, &store.MentorTuning{RollingLeftBreakCancel: &off}); c.RollingLeftBreakCancel {
+		t.Fatal("stored rolling_left_break_cancel=false did not reach the evaluator")
+	}
+}
+
+// TestG7PHLMinAboveOldExtremeKnob — G7: unset = 15, a stored 0 turns it off,
+// a stored 22 reaches the evaluator, out of range fails closed to 15.
+func TestG7PHLMinAboveOldExtremeKnob(t *testing.T) {
+	v, bad := 22.0, 500.0
+	if c := tuningTick(t, &store.MentorTuning{}); c.PHLMinAbovePriorPts != 15 { // OCT-EXACT B6: 15 (was 0)
+		t.Fatalf("unset phl_min_above_old_extreme_pts = %v, want 15 (OCT-EXACT B6, Oct D4.2-R41)", c.PHLMinAbovePriorPts)
+	}
+	if c := tuningTick(t, &store.MentorTuning{PHLMinAbovePriorPts: &v}); c.PHLMinAbovePriorPts != 22 {
+		t.Fatalf("stored 22 → %v", c.PHLMinAbovePriorPts)
+	}
+	if c := tuningTick(t, &store.MentorTuning{PHLMinAbovePriorPts: &bad}); c.PHLMinAbovePriorPts != 15 {
+		t.Fatalf("out of range must fail closed to the default 15, got %v", c.PHLMinAbovePriorPts)
+	}
+}
+
+// TestD3G1Knob - D3-G1: unset = 30, a stored 45 reaches the evaluator, out of range fails closed to the default.
+func TestD3G1Knob(t *testing.T) {
+	v, bad := float64(45), float64(900)
+	if c := tuningTick(t, &store.MentorTuning{}); c.BoxPreOpenLookbackMin != 10 {
+		t.Fatalf("unset box_preopen_lookback_min = %v, want 10", c.BoxPreOpenLookbackMin)
+	}
+	if c := tuningTick(t, &store.MentorTuning{BoxPreOpenLookbackMin: &v}); c.BoxPreOpenLookbackMin != 45 {
+		t.Fatalf("stored box_preopen_lookback_min did not reach the evaluator: %v", c.BoxPreOpenLookbackMin)
+	}
+	if c := tuningTick(t, &store.MentorTuning{BoxPreOpenLookbackMin: &bad}); c.BoxPreOpenLookbackMin != 10 {
+		t.Fatalf("out of range must fail closed to the default, got %v", c.BoxPreOpenLookbackMin)
+	}
+}
+
+// TestD3G2Knob - D3-G2: unset = true, a stored false reaches the evaluator.
+func TestD3G2Knob(t *testing.T) {
+	v := false
+	if c := tuningTick(t, &store.MentorTuning{}); c.BoxSwingBothRoles != true {
+		t.Fatalf("unset box_swing_both_roles = %v, want true", c.BoxSwingBothRoles)
+	}
+	if c := tuningTick(t, &store.MentorTuning{BoxSwingBothRoles: &v}); c.BoxSwingBothRoles != false {
+		t.Fatalf("stored box_swing_both_roles did not reach the evaluator: %v", c.BoxSwingBothRoles)
+	}
+}
+
+// TestD3G4Knob - D3-G4: unset = true, a stored false reaches the evaluator.
+func TestD3G4Knob(t *testing.T) {
+	v := false
+	if c := tuningTick(t, &store.MentorTuning{}); c.BoxCarriedStaysLive != true {
+		t.Fatalf("unset box_carried_stays_live = %v, want true", c.BoxCarriedStaysLive)
+	}
+	if c := tuningTick(t, &store.MentorTuning{BoxCarriedStaysLive: &v}); c.BoxCarriedStaysLive != false {
+		t.Fatalf("stored box_carried_stays_live did not reach the evaluator: %v", c.BoxCarriedStaysLive)
+	}
+}
+
+// TestD3G7Knob - D3-G7: unset = true, a stored false reaches the evaluator.
+func TestD3G7Knob(t *testing.T) {
+	v := false
+	if c := tuningTick(t, &store.MentorTuning{}); c.BoxFlipReversible != true {
+		t.Fatalf("unset box_flip_reversible = %v, want true", c.BoxFlipReversible)
+	}
+	if c := tuningTick(t, &store.MentorTuning{BoxFlipReversible: &v}); c.BoxFlipReversible != false {
+		t.Fatalf("stored box_flip_reversible did not reach the evaluator: %v", c.BoxFlipReversible)
+	}
+}
+
+// TestD3G9Knob - D3-G9: unset = true, a stored false reaches the evaluator.
+func TestD3G9Knob(t *testing.T) {
+	v := false
+	if c := tuningTick(t, &store.MentorTuning{}); c.TrendlineFirstBottomAnchor != true {
+		t.Fatalf("unset trendline_first_bottom_anchor = %v, want true", c.TrendlineFirstBottomAnchor)
+	}
+	if c := tuningTick(t, &store.MentorTuning{TrendlineFirstBottomAnchor: &v}); c.TrendlineFirstBottomAnchor != false {
+		t.Fatalf("stored trendline_first_bottom_anchor did not reach the evaluator: %v", c.TrendlineFirstBottomAnchor)
+	}
+}
+
+// TestD2G10Knob - D2-G10: unset = true, a stored false reaches the evaluator.
+func TestD2G10Knob(t *testing.T) {
+	v := false
+	if c := tuningTick(t, &store.MentorTuning{}); c.KnockKnockZone != true {
+		t.Fatalf("unset knock_knock_zone = %v, want true", c.KnockKnockZone)
+	}
+	if c := tuningTick(t, &store.MentorTuning{KnockKnockZone: &v}); c.KnockKnockZone != false {
+		t.Fatalf("stored knock_knock_zone did not reach the evaluator: %v", c.KnockKnockZone)
+	}
+}
+
+// TestD3G10Knob - D3-G10: unset = 0, a stored 20 reaches the evaluator, out of range fails closed to the default.
+func TestD3G10Knob(t *testing.T) {
+	v, bad := float64(20), float64(5000)
+	if c := tuningTick(t, &store.MentorTuning{}); c.TrendlineMinBouncePts != 0 {
+		t.Fatalf("unset trendline_min_bounce_pts = %v, want 0", c.TrendlineMinBouncePts)
+	}
+	if c := tuningTick(t, &store.MentorTuning{TrendlineMinBouncePts: &v}); c.TrendlineMinBouncePts != 20 {
+		t.Fatalf("stored trendline_min_bounce_pts did not reach the evaluator: %v", c.TrendlineMinBouncePts)
+	}
+	if c := tuningTick(t, &store.MentorTuning{TrendlineMinBouncePts: &bad}); c.TrendlineMinBouncePts != 0 {
+		t.Fatalf("out of range must fail closed to the default, got %v", c.TrendlineMinBouncePts)
+	}
+}
+
+// TestD3G14Knob - D3-G14: unset = 0, a stored 1.5 reaches the evaluator, out of range fails closed to the default.
+func TestD3G14Knob(t *testing.T) {
+	v, bad := float64(1.5), float64(5000)
+	if c := tuningTick(t, &store.MentorTuning{}); c.TrendlineMaxSlopePtsPerBar != 0 {
+		t.Fatalf("unset trendline_max_slope_pts_per_bar = %v, want 0", c.TrendlineMaxSlopePtsPerBar)
+	}
+	if c := tuningTick(t, &store.MentorTuning{TrendlineMaxSlopePtsPerBar: &v}); c.TrendlineMaxSlopePtsPerBar != 1.5 {
+		t.Fatalf("stored trendline_max_slope_pts_per_bar did not reach the evaluator: %v", c.TrendlineMaxSlopePtsPerBar)
+	}
+	if c := tuningTick(t, &store.MentorTuning{TrendlineMaxSlopePtsPerBar: &bad}); c.TrendlineMaxSlopePtsPerBar != 0 {
+		t.Fatalf("out of range must fail closed to the default, got %v", c.TrendlineMaxSlopePtsPerBar)
+	}
+}
+
+// TestD3G12Knob - D3-G12: unset = true, a stored false reaches the evaluator.
+func TestD3G12Knob(t *testing.T) {
+	v := false
+	if c := tuningTick(t, &store.MentorTuning{}); c.HTFTrendlineFlip != true {
+		t.Fatalf("unset htf_trendline_flip = %v, want true", c.HTFTrendlineFlip)
+	}
+	if c := tuningTick(t, &store.MentorTuning{HTFTrendlineFlip: &v}); c.HTFTrendlineFlip != false {
+		t.Fatalf("stored htf_trendline_flip did not reach the evaluator: %v", c.HTFTrendlineFlip)
 	}
 }
