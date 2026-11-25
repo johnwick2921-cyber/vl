@@ -12,8 +12,9 @@ import (
 
 // NT8 8.1.9.0 (auto-update 2026-11-15) ships a NinjaTrader.Custom.csproj whose Core and
 // Gui references are <ProjectReference> items with no HintPath. build-addon.ps1 mirrored
-// HintPaths only, so the UNCHANGED #71 source failed with 388 errors, the updater lived
-// on its dotnet fallback, and the readiness probe (an empty class) still said ok.
+// HintPaths only: in hand runs on 8.1.9.0 the UNCHANGED #71 source fails with 388 errors
+// while the readiness probe (an empty class) says ok. No AddOn build is recorded on this
+// box after 2026-11-12 00:30 CT, so no update has met it.
 
 func ps1InOrder(t *testing.T, parts ...string) {
 	t.Helper()

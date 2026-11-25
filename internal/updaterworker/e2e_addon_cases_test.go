@@ -121,7 +121,8 @@ func TestE2EAddonNT8ClosedCompletesDLLPlacedNoRestart(t *testing.T) {
 }
 
 // The dotnet fallback built it: the addon_build receipt says why the ps1 builder failed
-// (since NT8 8.1.9.0 it failed on every box and no record said so).
+// (the dotnet-built jobs of 2026-10-21 and 10-22 kept no reason; the 8.1.9.0 failure is
+// shown by hand runs only, no update has met it).
 func TestE2EAddonBuildReceiptKeepsThePs1Error(t *testing.T) {
 	r := newRig(t, withCSChanged())
 	r.w.runWin = func(ctx context.Context, name string, args ...string) ([]byte, error) {

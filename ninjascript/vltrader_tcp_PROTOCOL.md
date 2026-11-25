@@ -159,9 +159,15 @@ A contract is ARMED after the same position was read twice at least 5 s apart wi
 fill between, and only on an account whose order events are hooked. The NT8 Log says
 `settle gate ARMED for ...` (INFO), `settle gate DISARMED for ...` (INFO: its connection
 was disconnected and is back, or the account moved), `settle gate NOT ARMED for ...`
-(WARN after 60 s on a connected account, then every 10 min), each with "armed N of M";
-and every close logs either `close_position ran at once on ... - L= E= C= <verdict>` or
-`close_position was HELD <ms> ms ...`.
+(WARN after 60 s on a connected account, then every 10 min), each with "armed N of M".
+A close that names a SIM account logs `close_position ran at once on ... - <verdict>` or
+`close_position was HELD <ms> ms ...`. NOT every close has one of the two lines: one that
+joins a held close has none of its own (one HELD line for all of them), a close with no
+account, a non-SIM or unknown account or an unknown instrument has none, a fault logs
+`settle gate fault (...)` instead, a duplicate dropped before an entry logs `held close on
+... dropped before entry`, and a release that throws logs `held close release failed`.
+"ran at once" = handed to the handler, which can still answer without an order (e.g.
+`lx_working`). So the number of these lines is not the number of close frames.
 
 - A second close for the same account and contract joins the held one: the first
   deadline stays, a market close replaces a limit one.
@@ -186,10 +192,16 @@ and every close logs either `close_position ran at once on ... - L= E= C= <verdi
   `cancel_order` are not in that queue: they only Change or Cancel an existing order.
 - **Known limits, each can still open a reverse** (the bot raises its own-reverse P0):
   a stop that fills in the 113-237 ms between Flatten and its Close order; an entry
-  frame while a close is held; NT8 settling later than `settle_ms`.
+  frame while a close is held; NT8 settling later than `settle_ms`; NT8 Disconnected and
+  back while a close is held, its stop filled and the position late (the anchor is dropped,
+  the state is unknown, the close runs at once: position 2 and one own-reverse P0 measured
+  on the stub NT8, the same end as the old AddOn).
 
-Kill switches, no build and no NT8 restart: `Documents\NinjaTrader 8\VL\addon-switches.txt`,
-read at start and every 5 s when it changes; absent = defaults. `settle_ms=1000`
+Kill switches, no build and no NT8 restart: `Documents\NinjaTrader 8\VL\addon-switches.txt`
+under Windows' MyDocuments folder (the same rule as `connect.json`). The AddOn creates
+neither the file nor the `VL` folder (only the friend app makes that folder, for
+`connect.json`): make them by hand BEFORE they are needed. Read at start and every 5 s
+when it changes; absent = defaults. `settle_ms=1000`
 (0 = no hold; 0..2000), `keep_note=1`, `stop_check=1`, `own_exit_sweep=1`,
 `one_lx=1`. A bad value keeps the last good one; every load logs one line with the
 values in force. All 0 = the behaviour of `2026-10-22-d`.
