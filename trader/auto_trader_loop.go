@@ -404,6 +404,9 @@ func (at *AutoTrader) runCycle() error {
 	// per-strategy mentor_mode is ON; placements stay behind the MENTOR_PLACE
 	// env gate until P1 (#309) lands (L4: default OFF, byte-identical bot).
 	at.mentorTick(ctx)
+	// PEP MODE - the cycle fallback for the pep evaluator (the event loop is the
+	// primary path). Inert unless pep mode is ON.
+	at.pepTick()
 
 	// G2 (regime wave 2026-08-21) — per-cycle STRUCTURE snapshot: computed from
 	// the same 1m cache every other futures consumer reads, threaded into the
@@ -555,6 +558,24 @@ func (at *AutoTrader) runCycle() error {
 		return nil
 	}
 
+	// PEP MODE: like mentor, a pep trader's entries come ONLY from its own
+	// evaluator; the AI call is skipped (admission would refuse its entry anyway).
+	if at.pepSkipsAIDecision() {
+		at.logInfof("🎯 pep_mode: AI decision skipped for cycle #%d - entries come from the pep evaluator (no LLM call, no tokens)", at.callCount)
+		record.Success = true
+		record.ExecutionLog = append(record.ExecutionLog,
+			"pep_mode: AI decision skipped - entries come from the pep evaluator (no LLM call)")
+		record.AccountState = store.AccountSnapshot{
+			TotalBalance:          ctx.Account.TotalEquity,
+			AvailableBalance:      ctx.Account.AvailableBalance,
+			TotalUnrealizedProfit: ctx.Account.UnrealizedPnL,
+			PositionCount:         ctx.Account.PositionCount,
+			InitialBalance:        at.initialBalance,
+		}
+		at.saveDecision(record)
+		return nil
+	}
+
 	// 5. Use strategy engine to call AI for decision
 	at.logInfof("🤖 Requesting AI analysis and decision... [Strategy Engine]")
 	// Plan 4 Task 25 — decision latency timer (start)
@@ -669,6 +690,9 @@ func (at *AutoTrader) runCycle() error {
 			at.logErrorf("💸 DEEPSEEK PAYMENT FAILURE (402 Insufficient Balance) — cycles are dying with NO decision. Top up the DeepSeek account (api.deepseek.com). trader=%s", at.id)
 			at.on402Failure(time.Now(), err)
 		}
+		// m469 — a non-402 failure counts toward the "AI calls keep failing"
+		// P0 (noteAICallFailure ignores a 402: that has its own outage above).
+		at.noteAICallFailure(time.Now(), err)
 
 		// Activate safe mode after 3 consecutive failures
 		if at.consecutiveAIFailures >= 3 && !at.safeMode {
@@ -712,7 +736,12 @@ func (at *AutoTrader) runCycle() error {
 		at.logInfof("✅ AI recovered after %d consecutive failures", at.consecutiveAIFailures)
 	}
 	// P5 — a success ends any latched 402 outage (banner auto-ack).
-	at.onAISuccess(time.Now())
+	// m469 — only when the AI really answered: a pre-call guardrail HOLD
+	// (holdCycle: market_data_unavailable, blackout_window, …) made no AI call
+	// and must not end an outage or push "AI is BACK".
+	if aiCallAnswered(aiDecision) {
+		at.onAISuccess(time.Now())
+	}
 	at.consecutiveAIFailures = 0
 	if at.safeMode {
 		at.logInfof("🛡️ SAFE MODE DEACTIVATED — AI is working again. Resuming normal trading.")
@@ -969,16 +998,34 @@ func (at *AutoTrader) runCycle() error {
 func (at *AutoTrader) cmeSessionClosedSkip() bool {
 	now := traderNow() // class 32 trader clock (== time.Now() in production; test seam)
 	open := kernel.IsCMEOpen(now)
+	wasClosed := at.cmePrevOpen != nil && !*at.cmePrevOpen
 	at.noteCMESessionEdgeAt(open, now)
 	if open {
+		// m244 — the first open cycle after a closed period sweeps due expiries
+		// BEFORE any new work: an expiry inside the break never got its inline
+		// sweep (the pass is CME-open-gated), and the resting order can fill on
+		// the reopen. Row 410: expiry 16:59:59.999 filled 17:00:40.
+		if wasClosed {
+			at.sweepDueExpiriesAtReopen(now)
+		}
 		return false
 	}
 	// R22 P1-B — retire the book on an EARLY-CLOSE afternoon BEFORE skipping.
-	// The early close is the flat (early_close − eod_flat_offset, 0 by
-	// default), the very instant IsCMEOpen turns false — and this skip returns
-	// long before runCycle reaches enforceEODFlat. Without this, 11-27 and
-	// 12-24 carried resting arms and open positions over the holiday.
+	// Since m471 L1-1 the flat itself lands on the OPEN path, at least
+	// earlyCloseFlatMarginMin before the close (enforceEODFlatAt on the 60 s
+	// beat); this closed-path pass is the backstop for anything still on the
+	// book once IsCMEOpen has turned false — this skip returns long before
+	// runCycle reaches enforceEODFlat. Without it, 11-27 and 12-24 carried
+	// resting arms and open positions over the holiday.
 	at.retireBookAfterEarlyCloseAt(now)
+	// m463 (D5.2-R27): a due expiry is swept on the CLOSED path too — an order
+	// whose 4h candle ended at the close (kernel swingExpiry) is cancelled
+	// during the break, never left to fill on the reopen (trade 678).
+	at.sweepDueExpiriesWhileClosed(now)
+	// m427/2 — a replay hold released on a closed market bumps the history
+	// refill generation, but the only re-seed reader is the mentor Tick, which
+	// never runs while CME is shut. Rebuild the DISPLAY-ONLY chart seed here.
+	at.mentorRefreshChartSeedOnClosed(now)
 	// E5 (owner ruling 2026-09-07): mark the cycle as having taken the closed
 	// path, so the loop's overrun check can tell the deliberate backoff from a
 	// fault. Set BEFORE the sleep: a Stop() during the backoff still leaves a
@@ -990,8 +1037,9 @@ func (at *AutoTrader) cmeSessionClosedSkip() bool {
 
 // retireBookAfterEarlyCloseAt runs the ONE EOD-flat definition
 // (enforceEODFlatAt: cancel arms first, then flatten, broker-truth checked) on
-// the closed path, from a shortened day's early close to the end of that
-// calendar date. It re-runs each closed cycle while it still acts, and stops
+// the closed path, from a shortened day's early close to the 17:00 boundary
+// (from 17:00 the instant belongs to the next trading date, which
+// SessionStateAt resolves since m471). It re-runs each closed cycle while it still acts, and stops
 // for the date once a pass has nothing left to retire. Ordinary closes (the
 // 16:00 halt, the weekend) never reach it: their flat is inside the open
 // session and the open path already ran it.

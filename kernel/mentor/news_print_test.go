@@ -130,7 +130,7 @@ func TestPrintCandleMovesHTFWhenNoPrintWindow(t *testing.T) {
 // the 07:30 bar's session key is "09-15" while now's is "09-16", so the print
 // candle moved the seeded 1h line and the seed disagreed with the live tick.
 func TestSeedDropsPrintWindowAt1730(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.PrintWindows = []PrintWindow{printWindowCT(2026, 9, 15)}
 	e := New(cfg)
@@ -146,7 +146,7 @@ func TestSeedDropsPrintWindowAt1730(t *testing.T) {
 // itself (htfFeedBars returns it untouched), so the 07:30 spike is a real break
 // and draws the 1h line — the no-window path is unchanged.
 func TestSeedNoWindowUnchanged(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	e := New(cfg)
 	bars := newsTape(6, 0, 105)

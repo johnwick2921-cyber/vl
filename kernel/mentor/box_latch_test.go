@@ -16,8 +16,9 @@ import (
 // the scan alone rebuilds ftgh:103.50:100.00, but the latched box must stay
 // ftgh:102.00:100.00 → RED.
 func TestBoxLatchNeverRedrawsOnHigherHigh(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
+	cfg.Exec2mAfter30m = false // m410: this fixture pins the 1m box geometry (boxes now draw on the traded 2m frame after 09:00)
 	cfg.KeyLevelTFMinutes = 1
 	cfg.EMAPeriod34 = 0
 	cfg.EMAPeriod9 = 0

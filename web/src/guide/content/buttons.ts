@@ -60,7 +60,7 @@ export const buttons: GuideSection = {
         },
         {
           label: '🧹 Clear (chat)',
-          api: 'AgentPage quick chip',
+          api: 'AgentChatPage quick chip',
           sideEffects: 'Clears the chat history / context window.',
           budget: 'None.',
           undo: 'History is gone — not recoverable.',
@@ -75,6 +75,10 @@ export const buttons: GuideSection = {
         {
           title: 'Two steps, on purpose',
           body: 'Tap Emergency Flat → the modal names the trader it acts on → tap Confirm. There is no single-click flatten — that is the point. To stop new entries as well, Pause the trader.',
+        },
+        {
+          title: 'Read the result colour',
+          body: "Green means the bot sent the flatten to NinjaTrader (the server said triggered: true). RED 'NOT SENT: <reason>' means it did NOT go out — NinjaTrader disconnected, an expired login (HTTP 401), a server error, or a network error — so the position is still open: fix the reason (log in again, reconnect NT8) or flatten by hand in NinjaTrader. Green is a send, not a fill: NT8 confirms each close separately.",
         },
         {
           title: 'What it will NOT do',

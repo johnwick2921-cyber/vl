@@ -39,6 +39,11 @@ func resetPricedCloseCacheForTest() {
 	pricedCloseMu.Unlock()
 }
 
+// ResetPricedCloseCacheForTest is the same TEST SEAM for the trader package: its
+// look-twice fixtures run at an incident's date, where a price another test
+// parked at wall time never goes stale.
+func ResetPricedCloseCacheForTest() { resetPricedCloseCacheForTest() }
+
 // pricedCloseGraceMs bounds retention: past it, a parked price is too stale to trust
 // for a reconcile that only just observed the row flat.
 const pricedCloseGraceMs = 120_000 // 2 minutes

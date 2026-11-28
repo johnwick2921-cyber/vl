@@ -11,7 +11,7 @@ import "testing"
 
 func htfAgreeISB(t *testing.T, h HTF) Intent {
 	t.Helper()
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	e := newISBEval(cfg)
 	e.State.HTF = h

@@ -2,12 +2,13 @@
 // the owner sees it. Every assertion renders the REAL component the card
 // mounts (ScenarioList, PictureGateChip, SessionPlanCard, PictureHtfPanel,
 // DayPlanEditor), fed the JSON shapes the server serves.
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { ScenarioList } from './ScenarioList'
 import { PictureGateChip } from './PictureGateChip'
 import { SessionPlanCard } from './SessionPlanCard'
 import { PictureHtfPanel } from '../trader/PictureHtfPanel'
+import { httpClient } from '../../lib/httpClient'
 import { DayPlanEditor } from '../strategy/DayPlanEditor'
 import type { PlanOrderLeg, PlanScenario, PlanToday } from '../../lib/api/plan'
 
@@ -392,6 +393,9 @@ describe('SessionPlanCard — machine plan banner and composed-of line', () => {
 })
 
 describe('PictureHtfPanel — a planned opportunity links to its Day Plan scenario', () => {
+  // m435: the panel is a dropdown, closed by default — open it for these pins.
+  beforeEach(() => localStorage.setItem('vl.pictureHtf.open', '1'))
+
   const ROW = {
     opp_key: EVIDENCE.opp_key,
     stage: 'planned',
@@ -419,10 +423,10 @@ describe('PictureHtfPanel — a planned opportunity links to its Day Plan scenar
     created_at_ms: 1790190000000,
   }
   const serve = (body: unknown) =>
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({ json: async () => body })
-    )
+    vi.spyOn(httpClient, 'request').mockResolvedValue({
+      success: true,
+      data: body,
+    })
 
   it('renders "→ Day Plan P1 · <plan_id> v<n>" from plan_link', async () => {
     serve({

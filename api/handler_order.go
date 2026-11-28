@@ -39,9 +39,14 @@ func (s *Server) handleTraderList(c *gin.Context) {
 
 		// Get strategy name if strategy_id is set
 		var strategyName string
+		tradingMode, pepStyle := storepkg.TradingModeAI, ""
 		if trader.StrategyID != "" {
 			if strategy, err := s.store.Strategy().Get(userID, trader.StrategyID); err == nil {
 				strategyName = strategy.Name
+				// PEP MODE: the dashboard's mode chip (additive fields).
+				if cfg, perr := strategy.ParseConfig(); perr == nil {
+					tradingMode, pepStyle = tradingModeFields(cfg)
+				}
 			}
 		}
 
@@ -57,6 +62,8 @@ func (s *Server) handleTraderList(c *gin.Context) {
 			"initial_balance":     trader.InitialBalance,
 			"strategy_id":         trader.StrategyID,
 			"strategy_name":       strategyName,
+			"trading_mode":        tradingMode, // ai | mentor | pep | conflict
+			"pep_style":           pepStyle,    // "A" | "E" | "Custom" when trading_mode is pep, else ""
 		})
 	}
 
@@ -106,6 +113,13 @@ func (s *Server) handleGetTraderConfig(c *gin.Context) {
 		"custom_prompt":         traderConfig.CustomPrompt,
 		"override_base_prompt":  traderConfig.OverrideBasePrompt,
 		"is_cross_margin":       traderConfig.IsCrossMargin, "is_running": isRunning,
+	}
+	// PEP MODE: the trader's trading mode (additive fields).
+	result["trading_mode"], result["pep_style"] = storepkg.TradingModeAI, ""
+	if fullCfg.Strategy != nil {
+		if cfg, perr := fullCfg.Strategy.ParseConfig(); perr == nil {
+			result["trading_mode"], result["pep_style"] = tradingModeFields(cfg)
+		}
 	}
 
 	c.JSON(http.StatusOK, result)
@@ -289,7 +303,7 @@ func (s *Server) handlePositionHistory(c *gin.Context) {
 	// Get closed positions (ITEM 2 per-account: scope the list to the selected
 	// account when provided; aggregate stats below remain trader-scoped pending
 	// trade data — there are no closed positions yet to exercise them).
-	positions, err := store.Position().GetClosedPositions(trader.GetID(), limit, c.Query("account"))
+	positions, err := store.Position().GetHistoryPositions(trader.GetID(), limit, c.Query("account"))
 	if err != nil {
 		SafeInternalError(c, "Get position history", err)
 		return
@@ -332,6 +346,11 @@ func (s *Server) handlePositionHistory(c *gin.Context) {
 type positionHistoryRow struct {
 	*storepkg.TraderPosition
 	PnlStatus string `json:"pnl_status"` // "resolved" | "unresolved"
+	// m426 (E3 reader): these shadow the embedded row's fields in the JSON so a
+	// legacy second-valued row (ids 691-697) reaches the UI in milliseconds via
+	// store.PositionEpochMs instead of rendering as 1970.
+	UpdatedAt int64 `json:"updated_at"`
+	CreatedAt int64 `json:"created_at"`
 }
 
 // annotatePositionHistory stamps every row with its corrected-column status and
@@ -345,8 +364,17 @@ func annotatePositionHistory(positions []*storepkg.TraderPosition) ([]positionHi
 		if p == nil || p.PnlCorrected == nil {
 			status = "unresolved"
 			unresolved++
+		} else if p.Status == "OPEN" {
+			// m232: an OPEN row that booked a partial leg — label it "partial" so
+			// the UI shows the realized partial P&L, not a blank.
+			status = "partial"
 		}
-		rows = append(rows, positionHistoryRow{TraderPosition: p, PnlStatus: status})
+		row := positionHistoryRow{TraderPosition: p, PnlStatus: status}
+		if p != nil {
+			row.UpdatedAt = p.UpdatedAtMs()
+			row.CreatedAt = storepkg.PositionEpochMs(p.CreatedAt)
+		}
+		rows = append(rows, row)
 	}
 	return rows, unresolved
 }

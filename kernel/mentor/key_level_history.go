@@ -17,20 +17,24 @@ import (
 // @11:20), so older contracts are stitched onto today's contract price scale
 // through a MEASURED roll gap — never a guessed one.
 
-// Roll-gap rule (CTO REL10-438-FIXES #1):
+// Roll-gap rule (CTO REL10-438-FIXES #1; m335 correction):
 //   - The ROLL of a pair = the first session day (17:00 CT flip) on which the
 //     NEWER contract has >= denseFront1mMin 1m bars (dense live/front).
 //   - The gap = the median of (newer.close − older.close) over the overlapping
-//     NATIVE 1h bars of the last FULL session day before the roll — the last
-//     session day before the roll day with at least minRollOverlap overlapping
-//     1h bars. The whole-overlap median is wrong: the spread ranges widely
-//     (measured 258.25..352.25 over 1493 bars), so the gap must be read at the
-//     roll boundary, not across three months.
-//   - Fewer than minRollOverlap overlapping bars → no measured gap → the
+//     NATIVE 1h bars of the SESSION-OPEN EVENING (17:00–23:59 CT) of the last
+//     FULL session day before the roll — the last session day before the roll
+//     day with at least minRollOverlap overlapping 1h bars. The whole-day
+//     median is WRONG (m335): the Sep/Dec basis is stable ~291 through the
+//     evening, then DRIFTS UP through RTH (measured 289.25..299.75 on
+//     2026-09-11 alone; the whole-day median 293.0 reads 2.00 high vs the
+//     served klines' 291 roll basis). The gap must be read at the roll
+//     boundary (the 17:00 session open), before the RTH drift.
+//   - Fewer than minEveningOverlap evening bars → no measured gap → the
 //     stitch STOPS (never guess a gap).
 const (
-	denseFront1mMin = 1000
-	minRollOverlap  = 10
+	denseFront1mMin   = 1000
+	minRollOverlap    = 10
+	minEveningOverlap = 7 // the evening session (17:00–23:59 CT) holds 7 native 1h bars
 )
 
 // Contract1M is one contract's 1m history (ascending OpenTime), on its OWN
@@ -41,6 +45,11 @@ type Contract1M struct {
 	Contract string
 	Bars     []market.Kline // 1m, ascending
 	Bars1H   []market.Kline // native 1h, ascending (whole-hour aligned)
+	// Bars15m / Bars30m — the contract's native 15m / 30m (levels audit LL-4):
+	// read for the NEWEST contract only, to rebuild the pre-roll 1H RTH
+	// candles from its own prints (OwnContractKeyLevel1H).
+	Bars15m []market.Kline
+	Bars30m []market.Kline
 }
 
 // RollGap records one measured roll: the NATIVE pair gap (median of
@@ -55,6 +64,12 @@ type RollGap struct {
 	Min  float64
 	Max  float64
 	Pair string // "older→newer"
+	// PreDense (levels audit LL-5): the newer contract had no dense session
+	// yet (no session day with >= denseFront1mMin 1m bars — a seed between
+	// the roll and the new contract's first full session), so the gap was
+	// measured on the LAST overlapping native-1h evening instead of the one
+	// before the roll day. The boot line says so.
+	PreDense bool
 }
 
 // rollDayKey returns the FIRST session-day key (17:00 CT flip) on which the
@@ -146,26 +161,28 @@ func lastFullOverlapBefore(newer1h, older1h []market.Kline, rollDay string) stri
 }
 
 // measureRollGap returns the median of (newer.close − older.close) over the
-// native 1h bars of both contracts at the SAME OpenTime on the given session
-// day, plus that day's min/max spread. ok=false when fewer than
-// minRollOverlap bars overlap that day.
+// SESSION-OPEN EVENING (17:00–23:59 CT) native 1h bars of both contracts at
+// the SAME OpenTime on the given session day, plus that evening's min/max
+// spread. ok=false when fewer than minEveningOverlap bars overlap that
+// evening. The evening — not the whole day — is the roll boundary: the basis
+// is stable there and drifts up through RTH (m335).
 func measureRollGap(newer1h, older1h []market.Kline, day string) (RollGap, bool) {
 	m := make(map[int64]float64, len(newer1h))
 	for _, b := range newer1h {
-		if sessionKeyCT(b.OpenTime) == day {
+		if sessionKeyCT(b.OpenTime) == day && sessionOpenEveningCT(b.OpenTime) {
 			m[b.OpenTime] = b.Close
 		}
 	}
 	var diffs []float64
 	for _, b := range older1h {
-		if sessionKeyCT(b.OpenTime) != day {
+		if sessionKeyCT(b.OpenTime) != day || !sessionOpenEveningCT(b.OpenTime) {
 			continue
 		}
 		if nc, has := m[b.OpenTime]; has {
 			diffs = append(diffs, nc-b.Close)
 		}
 	}
-	if len(diffs) < minRollOverlap {
+	if len(diffs) < minEveningOverlap {
 		return RollGap{}, false
 	}
 	sort.Float64s(diffs)
@@ -176,6 +193,13 @@ func measureRollGap(newer1h, older1h []market.Kline, day string) (RollGap, bool)
 		Min: diffs[0],
 		Max: diffs[len(diffs)-1],
 	}, true
+}
+
+// sessionOpenEveningCT reports whether a bar opens in the evening session
+// (17:00–23:59 CT) — the hours right after the 17:00 CT session flip, before
+// the RTH basis drift. The roll gap is measured there.
+func sessionOpenEveningCT(ms int64) bool {
+	return time.UnixMilli(ms).In(ctime()).Hour() >= 17
 }
 
 // backAdjust shifts every OHLC of bars by gap onto the newest contract's
@@ -204,9 +228,21 @@ type RollStitcher struct {
 	head1h       []market.Kline // head contract's NATIVE 1h (own scale)
 	headRollDay  string         // roll day of the head contract
 	headContract string
+	headPreDense bool    // LL-5: the head has no dense session yet (headRollDay = preDenseRollDay)
+	newestFrom   int64   // LL-4: the first Add's cut — the series reads the newest contract strictly after it
 	cumGap       float64 // cumulative gap from the head contract to the newest
 	gaps         []RollGap
 	stoppedAt    string
+	// seamCovered — the head-contract 1m bars (newest scale) the CUT dropped that
+	// the older contract does NOT store (m445 round 4, D1). The cut keeps the
+	// older's bars to its last stored bar and the head's only after it, so a
+	// minute the older never recorded but the head DID is absent from the
+	// stitched series although a stored bar exists for it. The series is
+	// unchanged (the key levels and 1m lines are not touched here); the
+	// data-integrity gate reads the open times so a roll seam is not read as lost
+	// data, and the swing 4h EMA34 aggregates the bars themselves (m456 round 2)
+	// so the bucket the seam holds is FOLDED, not merely not flagged.
+	seamCovered []market.Kline
 }
 
 // NewRollStitcher starts the stitch from the NEWEST contract (own scale). The
@@ -220,14 +256,33 @@ func NewRollStitcher(newest Contract1M) *RollStitcher {
 	}
 	rd, ok := rollDayKey(newest.Bars)
 	if !ok {
-		// A contract that never reaches the dense-front threshold has no
-		// measurable roll; nothing can be stitched onto it.
-		s.stoppedAt = newest.Contract
+		if len(newest.Bars) == 0 {
+			s.stoppedAt = newest.Contract
+			return s
+		}
+		// levels audit LL-5: the newest contract has no dense session YET —
+		// a seed between the roll and its first full session (09-15 seed:
+		// "stopped at MNQ 12-26", 6 candles, 1 live key level). There is no
+		// reset at a roll [OctD5.2-R13/R14/R16 @04:10–06:40]: measure the gap
+		// on the LAST session day the two contracts' native 1h overlap (the
+		// same lastFullOverlapBefore + measureRollGap evening rule, the
+		// bound being "after every stored day"). No overlap or too few
+		// evening bars still stops the stitch — a gap is never guessed.
+		// PRECONDITION: `newest` is the TRADED contract (the caller cuts the
+		// spans there — trader mentorFullKeyLevelHistory, mentor-replay Pin);
+		// a next contract with pre-roll rows is not history yet.
+		s.headRollDay = preDenseRollDay
+		s.headPreDense = true
 		return s
 	}
 	s.headRollDay = rd
 	return s
 }
+
+// preDenseRollDay is the roll-day bound for a newest contract with no dense
+// session yet (LL-5): later than every session-day key, so the measurement
+// day is the most recent day with enough overlapping native 1h bars.
+const preDenseRollDay = "9999-12-31"
 
 // Add stitches one OLDER contract onto the accumulated series. It returns
 // false when the roll gap cannot be measured (fewer than minRollOverlap
@@ -248,6 +303,7 @@ func (s *RollStitcher) Add(older Contract1M) bool {
 		return false
 	}
 	pair.Pair = older.Contract + "→" + s.headContract
+	pair.PreDense = s.headPreDense
 	if len(older.Bars) == 0 {
 		s.stoppedAt = older.Contract + "→" + s.headContract
 		return false
@@ -265,13 +321,91 @@ func (s *RollStitcher) Add(older Contract1M) bool {
 	cutTime := older.Bars[len(older.Bars)-1].OpenTime
 	pre := backAdjust(older.Bars, total)     // every bar ≤ cutTime (the whole older series)
 	head := trimAfter(s.stitched1m, cutTime) // strictly after the older's last bar
+	s.seamCovered = append(s.seamCovered, seamCoveredBy(s.stitched1m, older.Bars, cutTime)...)
 	s.stitched1m = append(pre, head...)
+	if len(s.gaps) == 0 {
+		s.newestFrom = cutTime + 1
+	}
 	s.gaps = append(s.gaps, pair)
 	s.head1h = older.Bars1H
 	s.headRollDay = olderRD
+	s.headPreDense = false
 	s.headContract = older.Contract
 	s.cumGap = total
 	return true
+}
+
+// seamCoveredBy returns the head's bars (newest scale) that the cut drops
+// (OpenTime <= cutTime), that lie inside the older contract's recorded span
+// and that the older contract does not store — minutes stored by ONE contract
+// only, so the stitch's "older up to its last bar" rule loses them from the
+// series. Sparse pre-roll import snapshots (a head session day with fewer than
+// minSnapshotSessionBars bars) are NOT counted: one bar a day is not a recording
+// of the minutes around it, and counting it would let it split a real hole.
+func seamCoveredBy(head, older []market.Kline, cutTime int64) []market.Kline {
+	if len(older) == 0 {
+		return nil
+	}
+	first := older[0].OpenTime
+	var cand []market.Kline
+	for _, b := range head {
+		if b.OpenTime > cutTime {
+			break // ascending
+		}
+		if b.OpenTime < first {
+			continue
+		}
+		i := sort.Search(len(older), func(i int) bool { return older[i].OpenTime >= b.OpenTime })
+		if i < len(older) && older[i].OpenTime == b.OpenTime {
+			continue // the older stores it: it is in the series
+		}
+		cand = append(cand, b)
+	}
+	if len(cand) == 0 {
+		return nil
+	}
+	counts := make(map[string]int, 64)
+	for _, b := range head {
+		counts[sessionKeyCT(b.OpenTime)]++
+	}
+	out := cand[:0:0]
+	for _, b := range cand {
+		if counts[sessionKeyCT(b.OpenTime)] >= minSnapshotSessionBars {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
+// NewestFrom is the instant from which the stitched series is the newest
+// contract's own bars (LL-4): the first roll's cut + 1 ms; 0 when nothing was
+// stitched (the whole series is the newest contract).
+func (s *RollStitcher) NewestFrom() int64 { return s.newestFrom }
+
+// SeamCovered returns, ascending, the minutes some stitched contract stores
+// that the stitched series itself lacks (see seamCovered). Judge a minute
+// missing only when it is absent from the series AND from this list.
+func (s *RollStitcher) SeamCovered() []int64 { return SeamMinutes(s.SeamBars()) }
+
+// SeamMinutes is the open times of seam bars, in the order given.
+func SeamMinutes(bars []market.Kline) []int64 {
+	out := make([]int64, len(bars))
+	for i, b := range bars {
+		out[i] = b.OpenTime
+	}
+	return out
+}
+
+// SeamBars returns, ascending by open time, the bars behind SeamCovered: what a
+// contract stored at those minutes, already on the newest contract's scale (a
+// copy). The stitched series plus these bars is every minute any contract of
+// the stitch stores, which is what the swing 4h EMA34 must be built from
+// (m456 defect 2): hand them to Evaluator.SetSeamBars before SeedFull /
+// ReseedState.
+func (s *RollStitcher) SeamBars() []market.Kline {
+	out := append([]market.Kline(nil), s.seamCovered...)
+	sort.Slice(out, func(i, j int) bool { return out[i].OpenTime < out[j].OpenTime })
+	return out
 }
 
 // Result returns the stitched 1m series (newest scale), the 08:30-anchored 1H
@@ -323,6 +457,9 @@ func KeyLevelHistoryLine(contracts []Contract1M, stitched []market.Kline, gaps [
 	gapStrs := make([]string, len(gaps))
 	for i, g := range gaps {
 		gapStrs[i] = fmt.Sprintf("%.1f@%s[%.2f..%.2f]", g.Gap, g.Day, g.Min, g.Max)
+		if g.PreDense {
+			gapStrs[i] += "(measured before " + strings.SplitN(g.Pair, "→", 2)[1] + "'s first dense session)"
+		}
 	}
 	stop := "full"
 	if stoppedAt != "" {

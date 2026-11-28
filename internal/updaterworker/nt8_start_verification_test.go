@@ -64,19 +64,31 @@ func TestNT8StartVerificationDelayedHealthyStartCompletes(t *testing.T) {
 	}
 }
 
-// The process probe (tasklist) errors after Start-Process: liveness is
-// unproven, so the step must not report success. Same honest recovery_needed
-// edge as the absent process — never a false-clean reverted_clean.
+// m246: the process probe (tasklist) errors PERSISTENTLY after Start-Process —
+// the whole bounded liveness wait passes with no positive answer, so liveness
+// is unproven. Same honest recovery_needed edge as the absent process — never a
+// false-clean reverted_clean. (A single transient error is retried, see the
+// retry pin below.)
 func TestNT8StartVerificationProbeErrorIsRecoveryNeeded(t *testing.T) {
 	r := newRig(t, withCSChanged())
-	r.set(func() { r.startProbeError = true })
+	r.set(func() { r.startProbeErrorPersistent = true })
 	j := r.runToEnd(t)
 	r.noViolations(t)
 	if j.State != updaterjob.StateRecoveryNeeded {
-		t.Fatalf("job %s (error %q), want recovery_needed: the process probe errored after start", j.State, j.Error)
+		t.Fatalf("job %s (error %q), want recovery_needed: the process probe kept erroring after start", j.State, j.Error)
 	}
 	if r.callCount("activate") != 0 {
 		t.Fatalf("activate ran %d times before NT8 liveness was proven", r.callCount("activate"))
+	}
+	// m246: the persistent probe error is named in the receipt.
+	found := false
+	for _, rc := range j.Receipts {
+		if rc.Step == "nt8_restart" && rc.Evidence != nil && strings.Contains(rc.Evidence["nt8_start_probe_error"], "tasklist") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("the nt8_restart receipt must record nt8_start_probe_error")
 	}
 }
 
@@ -135,19 +147,20 @@ func TestNT8StartVerificationStartCommandFailsIsRecoveryNeeded(t *testing.T) {
 	}
 }
 
-// The liveness probe errors during the exit-wait (after NT8 was stopped):
-// liveness is unproven, so recovery_needed — never a false-clean revert.
+// m246: the liveness probe errors PERSISTENTLY during the exit-wait (after NT8
+// was stopped): the full exit is never confirmed, so recovery_needed — never a
+// false-clean revert. (A single transient error is retried.)
 func TestNT8StartVerificationExitWaitProbeErrorIsRecoveryNeeded(t *testing.T) {
 	r := newRig(t, withCSChanged())
 	r.set(func() {
 		r.nt8HangsOnClose = true // force-stop path
 		r.nt8ExitLinger = 1      // the old process lingers one poll after the stop
-		r.exitWaitProbeError = true
+		r.exitWaitProbeErrorPersistent = true
 	})
 	j := r.runToEnd(t)
 	r.noViolations(t)
 	if j.State != updaterjob.StateRecoveryNeeded {
-		t.Fatalf("job %s (error %q), want recovery_needed: the exit-wait probe errored after the stop", j.State, j.Error)
+		t.Fatalf("job %s (error %q), want recovery_needed: the exit-wait probe kept erroring after the stop", j.State, j.Error)
 	}
 	if r.callCount("activate") != 0 {
 		t.Fatalf("activate ran %d times before NT8 liveness was proven", r.callCount("activate"))

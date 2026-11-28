@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"net"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -449,29 +448,20 @@ func TestMentorCancelArmReachesTheBroker(t *testing.T) {
 // guarded). Mutant: dropping the dispatch case leaves the spy uncalled.
 func TestMentorMoveStopBEReachesMoveStopWire(t *testing.T) {
 	at, _, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
-	var mu sync.Mutex
-	var moved []float64
-	oldWire := moveStopWire
-	moveStopWire = func(nt *nttrader.TCPTrader, side string, newStop float64) error {
-		mu.Lock()
-		moved = append(moved, newStop)
-		mu.Unlock()
-		return nil
-	}
-	t.Cleanup(func() { moveStopWire = oldWire })
+	moves := &swingSignalMoves{}
+	moves.install(t)
 	row := store.ArmedOrderDB{TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR", Scenario: "swing-1",
 		Side: "long", EntryPx: 29600, StopPx: 29595, TargetPx: 29660, Kind: "stop_entry", Condition: "SWING4H",
 		State: store.StateFilled, SignalID: "swing-1-sig", FillPrice: 29600, FillQuantity: 1}
 	if err := ledger.DB().Create(&row).Error; err != nil {
 		t.Fatal(err)
 	}
+	swingOwnedFixture(t, at, row) // m441: the arm's own position must be provable
 	mentorRegisterLiveArmForTest("swing-1", at.id, row.ID, "long", 29600)
 	resetMentorCounters(at)
 	at.mentorDispatchIntent(mentor.Intent{Action: mentor.ActionMoveStopBE, ArmID: "swing-1", Reason: "swing +1R"}, mentorTierInputs{}, 1000, 1100)
-	mu.Lock()
-	defer mu.Unlock()
-	if len(moved) != 1 || moved[0] != 29600 {
-		t.Fatalf("moveStopWire must be called once with the entry price, got %v", moved)
+	if moves.n() != 1 || moves.calls[0].stop != 29600 || moves.calls[0].signalID != "swing-1-sig" {
+		t.Fatalf("the signal-scoped move must be called once with the entry price, got %+v", moves.calls)
 	}
 	if c := at.mentorCountSnapshot()["move_be_sent"]; c != 1 {
 		t.Fatalf("move_be_sent = %d, want 1", c)
@@ -488,6 +478,7 @@ func TestMentorClosePositionReachesTheBroker(t *testing.T) {
 	if err := ledger.DB().Create(&row).Error; err != nil {
 		t.Fatal(err)
 	}
+	swingOwnedFixture(t, at, row) // m441: the arm's own position must be provable
 	mentorRegisterLiveArmForTest("swing-1", at.id, row.ID, "short", 29600)
 	resetMentorCounters(at)
 	at.mentorDispatchIntent(mentor.Intent{Action: mentor.ActionClosePosition, ArmID: "swing-1", Reason: "hold to the 2nd 4h close"}, mentorTierInputs{}, 1000, 1100)
@@ -598,24 +589,39 @@ func TestMentorClosePositionRefusesUnfilledArm(t *testing.T) {
 // arm that never FILLED must be refused and must NOT move another trade's stop.
 func TestMentorMoveStopBERefusesUnfilledArm(t *testing.T) {
 	at, _, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
+	moves := &swingSignalMoves{}
+	moves.install(t)
+	// a RESTING (working) swing order: not a position YET - refused, retried.
 	row := store.ArmedOrderDB{TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR", Scenario: "swing-uf-be",
 		Side: "long", EntryPx: 29600, StopPx: 29595, TargetPx: 29660, Kind: "stop_entry", Condition: "SWING4H",
-		State: store.StateCancelled, SignalID: "swing-uf-be-sig"} // cancelled, never filled
+		State: store.StateWorking, SignalID: "swing-uf-be-sig"}
 	if err := ledger.DB().Create(&row).Error; err != nil {
 		t.Fatal(err)
 	}
 	mentorRegisterLiveArmForTest("swing-uf-be", at.id, row.ID, "long", 29600)
 	resetMentorCounters(at)
-	oldWire := moveStopWire
-	moved := false
-	moveStopWire = func(nt *nttrader.TCPTrader, side string, newStop float64) error { moved = true; return nil }
-	t.Cleanup(func() { moveStopWire = oldWire })
 	at.mentorDispatchIntent(mentor.Intent{Action: mentor.ActionMoveStopBE, ArmID: "swing-uf-be", Reason: "swing +1R"}, mentorTierInputs{}, 1000, 1100)
-	if moved {
+	if moves.n() != 0 {
 		t.Fatal("an unfilled swing must NOT move a stop")
 	}
 	if c := at.mentorCountSnapshot()["move_be_refused_not_filled"]; c != 1 {
 		t.Fatalf("move_be_refused_not_filled = %d, want 1", c)
+	}
+	// a CANCELLED order never became a position: refused AND the state is over.
+	row2 := store.ArmedOrderDB{TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR", Scenario: "swing-uf-be2",
+		Side: "long", EntryPx: 29600, StopPx: 29595, TargetPx: 29660, Kind: "stop_entry", Condition: "SWING4H",
+		State: store.StateCancelled, SignalID: "swing-uf-be2-sig"}
+	if err := ledger.DB().Create(&row2).Error; err != nil {
+		t.Fatal(err)
+	}
+	mentorRegisterLiveArmForTest("swing-uf-be2", at.id, row2.ID, "long", 29600)
+	resetMentorCounters(at)
+	at.mentorDispatchIntent(mentor.Intent{Action: mentor.ActionMoveStopBE, ArmID: "swing-uf-be2", Reason: "swing +1R"}, mentorTierInputs{}, 1000, 1100)
+	if moves.n() != 0 {
+		t.Fatal("a cancelled swing must NOT move a stop")
+	}
+	if c := at.mentorCountSnapshot()["move_be_refused_position_gone"]; c != 1 {
+		t.Fatalf("move_be_refused_position_gone = %d, want 1", c)
 	}
 }
 
@@ -668,6 +674,7 @@ func TestMentorClosePositionRefusesUnknownQty(t *testing.T) {
 	if err := ledger.DB().Create(&row).Error; err != nil {
 		t.Fatal(err)
 	}
+	swingOwnedFixture(t, at, row) // the position exists; only its contracts are unattributable
 	mentorRegisterLiveArmForTest("swing-uq", at.id, row.ID, "short", 29600)
 	resetMentorCounters(at)
 	at.mentorDispatchIntent(mentor.Intent{Action: mentor.ActionClosePosition, ArmID: "swing-uq", Reason: "hold to the 2nd 4h close"}, mentorTierInputs{}, 1000, 1100)
@@ -708,18 +715,14 @@ func TestMentorSwingBEUsesLegOwnStop(t *testing.T) {
 	if err := ledger.DB().Create(&row).Error; err != nil {
 		t.Fatal(err)
 	}
+	swingOwnedFixture(t, at, row)
 	mentorRegisterLiveArmForTest("swing-be", at.id, row.ID, "long", 29600)
-	oldWire := moveStopWire
-	var moved []float64
-	moveStopWire = func(nt *nttrader.TCPTrader, side string, newStop float64) error {
-		moved = append(moved, newStop)
-		return nil
-	}
-	t.Cleanup(func() { moveStopWire = oldWire })
+	moves := &swingSignalMoves{}
+	moves.install(t)
 	resetMentorCounters(at)
 	at.mentorDispatchIntent(mentor.Intent{Action: mentor.ActionMoveStopBE, ArmID: "swing-be", Reason: "swing +1R"}, mentorTierInputs{}, 1000, 1100)
-	if len(moved) != 1 || moved[0] != 29600 {
-		t.Fatalf("the BE move must go through on the leg's own stop even with no STOP_MARKET row; got %v", moved)
+	if moves.n() != 1 || moves.calls[0].stop != 29600 {
+		t.Fatalf("the BE move must go through on the leg's own stop even with no STOP_MARKET row; got %+v", moves.calls)
 	}
 }
 
@@ -734,14 +737,13 @@ func TestMentorMoveStopBERefusesUnknownOwnStop(t *testing.T) {
 	if err := ledger.DB().Create(&row).Error; err != nil {
 		t.Fatal(err)
 	}
+	swingOwnedFixture(t, at, row) // the position exists; only its own stop is unknown
 	mentorRegisterLiveArmForTest("swing-nostop", at.id, row.ID, "long", 29600)
-	oldWire := moveStopWire
-	moved := false
-	moveStopWire = func(nt *nttrader.TCPTrader, side string, newStop float64) error { moved = true; return nil }
-	t.Cleanup(func() { moveStopWire = oldWire })
+	moves := &swingSignalMoves{}
+	moves.install(t)
 	resetMentorCounters(at)
 	at.mentorDispatchIntent(mentor.Intent{Action: mentor.ActionMoveStopBE, ArmID: "swing-nostop", Reason: "swing +1R"}, mentorTierInputs{}, 1000, 1100)
-	if moved {
+	if moves.n() != 0 {
 		t.Fatal("an unknown own stop must NOT move a stop")
 	}
 	if c := at.mentorCountSnapshot()["move_be_refused_no_stop"]; c != 1 {

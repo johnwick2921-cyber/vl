@@ -1,0 +1,28 @@
+## Summary
+
+- Problem: the stop guard let an unknown read count as clear.
+- What changed: the guard now refuses on an unknown read.
+
+## Quality checklist
+
+<!--
+One line per row of docs/QUALITY-CHECKLIST.md.
+-->
+
+- Q1 course frame cited: n/a: no course rule is touched by this change
+- Q2 every ending of new state: n/a: the change adds no new state
+- [x] Q3 guard removed, test went red: proof: TestFixtureGuardTurnsRed went red with the guard deleted (pasted below)
+- Q4 calendar edges: n/a: no time logic is touched here
+- Q5 full suite merged, CT and UTC: proof: go test ./... green at the merged head in CT and in UTC
+- **Q6** alert still arrives: n/a: no alert path is touched here
+- Q7 decision and check read the same data: n/a: no decision input changes
+- Q8 unknown never counts as clear: proof: TestFixtureUnknownReadRefuses, caller trader/gate.go:41
+- Q9 every path to the wire: proof: short
+- Q10 last-live updater: n/a: no artifact or AddOn change in this PR
+- Q11 live behaviour after Update: proof: post-install-check PASS pasted after the boot
+- Q12 escaped bug adds a row and a test: proof: Q8 tightened, TestFixtureUnknownReadRefuses added
+- Q13 adversarial review: proof: second reviewer findings F1-F3 folded in commit abc123
+
+## Rules / errors
+
+- Rules: SIM-only, DB read-only.

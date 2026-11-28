@@ -42,16 +42,28 @@ func TestR14StartFriendMonitorOwnerOnly(t *testing.T) {
 
 	// Friend mode: no-op.
 	t.Setenv("VL_FRIEND_INSTANCE", "1")
+	t.Setenv("VL_FRIENDS_PAGE", "1")
 	e.s.StartFriendMonitor()
 	if friendAlertStop != nil {
 		t.Fatalf("friend mode must NOT start the monitor")
 	}
 
-	// Owner mode: starts.
+	// Owner mode, page OFF (m386): no-op — the monitor only exists when the
+	// Friends page is enabled.
 	t.Setenv("VL_FRIEND_INSTANCE", "")
+	t.Setenv("VL_FRIENDS_PAGE", "")
+	resetFriendMonitorForTest()
+	e.s.StartFriendMonitor()
+	if friendAlertStop != nil {
+		t.Fatalf("owner mode with the friends page OFF must NOT start the monitor")
+	}
+
+	// Owner mode, page ON: starts.
+	t.Setenv("VL_FRIEND_INSTANCE", "")
+	t.Setenv("VL_FRIENDS_PAGE", "1")
 	resetFriendMonitorForTest()
 	e.s.StartFriendMonitor()
 	if friendAlertStop == nil {
-		t.Fatalf("owner mode must start the monitor at boot")
+		t.Fatalf("owner mode with VL_FRIENDS_PAGE=1 must start the monitor at boot")
 	}
 }

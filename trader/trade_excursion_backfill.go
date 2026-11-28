@@ -100,7 +100,7 @@ func BackfillExcursions(st *store.Store, symbol, traderID string, from, to time.
 		}
 		if err := st.TradeExcursions().Close(id, store.TradeExcursionClose{
 			ExitPx: p.ExitPrice, ExitTs: exitMs, ExitReason: p.CloseReason,
-			StopPxFinal: stop, PnlCorrected: p.PnlCorrected, Ambiguous: ambiguous,
+			PnlCorrected: p.PnlCorrected, Ambiguous: ambiguous,
 		}); err != nil {
 			return res, err
 		}

@@ -30,8 +30,10 @@ export function useMentorTruth(
   useEffect(() => {
     // poll=false → the caller owns the truth (passes it down); do not fetch.
     if (!poll) return
+    // A trader switch must never show the previous trader's truth (nor keep
+    // it through a failed first fetch): reset before anything else.
+    setState({ truth: null, stale: false })
     if (!traderId) {
-      setState({ truth: null, stale: false })
       return
     }
 

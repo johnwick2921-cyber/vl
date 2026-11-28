@@ -71,7 +71,7 @@ func TestHTFAgreesSilentOneHDoesNotCount(t *testing.T) {
 // TestMovedAtRecordedOnBreakAndNotOnRepeat — the mechanism: a break stamps
 // MovedAt to the firing bucket; a same-direction repeat does not touch it.
 func TestMovedAtRecordedOnBreakAndNotOnRepeat(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	bars := []market.Kline{
 		{OpenTime: t1h, CloseTime: t1h + 3600_000 - 1, High: 100, Low: 96, Close: 97},
@@ -93,7 +93,7 @@ func TestMovedAtRecordedOnBreakAndNotOnRepeat(t *testing.T) {
 // the real 4h and 1h bar slices; the 1h fires (short) on an hour bucket BEFORE
 // the 4h fires (long), so the verdict is case 2, not case 3.
 func TestHTFAdvanceOneHEarlierOppositeIsSilentCase2(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	bars4h := []market.Kline{
 		{OpenTime: 8 * 3600_000, CloseTime: 12*3600_000 - 1, High: 100, Low: 96, Close: 97},

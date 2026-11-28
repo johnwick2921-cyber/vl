@@ -26,8 +26,9 @@ func TestLevelTriggerSideDropIsCounted(t *testing.T) {
 }
 
 func TestBoxTriggerSideDropIsCounted(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
+	cfg.Exec2mAfter30m = false // m410: this fixture pins the 1m box geometry (boxes now draw on the traded 2m frame after 09:00)
 	cfg.KeyLevelTFMinutes = 1
 	cfg.EMAPeriod34 = 0
 	cfg.EMAPeriod9 = 0
@@ -77,7 +78,7 @@ func TestBoxTriggerSideDropIsCounted(t *testing.T) {
 }
 
 func TestSwingTriggerSideDropIsCounted(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.Swing.Respects5mZone = true
 	now := time.Date(2026, time.September, 15, 9, 15, 0, 0, ctime()).UnixMilli()
@@ -96,7 +97,7 @@ func TestSwingTriggerSideDropIsCounted(t *testing.T) {
 		mk(t0, 100, 101, 99, 100),
 		mk(t0+4*60*60_000, 100, 101, 99, 100),
 		mk(now-15*60_000, 120, 125, 115, 120),
-		mk(now-10*60_000, 120, 122, 104, 106),
+		mk(now-10*60_000, 120, 122, 99.5, 106), // m463 D5.2-R12: a LITERAL touch of the line (100)
 	}
 	e := New(cfg)
 	e.State.Trigger = TriggerLine{Dir: SideShort, Price: 104}

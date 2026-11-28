@@ -1,6 +1,7 @@
 package mentor
 
 import (
+	"strings"
 	"testing"
 
 	"vl/market"
@@ -49,7 +50,7 @@ func TestTradingLocationReadsOldExtremeAtKeyLevel(t *testing.T) {
 		{Kind: KindKeyLevel, Price: 100, Key: "key:100"},
 		{Kind: KindOldExtreme, Price: 101.5, Key: "old_extreme:101.50", AtTime: 10, Role: OldHigh},
 	}
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cur := market.Kline{High: 102, Low: 100.5, Close: 101}
 	ok, where := LocationVerdict(cur, levels, TriggerLine{}, nil, cfg)
@@ -81,8 +82,8 @@ func oldExtremesOf(t *testing.T, bars []market.Kline) map[string]float64 {
 	t.Helper()
 	now := bars[len(bars)-1].CloseTime + 1
 	got := map[string]float64{}
-	for _, l := range Levels(bars, DefaultConfig(), now) {
-		if l.Kind != KindOldExtreme {
+	for _, l := range Levels(bars, preOctCfg(), now) {
+		if l.Kind != KindOldExtreme || strings.Contains(l.Key, "flat_") { // m428 R2: flat S/R levels are extra, not the nearest pair
 			continue
 		}
 		if _, dup := got[l.Role]; dup || l.Role != OldHigh && l.Role != OldLow {

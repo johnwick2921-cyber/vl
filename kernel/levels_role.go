@@ -302,6 +302,12 @@ func RoleForLabel(label string) LevelRole {
 // level_stats nightly job to bucket rows into confluence families.
 func KindForLabel(label string) LevelKind {
 	l := strings.ToUpper(strings.TrimSpace(label))
+	// m265: "PDC·last print" / "SETT·last print" carry their structural family
+	// in the leading token — split at "·" (as structuralPrefix does) so they
+	// resolve to KindPDC/KindSETT instead of the inert KindRound.
+	if i := strings.Index(l, "·"); i > 0 {
+		l = strings.TrimSpace(l[:i])
+	}
 	switch {
 	case strings.HasPrefix(l, "VWAP+"), strings.HasPrefix(l, "VWAP−"), strings.HasPrefix(l, "VWAP"):
 		return KindVWAP

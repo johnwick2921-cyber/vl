@@ -25,7 +25,11 @@
   <Var name="RenameEvents" value="true" />
   <Var name="RenameFields" value="true" />
   <Var name="UseUnicodeNames" value="false" />
-  <Var name="HideStrings" value="true" />
+  <!-- HideStrings MUST stay false: Obfuscar runs as a .NET 9 dotnet tool and its
+       string decryptor imported System.Private.CoreLib 9.0 into the DLL, which
+       .NET Framework 4.8 (NinjaTrader 8) cannot load — every build 46-53 was
+       unloadable (final-run NT research 10-21, proven by PrepareMethod on CLR 4). -->
+  <Var name="HideStrings" value="false" />
   <Var name="OptimizeMethods" value="true" />
   <Var name="SuppressIldasm" value="true" />
   <Var name="ExtraFrameworkFolders" value="" />

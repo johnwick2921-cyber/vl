@@ -12,7 +12,7 @@ import (
 // (reward < RoomMultiple x risk). The EMA34 rides the shared PHL/PLH path, so
 // this pins the room rule at the EMA call shape.
 func TestEMARoomRule(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	ema := Level{Key: string(KindEMA34), Kind: KindEMA34, Price: 100}
 
@@ -30,8 +30,8 @@ func TestEMARoomRule(t *testing.T) {
 		t.Fatal("empty refusal reason")
 	}
 
-	// Old high 112: target 107 (shy 5) → reward 5 ≥ 2x risk 2 (4) → pass.
-	if _, ok, reason := PHLPLHR2(tr, Level{Price: 112}, 0, 10, 0, cfg); !ok {
+	// Old high 114: target 109 (shy 5) → reward 7 ≥ 2x risk 3 (6) → pass. m472 A3: risk is now range+2 (1+1 buffers, was 0.5+0.5) [Oct D2.3 @ 46:20-47:20 OctD2.3-R46 supersedes Sept D2.2-R10].
+	if _, ok, reason := PHLPLHR2(tr, Level{Price: 114}, 0, 10, 0, cfg); !ok {
 		t.Fatalf("EMA with room refused: %s", reason)
 	}
 }
@@ -39,7 +39,7 @@ func TestEMARoomRule(t *testing.T) {
 // TestEMAVisitReclassifies — E3: per-visit references apply to the EMA too (the
 // line moves, so a visit ends on one closed candle not touching it).
 func TestEMAVisitReclassifies(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	lvl := Level{Key: string(KindEMA34), Kind: KindEMA34, Price: 100}
 	var tr Touch
@@ -69,7 +69,7 @@ func TestEMAVisitReclassifies(t *testing.T) {
 // (a) filled, then stopped → blocked until a departure; (b) never filled
 // before the expiry → NOT blocked; (c) filled, then target first → NOT blocked.
 func TestEmaLossTick(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.LossDeparturePts = 20 // B22 (CTO 20:29:07Z): the knob default is OFF — E2's numeric departure is pinned here explicitly
 	// CE-6 (release #25): this test pins the numeric departure, so it runs the
 	// "session" relock; the zone-exit default is TestCE6EmaLossRelocksOnZoneExit.
@@ -135,7 +135,7 @@ func TestEmaLossTick(t *testing.T) {
 
 // TestEmaSetupAllowed — E2 block + E4 crossing knob on the seam.
 func TestEmaSetupAllowed(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.EmaMaxCross30m = 4
 	e := New(cfg)
 	ema := Level{Key: string(KindEMA34), Kind: KindEMA34, Price: 100}
@@ -189,7 +189,7 @@ func TestEmaCross30Window(t *testing.T) {
 // over the last 30m) emits NO entry. Mutant (isEMA34 = KindEMA34 only) → RED:
 // the same touch emits a PHL.
 func TestEmaCrossingGatesTradedLine(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.KeyLevelTFMinutes = 1
 	cfg.EMAPeriod34 = 0
@@ -200,7 +200,9 @@ func TestEmaCrossingGatesTradedLine(t *testing.T) {
 	cfg.PHLTargetShyPts = 0
 	cfg.ISBBufferPts = 0
 	cfg.LocTriggerFilter = false
-	// EmaMaxCross30m stays at its item-16 default (2 = ON).
+	// EmaMaxCross30m: the default is now OFF (removed, #45 — the mentor gives
+	// no count), so pin the numeric gate ON explicitly for this location pin.
+	cfg.EmaMaxCross30m = 2
 
 	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
 	mk := func(i int, o, h, l, c float64) market.Kline {

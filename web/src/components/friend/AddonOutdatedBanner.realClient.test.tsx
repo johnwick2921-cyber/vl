@@ -3,6 +3,7 @@
 import { act, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AddonOutdatedBanner } from './AddonOutdatedBanner'
+import { friendsApi, resetFriendAddonProbeForTest } from '../../lib/api/friends'
 
 const mocks = vi.hoisted(() => ({
   request: vi.fn(),
@@ -14,6 +15,7 @@ vi.mock('../../lib/httpClient', () => ({
 
 beforeEach(() => {
   vi.clearAllMocks()
+  resetFriendAddonProbeForTest()
   vi.useRealTimers()
 })
 
@@ -86,5 +88,22 @@ describe('AddonOutdatedBanner (real client)', () => {
     expect(screen.queryByTestId('addon-outdated-banner')).toBeNull()
 
     vi.useRealTimers()
+  })
+  it('C-friends: a 404 (owner bot) is probed ONCE, then never re-requested', async () => {
+    mocks.request.mockRejectedValue(new Error('API not found'))
+    expect(await friendsApi.friendAddonStatus()).toBeNull()
+    expect(await friendsApi.friendAddonStatus()).toBeNull()
+    expect(await friendsApi.friendAddonStatus()).toBeNull()
+    expect(mocks.request).toHaveBeenCalledTimes(1)
+  })
+
+  it('a transient network error does NOT latch (friend bot keeps probing)', async () => {
+    mocks.request.mockRejectedValueOnce(new Error('Network error'))
+    mocks.request.mockResolvedValue({
+      success: true,
+      data: { connected_build: 'a', latest_build: 'b', outdated: true },
+    })
+    expect(await friendsApi.friendAddonStatus()).toBeNull()
+    expect((await friendsApi.friendAddonStatus())?.outdated).toBe(true)
   })
 })

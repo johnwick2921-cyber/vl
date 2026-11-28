@@ -111,7 +111,7 @@ func (at *AutoTrader) CutoverGateStatus() CutoverGate {
 		add(4, "working_orders", false, fmt.Sprintf("source failed: %v", oerr), "armed_orders ledger")
 	default:
 		book, acct, sym := at.brokerBook()
-		leg := Leg4FromBrokerAt(book, acct, sym, OrderSnapshotInterval(), orders, time.Now())
+		leg := Leg4FromBrokerWithPositionsAt(book, acct, sym, OrderSnapshotInterval(), orders, leg4PositionsFrom(pos, perr), time.Now())
 		g.Legs = append(g.Legs, leg)
 	}
 
@@ -155,4 +155,31 @@ func (at *AutoTrader) gateOpenOrders() (orders []OpenOrder, err error) {
 		}
 	}()
 	return at.ledgerOpenOrders(at.futuresSymbol())
+}
+
+// leg4PositionsFrom converts the gate's API position rows into the shape leg 4
+// needs. A failed position read yields nil: no position known means nothing is
+// classified as protective, which can only make the leg stricter.
+func leg4PositionsFrom(pos []map[string]interface{}, perr error) []Leg4Position {
+	if perr != nil {
+		return nil
+	}
+	out := make([]Leg4Position, 0, len(pos))
+	for _, p := range pos {
+		sym, _ := p["symbol"].(string)
+		qty, _ := p["quantity"].(float64)
+		if qty == 0 {
+			qty, _ = p["positionAmt"].(float64)
+		}
+		side := strings.ToLower(strings.TrimSpace(fmt.Sprint(p["side"])))
+		long := strings.HasPrefix(side, "l") || strings.HasPrefix(side, "b")
+		if !long && !strings.HasPrefix(side, "s") {
+			continue // unknown direction: do not guess
+		}
+		if qty < 0 {
+			qty = -qty
+		}
+		out = append(out, Leg4Position{Symbol: sym, Long: long, Qty: qty})
+	}
+	return out
 }

@@ -77,6 +77,52 @@ export interface HealthStatus {
   status?: string
   time?: string
   revision?: string
+  // m386: the Friends page flag (VL_FRIENDS_PAGE). Absent (older bot) or false
+  // → the Friends nav + route are hidden and /api/owner/friends 404s.
+  friends_page?: boolean
+  // m420b → m420a/B6: market/feed truth for the top status banner. Absent (an
+  // older bot) → the banner renders nothing; it never infers either state.
+  cme_open?: boolean
+  feed_stale?: boolean
+  // optional extras: seconds the feed has been down (market-open time only),
+  // and the server's own next-reopen instant (RFC3339).
+  feed_stale_secs?: number
+  cme_reopens_at?: string
+  // m444: the 1m bar holes the bot tracks (api/handler_health.go bars_holes;
+  // BarHoleView). Absent (older bot / no store) → no MISSING BARS line.
+  bars_holes?: BarHole[]
+  // m445: the data-integrity pause (bar_integrity.go). Absent = an older bot or
+  // no NT8 bridge; the banner then renders nothing.
+  trading_paused?: {
+    paused: boolean
+    reasons?: string[]
+    windows?: string[]
+    // the WIDEST paused scope (all_entries | mentor_entries | ai_entries |
+    // trader_entries | swing_and_deep_entries | swing_entries); absent on an older bot
+    scope?: string
+    // every blocked leg (a narrower one is never hidden behind a wider one)
+    scopes?: string[]
+    // release #55: the data-truth checks (bad print, frame mismatch, indicator
+    // lookback, ingest loss, contract roll, broker agreement, fill price)
+    // currently blocking; reasons then carries 'data_truth'
+    data_truth_checks?: string[]
+    // release #55 round 3: who a scoped check's block is FOR (acct:<ACCOUNT> /
+    // trader:<id>) and which entry paths it concerns (ai | mentor). An absent
+    // entry = the whole symbol / every path.
+    data_truth_scopes?: Record<string, string[]>
+    data_truth_readers?: Record<string, string[]>
+  }
+}
+
+// One tracked 1m bar hole. state: refilling (the bot is re-asking NT8) |
+// unfilled (NT8 has no history) | retired (older than NT8's replay window —
+// the bot cannot re-ask). window is the CT text ("10-26 17:00–21:57 CT").
+export interface BarHole {
+  symbol: string
+  state: 'refilling' | 'unfilled' | 'retired' | string
+  window?: string
+  missing_min?: number
+  source?: 'live' | 'audit' | string
 }
 
 // INSTALL_AUTHZ_UNDER_REVIEW is the ONE constant gating the install control.

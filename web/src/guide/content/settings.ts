@@ -696,9 +696,9 @@ const risk: KnobSpec[] = [
   {
     label: 'Min confidence',
     where: 'Strategy → Risk Control',
-    what: "Floor on the AI's confidence integer; below = refused. AI DECISION PATH ONLY: it does NOT apply to mentor mode (mentor entries come from the course rules and carry no confidence) or to planner arms (under plan_mode strict, entries only through armed scenarios, this floor never runs). Since release #22 an arm entry's confidence is stored EMPTY (shown n/a) instead of a fabricated 0; rows written before release #22 still show 0.",
+    what: "Floor on the AI's confidence integer; below = refused. AI DECISION PATH ONLY: it does NOT apply to mentor mode (mentor entries come from the course rules and carry no confidence), to pep mode (pep entries come from the two fixed PDF rules and carry no confidence) or to planner arms (under plan_mode strict, entries only through armed scenarios, this floor never runs). Since release #22 an arm entry's confidence is stored EMPTY (shown n/a) instead of a fabricated 0; rows written before release #22 still show 0.",
     trader:
-      'The simplest honesty gate: 60 means "be at least 60% sure" — for AI decisions, not for mentor entries or armed plan scenarios.',
+      'The simplest honesty gate: 60 means "be at least 60% sure" — for AI decisions, not for mentor or pep entries or armed plan scenarios.',
     consumer:
       'kernel/engine_position.go validateDecision (confidence gate, decision path)',
     range: '50 – 100',
@@ -836,7 +836,7 @@ const risk: KnobSpec[] = [
   {
     label: 'Breakeven trigger (AI trades)',
     where: 'Strategy → Risk Control',
-    what: 'AI-plan trades only: once an open NT8 position is this many POINTS in profit (mark vs entry), its stop moves to the entry price, once per position (a move_stop on the live bracket). It moves a stop only when BOTH switches are on: this strategy toggle (breakeven_enabled) AND the server seam (env EXIT_MECHS_SUSPENDED=0 → seam=ACTIVE; unset → SUSPENDED, the code default). With the seam SUSPENDED the trigger still evaluates, logs "⏸ auto-breakeven SUSPENDED (0B)" once and sends nothing. A SENT move is not assumed: the next fresh NinjaTrader book judges it — "🎯 auto-breakeven CONFIRMED at NT8", or "🚨 auto-breakeven NOT APPLIED at NT8" (a P0, counted; the move is re-sent on the next monitor beat). A mentor-mode trade is NEVER moved by it — the mentor exits own that stop (owner ruling 2026-10-09; see Mentor mode → The exits → mentor_trail_mode). Since release #25 a non-zero breakeven_trigger_r replaces this points trigger with N × the position’s initial risk (see "Breakeven trigger in R (F-8)"); 0/unset keeps this points rule.',
+    what: 'AI-plan trades only: once an open NT8 position is this many POINTS in profit (mark vs entry), its stop moves to the entry price, once per position (a move_stop on the live bracket). It moves a stop only when BOTH switches are on: this strategy toggle (breakeven_enabled) AND the server seam (env EXIT_MECHS_SUSPENDED=0 → seam=ACTIVE; unset → SUSPENDED, the code default). With the seam SUSPENDED the trigger still evaluates, logs "⏸ auto-breakeven SUSPENDED (0B)" once and sends nothing. A SENT move is not assumed: the next fresh NinjaTrader book judges it — "🎯 auto-breakeven CONFIRMED at NT8", or "🚨 auto-breakeven NOT APPLIED at NT8" (a P0, counted; the move is re-sent on the next monitor beat). A mentor-mode trade is NEVER moved by it — the mentor exits own that stop (owner ruling 2026-10-09; see Mentor mode → The exits → mentor_trail_mode). A pep trade is never moved by it either: pep has no break-even and no trailing (PDF rule) — its stop and target sit at NT8 from the entry (Section 20). Since release #25 a non-zero breakeven_trigger_r replaces this points trigger with N × the position’s initial risk (see "Breakeven trigger in R (F-8)"); 0/unset keeps this points rule.',
     trader:
       'Read the boot line "🛑 exits: … BE=on|off(strategy) · seam=ACTIVE|SUSPENDED(env)" for what the running bot does — not this card. The live boots of 2026-10-13 18:57/18:58 CT and 2026-10-14 02:10 CT read BE=on · seam=ACTIVE on both traders with breakeven_trigger_points=40: breakeven IS moving AI-trade stops there (the mentor trader is exempt). Turn the toggle off to stop it.',
     consumer:
@@ -872,7 +872,7 @@ const risk: KnobSpec[] = [
   {
     label: 'Trailing stop (AI trades)',
     where: 'Strategy → Risk Control',
-    what: 'AI-plan trades only: once armed (after_breakeven | N points | immediately), each 60 s monitor beat ratchets the stop to best price since entry ∓ mult×ATR(period, 5m), tighten-only. Like breakeven it moves a stop only when BOTH this toggle (trailing_enabled) AND the server seam (env EXIT_MECHS_SUSPENDED=0) are on; with the seam SUSPENDED it computes a level and sends nothing. Never applied to a mentor-mode trade — the mentor runner has its own candle trail (Mentor mode → The exits). Since release #32 the panel shows the "not applied while mentor mode is ON" caveat under BOTH the breakeven and the trailing toggle, read from the server’s effective origin (never a typed copy). Evidence on ATR trails: a 567,000-backtest study ranks ATR/Chandelier trails in the worst group of 15 exit families; our 09-01 tape shows $719.50 of giveback with zero trail exits.',
+    what: 'AI-plan trades only: once armed (after_breakeven | N points | immediately), each 60 s monitor beat ratchets the stop to best price since entry ∓ mult×ATR(period, 5m), tighten-only. Like breakeven it moves a stop only when BOTH this toggle (trailing_enabled) AND the server seam (env EXIT_MECHS_SUSPENDED=0) are on; with the seam SUSPENDED it computes a level and sends nothing. Never applied to a mentor-mode trade — the mentor runner has its own candle trail (Mentor mode → The exits) — nor to a pep trade (pep has no trailing, Section 20). Since release #32 the panel shows the "not applied while mentor mode is ON" caveat under BOTH the breakeven and the trailing toggle, read from the server’s effective origin (never a typed copy). Evidence on ATR trails: a 567,000-backtest study ranks ATR/Chandelier trails in the worst group of 15 exit families; our 09-01 tape shows $719.50 of giveback with zero trail exits.',
     trader:
       'Read the boot line "🛑 exits: … trail=on|off(strategy) · seam=…(env)". The live boots of 2026-10-13 and 2026-10-14 read trail=off · seam=ACTIVE: the ATR trail is not moving stops there.',
     consumer:
@@ -903,7 +903,7 @@ const risk: KnobSpec[] = [
   },
   {
     label: 'Max contracts (always-on) — Stage A: 1 (AI / planner path only)',
-    what: 'Contract cap per order on the AI / planner path — on with or without the master. 0B (2026-09-02): every AI / planner resolution is clamped to the Stage-A ceiling of 1 contract — survival-first under an undemonstrated edge. Stage B (2) only at n≥30 closed trades with a POSITIVE LOWER-CI expectancy; Kelly and optimal-f are undefined without an edge estimate. Before 0B the two resolvers disagreed: arm-leg capacity said 1 while order sizing said 2, and the boot line said capacity=1. MENTOR MODE IS NOT CLAMPED BY THIS: a mentor-mode trader skips this resolver (resolveMaxContracts returns mentor_max_contracts) and sizes every entry from the mentor size table — 4 by default (base, confluence and big are all 4), 4 when the stop is 20–<30 pts or an ISB sits at an old high/low or inside a range, 2 on the SWING4H — capped only by mentor_max_contracts (default 20). See Mentor Mode → Sizing.',
+    what: 'Contract cap per order on the AI / planner path — on with or without the master. 0B (2026-09-02): every AI / planner resolution is clamped to the Stage-A ceiling of 1 contract — survival-first under an undemonstrated edge. Stage B (2) only at n≥30 closed trades with a POSITIVE LOWER-CI expectancy; Kelly and optimal-f are undefined without an edge estimate. Before 0B the two resolvers disagreed: arm-leg capacity said 1 while order sizing said 2, and the boot line said capacity=1. MENTOR MODE IS NOT CLAMPED BY THIS: a mentor-mode trader skips this resolver (resolveMaxContracts returns mentor_max_contracts) and sizes every entry from the mentor size table — 5 by default (base, confluence and big are all 5), 3 when the stop is over 20 and up to 25 pts (above 25 is refused) or an ISB sits at an old high/low or inside a range, 2 on the SWING4H (and a swing whose stop reaches 100 pts is sized down to at most 2, never refused) — capped only by mentor_max_contracts (default 20). See Mentor Mode → Sizing. PEP MODE IS NOT CLAMPED BY THIS EITHER: a pep trader sizes from its own pep_contracts setting (default 6, hard ceiling 10; Section 20).',
     where: 'Strategy → Risk Control → always-on row',
     trader:
       'THE ARITHMETIC: 0B also raised the stop floor from 1.0× to 1.5×ATR5m, which lifts dollar risk per trade by roughly 50% at constant size. That is precisely why size does NOT move at the same time.',
@@ -912,7 +912,7 @@ const risk: KnobSpec[] = [
     range:
       'page value · Stage-A ceiling 1 · env STAGE_A_CONTRACT_CAP raises it · not applied in mentor mode',
     systemDefault:
-      '1 (Stage A) on the AI / planner path; mentor mode: the mentor size table (4 / 4 / 2, cap 20)',
+      '1 (Stage A) on the AI / planner path; mentor mode: the mentor size table (5 base · 3 reduced · 2 swing, cap 20)',
     recommended: '⭐ 1 — do not raise before the n≥30 lower-CI test.',
     whenToTouch: 'Stage B, with the expectancy table in hand.',
     perSession: 'No.',
@@ -1005,14 +1005,14 @@ const risk: KnobSpec[] = [
   {
     label: 'Consecutive-loss halt',
     where: 'Strategy → Risk Control → Guardrails',
-    what: "N consecutive losing closes in one CME session-day halt NEW entries on every path (decision, agent, arm, picture) until the 17:00 CT roll, and resting entries are withdrawn. NOT gated by the guardrails master. PRESENCE-AWARE since W1 (settings truth, 2026-09-23): toggle OFF stores 0 = OFF; toggle ON or a BLANK box = inherit (env BREAKER_HALT_N when set, else 8); a number = that N. Before W1 the row showed a missing value as OFF while the runtime enforced 8, and its OFF wrote a 0 no save could store. The 🛑 boot lines print what is enforced: breaker=8[I] (shipped default), 3[O] / off[O] (saved), 5[E] / off[E] (env), or n/a when not exactly one strategy is bound (each trader's own '🛑 [trader] breaker=' line then speaks for it).",
+    what: "N consecutive losing closes in one CME session-day halt NEW entries on every path (decision, agent, arm, picture) until the 17:00 CT roll, and resting entries are withdrawn. NOT gated by the guardrails master. PRESENCE-AWARE since W1 (settings truth, 2026-09-23): toggle OFF stores 0 = OFF; toggle ON or a BLANK box = inherit (env BREAKER_HALT_N when set, else 4 for a mentor-mode strategy, 8 for AI-mode); a number = that N. Before W1 the row showed a missing value as OFF while the runtime enforced 8, and its OFF wrote a 0 no save could store. The 🛑 boot lines print what is enforced: breaker=8[I] (shipped default), 3[O] / off[O] (saved), 5[E] / off[E] (env), or n/a when not exactly one strategy is bound (each trader's own '🛑 [trader] breaker=' line then speaks for it).",
     trader:
       'The streak-breaker: three losers in a row is the market telling you something.',
     consumer:
-      'store/resolve_source.go ResolveBreakerHalt (the ONE rule: saved incl. 0 → env BREAKER_HALT_N → 8) · trader/auto_trader_orders.go consecutiveLossHaltedAt (decision/agent) · trader/session_risk.go sessionRiskGateAt (arm/picture) · trader/withdraw.go · store/position_query.go CountConsecutiveLossesSince · telemetry gate-block consecutive_loss',
+      'store/resolve_source.go ResolveBreakerHalt (the ONE rule: saved incl. 0 → env BREAKER_HALT_N → 4 for a mentor-mode strategy [Oct D4.1 @ 14:40], 8 for AI-mode) · trader/auto_trader_orders.go consecutiveLossHaltedAt (decision/agent) · trader/session_risk.go sessionRiskGateAt (arm/picture) · trader/withdraw.go · store/position_query.go CountConsecutiveLossesSince · telemetry gate-block consecutive_loss',
     range: 'OFF (0) · inherit (blank) · 1 – N',
     systemDefault:
-      'inherit → 8 [I]; BREAKER_HALT_N overrides the inherit [E] — ON, not master-gated',
+      'inherit → 4 [I] for a mentor-mode strategy (Oct D4.1-R28), 8 [I] for AI-mode; BREAKER_HALT_N overrides the inherit [E] — ON, not master-gated',
     recommended: '⭐ ON, threshold 2–3.',
     whenToTouch:
       "Leave ON — this is the cheapest guardrail in the stack. CAVEAT (W1): a Studio save writes an OFF (0) together with its confirmation record (system_config settings_truth_zero:<strategy id>) in one transaction, and the 🩺 boot line and the effective chip print 'OFF — confirmed by Studio save <time CT>'. A strategy restored or imported WITHOUT that record row reads 'explicit 0 UNCONFIRMED — re-save in Studio' and refuses its trader at load until it is re-saved in the Studio. This is fail-closed, by design. A strategy-level replan cap of 0 works the same way.",
@@ -1930,11 +1930,11 @@ export const settings: GuideSection = {
         },
         {
           title: 'BARS_HOLE_MIN_GAP_MIN = 3',
-          body: "Bar-hole threshold: this many OPEN-market minutes with no stored 1m bar between two stored bars is a hole, and the bot re-requests NinjaTrader's history for it at +1/+3/+10/+30 min (never while the feed is down), then every 15 min while CME is open (8 slow tries per hole in total) after one loud UNFILLED line naming the NT8 history reload; requests go out only in the first 15 s of a minute, and a hole older than NT8's 2000-bar replay reach is retired. The daily break, weekends and holiday closes never count. The boot line '🕳 bar-hole backfill:' prints the value and its source.",
+          body: "Bar-hole threshold: this many OPEN-market minutes with no stored 1m bar between two stored bars is a hole, and the bot re-requests NinjaTrader's history for it at +1/+3/+10/+30 min (never while the feed is down), then every 15 min while CME is open (8 slow tries per hole in total) after one loud UNFILLED line naming the NT8 history reload; requests go out only in the first 15 s of a minute, and a hole older than NT8's 2000-bar replay reach is retired. The daily break, weekends and holiday closes never count. Only 1m is tracked: a re-request rebuilds every timeframe's history at once, so a 1m hole's refill also heals the 2m/5m bars. The boot line '🕳 bar-hole backfill:' prints the value and its source.",
         },
         {
           title: 'PERSIST_STALL_WATCHDOG_S = 60',
-          body: 'Bar-persist silence alarm: no successful flush for N seconds while live bar frames are FLOWING → loud ERROR (the Friday ~2h GORM stall can never go silent again). Frame-aware: an idle wire (weekend, the daily break, NT8 closed) stays silent — no cry-wolf.',
+          body: 'Bar-persist silence alarm: no successful flush for N seconds while live bar frames are FLOWING → loud ERROR (the Friday ~2h GORM stall can never go silent again). Frame-aware: an idle wire (weekend, the daily break, NT8 closed) stays silent — no cry-wolf. At the 16:00 CT break and the weekend close the bot also writes the LAST bar(s) of the session from the ring (live if NT8 said final, live_partial if not; a better stored row is never overwritten), and a replay held across a restart inside the break is judged against the stored live rows (released if on the same price scale, discarded if not).',
         },
       ],
     },

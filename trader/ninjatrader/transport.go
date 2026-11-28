@@ -57,6 +57,13 @@ var accountsListSink func([]ntwire.AccountInfo)
 // SetAccountsListSink registers the hook. Call before the first trader is built.
 func SetAccountsListSink(fn func([]ntwire.AccountInfo)) { accountsListSink = fn }
 
+// positionsSink (m433) is the optional persistence hook for received positions
+// frames, wired by main.go exactly like the two above.
+var positionsSink func(account string, openCount int)
+
+// SetPositionsSink registers the hook. Call before the first trader is built.
+func SetPositionsSink(fn func(account string, openCount int)) { positionsSink = fn }
+
 // U6: in friend mode a cached NT bind error is FATAL (so systemd's
 // Restart=on-failure retries) instead of being cached for the process life. The
 // owner's box keeps the cached-error behavior. Both are seams so a test can
@@ -94,6 +101,10 @@ func getOrStartTCPServer() (*ntwire.TCPServer, error) {
 		// F35 — install the accounts persistence sink if one was registered.
 		if fn := accountsListSink; fn != nil {
 			server.SetAccountsSink(fn)
+		}
+		// m433 — install the positions persistence sink if one was registered.
+		if fn := positionsSink; fn != nil {
+			server.SetPositionsSink(fn)
 		}
 		// Stage 3: route the kernel's futures kline reads to this server's
 		// live BarCache (NT8 bars), bypassing the removed crypto providers. Crypto path untouched.

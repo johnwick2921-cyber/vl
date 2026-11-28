@@ -253,3 +253,57 @@ func TestLeg4SourceLabelTracksReality(t *testing.T) {
 		t.Errorf("a stale book must not read as broker, got %q", got)
 	}
 }
+
+// Real case 2026-11-11 08:16 / 11-12 00:20 / 07:03 CT: trader 12345 held an
+// armed fill (armed_orders row `filled`, terminal, so the ledger is empty) and
+// NT8 held its two protective orders. The leg printed "broker 2 vs ledger 0 —
+// MISMATCH", which reads as a ledger fault. The ledger records ENTRY placements
+// by design; protective brackets of an open position are a third category.
+func TestLeg4ProtectiveBracketsOfOpenPositionAreNamedNotMismatch(t *testing.T) {
+	now := time.Date(2026, 11, 12, 13, 0, 0, 0, time.UTC)
+	c := nt.NewOrderSnapshotCache()
+	c.PutAt(snapWith(
+		nt.NT8Order{OrderID: "26ac8d91d38a41539253155507ecf0ef", Action: "sell", Type: "stop", StopPrice: 30000, Quantity: 5, State: "Accepted", OCO: "x"},
+		nt.NT8Order{OrderID: "a850b67886904cdc9e3649b56c60f0c2", Action: "sell", Type: "limit", LimitPrice: 30100, Quantity: 5, State: "Working", OCO: "x"},
+	), now.Add(-5*time.Second))
+	pos := []Leg4Position{{Symbol: "MNQ", Long: true, Qty: 5}}
+
+	leg := Leg4FromBrokerWithPositionsAt(c, "Sim101", "MNQ", 30*time.Second, nil, pos, now)
+	if leg.Pass {
+		t.Fatalf("working orders at the broker must still FAIL leg 4: %+v", leg)
+	}
+	if strings.Contains(leg.Detail, "MISMATCH") {
+		t.Errorf("protective brackets are not a ledger mismatch: %q", leg.Detail)
+	}
+	if !strings.Contains(leg.Detail, "protective") || !strings.Contains(leg.Detail, "26ac8d91") {
+		t.Errorf("detail must name the brackets as protective: %q", leg.Detail)
+	}
+}
+
+// FLAT with the same two orders: orphans. Must stay a hard mismatch.
+func TestLeg4OrphanOrdersWhileFlatStillMismatch(t *testing.T) {
+	now := time.Date(2026, 11, 12, 13, 0, 0, 0, time.UTC)
+	c := nt.NewOrderSnapshotCache()
+	c.PutAt(snapWith(
+		nt.NT8Order{OrderID: "o1", Action: "sell", Type: "stop", StopPrice: 30000, Quantity: 5, State: "Accepted"},
+		nt.NT8Order{OrderID: "o2", Action: "sell", Type: "limit", LimitPrice: 30100, Quantity: 5, State: "Working"},
+	), now.Add(-5*time.Second))
+	leg := Leg4FromBrokerWithPositionsAt(c, "Sim101", "MNQ", 30*time.Second, nil, nil, now)
+	if leg.Pass || !strings.Contains(leg.Detail, "MISMATCH") {
+		t.Fatalf("flat + broker orders must be MISMATCH: %+v", leg)
+	}
+}
+
+// Entry-side orders (same side as the position) are never "protective".
+func TestLeg4SameSideOrderWithOpenPositionStillMismatch(t *testing.T) {
+	now := time.Date(2026, 11, 12, 13, 0, 0, 0, time.UTC)
+	c := nt.NewOrderSnapshotCache()
+	c.PutAt(snapWith(
+		nt.NT8Order{OrderID: "e1", Action: "buy", Type: "limit", LimitPrice: 29900, Quantity: 5, State: "Working"},
+	), now.Add(-5*time.Second))
+	pos := []Leg4Position{{Symbol: "MNQ", Long: true, Qty: 5}}
+	leg := Leg4FromBrokerWithPositionsAt(c, "Sim101", "MNQ", 30*time.Second, nil, pos, now)
+	if leg.Pass || !strings.Contains(leg.Detail, "MISMATCH") {
+		t.Fatalf("an unexplained same-side order must stay MISMATCH: %+v", leg)
+	}
+}

@@ -155,3 +155,28 @@ func TestOverlapToleranceIsAFewTicksNotHalfAPercent(t *testing.T) {
 		})
 	}
 }
+
+// m438 (#53) — the disagreeing-replay count is kept PER SYMBOL: an ES replay that
+// disagrees with ES live minutes is counted on ES only.
+// MUTANT (shown RED): count into the MNQ bucket / drop the per-symbol map ->
+// OverlapDisagreedFor("ES") reads 0 or MNQ reads 1 -> RED.
+func TestOverlapDisagreedIsCountedPerSymbol(t *testing.T) {
+	c := NewBarCache(0)
+	for _, m := range ovRange(0, 13) {
+		c.Upsert("ES", "1m", ovLive(6000, m))
+	}
+	c.armOverlapVerdict("ES", time.Now().Add(gapReplayJudgeWindow))
+	c.SeedHistorical("ES", "1m", ovLive(5700, ovRange(0, 13)...))
+	if _, d := c.OverlapVerdictCounts(); d != 1 {
+		t.Fatalf("cache-wide disagreed = %d, want 1", d)
+	}
+	if got := c.OverlapDisagreedFor("es"); got != 1 { // case-insensitive
+		t.Fatalf("OverlapDisagreedFor(ES) = %d, want 1", got)
+	}
+	if got := c.OverlapDisagreedFor("MNQ"); got != 0 {
+		t.Fatalf("OverlapDisagreedFor(MNQ) = %d, want 0", got)
+	}
+	if got := (*BarCache)(nil).OverlapDisagreedFor("ES"); got != 0 {
+		t.Fatalf("nil cache = %d", got)
+	}
+}

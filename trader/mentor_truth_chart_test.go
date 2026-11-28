@@ -46,9 +46,11 @@ func mentorChartTape() []market.Kline {
 }
 
 func TestMentorTruthSnapshotCarriesChartObjectsAfterTick(t *testing.T) {
+	defer mentor.FlatNearScaleForTest(0)() // m428 R2: this synthetic tape's candles are a few points tall — its swing pair is a trendline premise, not a flat-level one
 	at := truthAT(t)
 	cfg := mentor.DefaultConfig()
 	cfg.Enabled = true
+	cfg.Exec2mAfter30m = false // m410 + m407: this 14-minute 1m tape pins the 1m box geometry and the 1m trendline build (the 2m frame draws from 09:00 and has too few candles here)
 	at.mentorEval = mentor.New(cfg)
 	ev := at.mentorEval
 	// The 4h trigger line and the ORB are evaluator state the tick carries
@@ -56,6 +58,17 @@ func TestMentorTruthSnapshotCarriesChartObjectsAfterTick(t *testing.T) {
 	ev.State.HTF = mentor.HTF{FourH: mentor.TriggerLine{Dir: mentor.SideLong, Price: 90, MovedAt: 1}}
 
 	bars := mentorChartTape()
+	// c52 W9 B7-R7: at the line's FIRST test (bar 13) the FTGL box top (98.3,
+	// 0.9 pt under the line) is a respected level and beats the fresh line, so it
+	// is not yet a Level (the mentor's FTGH/FTGL example, D2.3 p1 @01:44–02:19).
+	// m465 review (D2.3-R7): the 4th touch is a NEW touch — bar 14 LEAVES the
+	// line (low 100.6, clear of the line ~99.4 + its 0.5 band) and bar 15
+	// comes back (a rejection at ~99.6): past its first test the line is a
+	// location, which is what this pin reads.
+	last := bars[len(bars)-1]
+	bars = append(bars,
+		market.Kline{OpenTime: last.OpenTime + 60_000, CloseTime: last.CloseTime + 60_000, Open: 101, High: 101.5, Low: 100.6, Close: 101},
+		market.Kline{OpenTime: last.OpenTime + 120_000, CloseTime: last.CloseTime + 120_000, Open: 101, High: 101.5, Low: 99.5, Close: 101})
 	now := mentor.BarCloseInstant(bars[len(bars)-1])
 	ev.Tick(bars, now)
 	ev.State.ORB = mentor.ORB{Day: 1, High: 101, Low: 100, Drawn: true, Escaped: mentor.SideLong}
@@ -66,7 +79,7 @@ func TestMentorTruthSnapshotCarriesChartObjectsAfterTick(t *testing.T) {
 		t.Fatalf("snapshot not ok")
 	}
 	kinds := map[string]int{}
-	for _, lv := range p.Levels {
+	for _, lv := range *p.Levels {
 		kinds[lv.Kind]++
 	}
 	for _, want := range []string{"trendline", "htf_trigger"} {
@@ -81,9 +94,20 @@ func TestMentorTruthSnapshotCarriesChartObjectsAfterTick(t *testing.T) {
 		t.Fatalf("panel has no trendline anchors after a real Tick: %+v", p.Trendlines)
 	}
 	tl := (*p.Trendlines)[0]
-	if tl.Side != "long" || tl.P0Px != 97 || tl.P1Px != 98.2 || !tl.InLevel || tl.NowMs != bars[13].OpenTime {
-		t.Errorf("trendline view = %+v, want the support line 97→98.2 trading at bar 13", tl)
+	if tl.Side != "long" || tl.P0Px != 97 || tl.P1Px != 98.2 || !tl.InLevel || tl.NowMs != bars[15].OpenTime {
+		t.Errorf("trendline view = %+v, want the support line 97→98.2 trading at bar 15", tl)
 	}
+	if !tl.Valid {
+		t.Errorf("the 3rd-touch support line must be valid=true (m134): %+v", tl)
+	}
+	if p.EMASeries != nil && len(*p.EMASeries) > 0 {
+		if last := (*p.EMASeries)[len(*p.EMASeries)-1]; last.Ema9 <= 0 || last.Ema34 <= 0 {
+			t.Errorf("ema_series tail = %+v, want positive ema9/ema34", last)
+		}
+	}
+	// NOTE (m327 c): a 14-bar tape is SHORTER than the EMA warm-up head, so the
+	// unconverged head is dropped and ema_series may be ABSENT here — the
+	// converged-curve pin lives in TestMentorTruthSnapshotSendsEMAseries.
 	if p.ISBBoxes == nil || len(*p.ISBBoxes) != 1 || (*p.ISBBoxes)[0].Label != "ISB 5m" {
 		t.Errorf("isb boxes = %+v, want the one 5m rest box", p.ISBBoxes)
 	}
@@ -99,10 +123,79 @@ func TestMentorTruthSnapshotCarriesChartObjectsAfterTick(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{`"trendlines":[`, `"isb_boxes":[`, `"orb":{`, `"kind":"trendline"`} {
+	for _, key := range []string{`"trendlines":[`, `"isb_boxes":[`, `"orb":{`, `"kind":"trendline"`, `"valid":`} {
 		if !strings.Contains(string(b), key) {
 			t.Errorf("payload lacks %s: %s", key, b)
 		}
+	}
+}
+
+// TestMentorTruthSnapshotSendsEMAseries is the m327 (c) call-site pin: on a
+// tape LONGER than the EMA warm-up head, the snapshot must carry a non-empty
+// ema_series whose tail is positive — and every point is converged (the head is
+// dropped). MUTANT: emit the unconverged head (seed at window start) → the
+// first emitted points differ from a long-seeded EMA → RED (pinned at the kernel
+// level by TestEMASeriesChartConvergedHead).
+func TestMentorTruthSnapshotSendsEMAseries(t *testing.T) {
+	at := truthAT(t)
+	cfg := mentor.DefaultConfig()
+	cfg.Enabled = true
+	at.mentorEval = mentor.New(cfg)
+	ev := at.mentorEval
+
+	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, kernel.CTLocation()).UnixMilli()
+	bars := make([]market.Kline, 900) // > 6×34 warm-up on the 2m frame (M401: the tape is 09:00+ CT = 2m period, so 204 2m bars = 408 1m bars of head are dropped)
+	for i := range bars {
+		c := 100.0 + float64(i%7)
+		bars[i] = market.Kline{OpenTime: t0 + int64(i)*60_000, CloseTime: t0 + int64(i)*60_000 + 59_000, Open: c - 1, High: c + 1, Low: c - 2, Close: c}
+	}
+	now := mentor.BarCloseInstant(bars[len(bars)-1])
+	ev.Tick(bars, now)
+
+	p, ok := at.MentorTruthSnapshot(time.UnixMilli(now))
+	if !ok {
+		t.Fatalf("snapshot not ok")
+	}
+	if p.EMASeries == nil || len(*p.EMASeries) == 0 {
+		t.Fatalf("ema_series must be sent on a tape longer than the warm-up head")
+	}
+	last := (*p.EMASeries)[len(*p.EMASeries)-1]
+	if last.Ema9 <= 0 || last.Ema34 <= 0 {
+		t.Fatalf("ema_series tail = %+v, want positive ema9/ema34", last)
+	}
+}
+
+// m134 — a line with two anchors but no 3rd touch yet is FORMING: it is sent
+// with valid=false so the chart draws it thin/dashed "waiting for 3rd touch".
+func TestMentorTruthSnapshotSendsFormingTrendlines(t *testing.T) {
+	defer mentor.FlatNearScaleForTest(0)() // m428 R2: this synthetic tape's candles are a few points tall — its swing pair is a trendline premise, not a flat-level one
+	at := truthAT(t)
+	cfg := mentor.DefaultConfig()
+	cfg.Enabled = true
+	cfg.Exec2mAfter30m = false // m407: this 14-minute 1m tape pins the 1m trendline build (the 2m frame has too few candles to draw)
+	at.mentorEval = mentor.New(cfg)
+	ev := at.mentorEval
+
+	bars := mentorChartTape()
+	// Tick through bar 10: P1 (bar 8) has formed the line, no 3rd touch yet and
+	// no 5m close through — the line is FORMING (ValidAt==0, Dead==false).
+	sub := bars[:11]
+	now := mentor.BarCloseInstant(sub[len(sub)-1])
+	ev.Tick(sub, now)
+
+	p, ok := at.MentorTruthSnapshot(time.UnixMilli(now))
+	if !ok {
+		t.Fatalf("snapshot not ok")
+	}
+	if p.Trendlines == nil || len(*p.Trendlines) == 0 {
+		t.Fatalf("a forming line must be sent: %+v", p.Trendlines)
+	}
+	tl := (*p.Trendlines)[0]
+	if tl.Valid {
+		t.Errorf("forming line reported valid=true, want valid=false: %+v", tl)
+	}
+	if tl.Side != "long" || tl.P0Px != 97 || tl.P1Px != 98.2 {
+		t.Errorf("forming line = %+v, want the support line 97→98.2", tl)
 	}
 }
 

@@ -105,6 +105,7 @@ func TestMentorConfluenceUpgradeEndToEnd(t *testing.T) {
 	t.Cleanup(func() { market.FuturesBarsProvider = oldBarsProvider })
 
 	cfg := mentor.DefaultConfig()
+	cfg.ConfluenceHold2R = true // OCT-EXACT A2 row 17: the Sept confluence C upgrade is OFF by default; this pins its mechanics under the revert
 	cfg.Enabled = true
 	e := mentor.New(cfg)
 	base := time.Date(2026, 10, 2, 9, 0, 0, 0, kernel.CTLocation()).UnixMilli()

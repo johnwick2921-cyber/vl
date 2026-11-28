@@ -157,7 +157,7 @@ func (s *BarHistoryStore) SourceCensus(symbol string) (map[string]int64, error) 
 // is one scale, the wrong one.
 func IsReadableSource(src string) bool {
 	src = strings.TrimSpace(src)
-	return src == BarSourceLive || src == BarSourceHistorical
+	return src == BarSourceLive || src == BarSourceHistorical || src == BarSourceLivePartial
 }
 
 // IsBacktestReadable reports whether a bar may be read by a BACKTEST reader.

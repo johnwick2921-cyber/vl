@@ -60,6 +60,9 @@ func friendTestEnv(t *testing.T, e *updEnv) {
 	t.Setenv("VL_FRIEND_MONITOR_OFF", "1")
 	t.Setenv("TUNNEL_IP", "")
 	t.Setenv("TAILSCALE_API_KEY", "")
+	// m386: the Friends page is opt-in. Every friends-page test opts IN here;
+	// the dedicated off-test sets VL_FRIENDS_PAGE="" itself.
+	t.Setenv("VL_FRIENDS_PAGE", "1")
 	// S22: a friend test never touches the real service manager — install a
 	// recording fake (the production default is restored on cleanup).
 	prevSystemctl := systemctlUser

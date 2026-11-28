@@ -55,9 +55,14 @@ func (at *AutoTrader) mentorReseedOnRefill(nowMs int64) {
 	// Claim the generation FIRST: a refill landing while this re-seed reads the
 	// store bumps it again and the next tick re-seeds once more (idempotent).
 	at.mentorSeedHistGen = gen
+	at.mentorReseedFrom(store.NewBarHistoryStore(at.store.GormDB()), nowMs, why)
+}
+
+// mentorReseedFrom is the re-seed body of mentorReseedOnRefill over a bar
+// source (the offline replay injects the live log's refill re-seeds through it).
+func (at *AutoTrader) mentorReseedFrom(bh mentorSeedBarSource, nowMs int64, why string) {
 	start := time.Now()
-	bh := store.NewBarHistoryStore(at.store.GormDB())
-	stitched1m, full1HRTH, _, _, _ := at.mentorFullKeyLevelHistory(bh)
+	stitched1m, full1HRTH, _, _, _, seamBars := at.mentorFullKeyLevelHistory(bh)
 	bars1m := stitched1m
 	if len(full1HRTH) == 0 {
 		rows, err := bh.LastNBarsCurrentContract(mentorSeedSymbol, "1m", mentorSeedBars1mN)
@@ -66,8 +71,10 @@ func (at *AutoTrader) mentorReseedOnRefill(nowMs int64) {
 			at.logWarnf("🧑‍🏫 mentor re-seed after a history refill (%s) REFUSED — 1m store read failed (%v); state kept as it was", why, err)
 			return
 		}
-		bars1m, full1HRTH = storeBarsToKlines(rows, 60_000), nil
+		bars1m, full1HRTH, seamBars = storeBarsToKlines(rows, 60_000), nil, nil
 	}
+	at.noteSeedSeries(bars1m, mentor.SeamMinutes(seamBars), time.UnixMilli(nowMs)) // m445 round 2: the refilled series is measured again — a filled hole resumes the gate
+	at.mentorEval.SetSeamBars(seamBars)                                            // m456 (defect 2): the swing line folds the stitch's seam bars
 	var rep mentor.ReseedReport
 	at.mentorWithHistoryPrintWindows(bars1m, func() {
 		rep = mentor.ReseedState(at.mentorEval, bars1m, full1HRTH, nowMs)
@@ -86,6 +93,46 @@ func (at *AutoTrader) mentorReseedOnRefill(nowMs int64) {
 		at.logInfof("🧑‍🏫 mentor re-seed after a history refill (%s) at %s: %s [%d ms]", why, kernel.ClockCTSeconds(time.UnixMilli(nowMs)), rep.Line(), ms)
 	}
 	at.mentorRefreshDepths()
+}
+
+// mentorRefreshChartSeedOnClosed (m427/2) rebuilds the boot DISPLAY seed
+// (mentor.SeedChartDisplay, via mentorSeedChartDisplay) when the history-refill
+// generation moved after it was built, on a CLOSED market where no Tick has run
+// since boot (ChartSeededAt != 0). Without it a restart in the 16:00-17:00 break
+// or over a weekend showed the pre-release store's levels / EMA / lines, marked
+// "as of last close", until the first bar at the reopen — the replay hold is
+// released ~30 s after boot, and the only re-seed reader is the Tick.
+//
+// DISPLAY ONLY, same contract as m422: it writes through SeedChartDisplay alone
+// (ChartLevels/ChartTrendlines/ChartEMA/ChartSeededAt), reads the same current-
+// contract store window, and tracks its OWN generation (mentorChartSeedGen) so
+// it never claims the one the first real Tick's state re-seed waits on. A no-op
+// when the market is open (the Tick path owns it), after any Tick, or when the
+// generation has not moved.
+func (at *AutoTrader) mentorRefreshChartSeedOnClosed(now time.Time) {
+	if at == nil || at.store == nil || kernel.IsCMEOpen(now) {
+		return
+	}
+	at.mentorEvalMu.Lock()
+	defer at.mentorEvalMu.Unlock()
+	if at.mentorEval == nil || at.mentorEval.State.ChartSeededAt == 0 {
+		return // no evaluator, or a real Tick already replaced the display seed
+	}
+	gen, _ := mentorRefillGeneration()
+	if gen == at.mentorChartSeedGen {
+		return
+	}
+	at.mentorChartSeedGen = gen
+	bh := store.NewBarHistoryStore(at.store.GormDB())
+	rows, err := bh.LastNBarsCurrentContract(mentorSeedSymbol, "1m", mentorSeedBars1mN)
+	if err != nil {
+		at.mentorCount("chart_reseed_closed_refused")
+		at.logWarnf("🧑‍🏫 chart display re-seed after a history refill REFUSED — 1m store read failed (%v); display kept as it was", err)
+		return
+	}
+	at.mentorSeedChartDisplay(storeBarsToKlines(rows, 60_000))
+	at.mentorCount("chart_reseed_closed")
+	at.logInfof("🧑‍🏫 chart display re-seeded on the closed market after a history refill (display only)")
 }
 
 // mentorDayEventsOnForTest is the per-date calendar seam (tests; nil → the

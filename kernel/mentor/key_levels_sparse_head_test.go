@@ -71,10 +71,10 @@ func TestKeyLevel1HBarsSparseSnapshotHeadIsStillOneMinute(t *testing.T) {
 func TestSeedSparseSnapshotHeadBuildsOneMinuteLevels(t *testing.T) {
 	w := sparseHeadWindow()
 	now := w[len(w)-1].CloseTime + 1
-	e1 := New(DefaultConfig())
+	e1 := New(preOctCfg())
 	e1.Cfg.Enabled = true
 	Seed(e1, w, now)
-	e2 := New(DefaultConfig())
+	e2 := New(preOctCfg())
 	e2.Cfg.Enabled = true
 	Seed(e2, w[2:], now)
 

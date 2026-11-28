@@ -26,7 +26,7 @@ func TestFourCallersInOneWindowEmitOneLineWithCallersAggregated(t *testing.T) {
 	// four callers, the same short ring, served climbing as it would live
 	callers := []string{"api/handler_klines.go:377", "trader/fade_facts.go:73", "market/data.go:250", "trader/auto_trader_planner.go:2275"}
 	for i, c := range callers {
-		h := kernel.BarHorizon{Requested: 5000 - i*1000, Served: 154 + i, GapCount: 0}
+		h := kernel.BarHorizon{Requested: 2400 - i*100, Served: 154 + i, GapCount: 0} // m452: inside the 2500 ring (a request beyond it is no longer a SHORT)
 		barHorizonWarn(now.Add(time.Duration(i)*20*time.Second), h, "MNQ", "5m", c, 2500)
 	}
 	lines := get()
@@ -41,7 +41,7 @@ func TestFourCallersInOneWindowEmitOneLineWithCallersAggregated(t *testing.T) {
 	// fifth read re-arms the key, and that line carries the four plus itself
 	// and says how many it ate.
 	barHorizonWarn(now.Add(barHorizonWarnWindow+time.Second),
-		kernel.BarHorizon{Requested: 5000, Served: 160}, "MNQ", "5m", "api/handler_klines.go:377", 2500)
+		kernel.BarHorizon{Requested: 2400, Served: 160}, "MNQ", "5m", "api/handler_klines.go:377", 2500)
 	lines = get()
 	if n := bhCountLines(lines, "bar horizon"); n != 2 {
 		t.Fatalf("past the window: %d lines, want 2: %v", n, lines)
@@ -67,7 +67,7 @@ func TestHorizonWindowIsFiveMinutesAndReArmsWithCallers(t *testing.T) {
 	get := bhWarnCapture(t)
 	start := bhCT(2026, time.September, 16, 9, 30)
 	h := func(served int) kernel.BarHorizon {
-		return kernel.BarHorizon{Requested: 5000, Served: served}
+		return kernel.BarHorizon{Requested: 2400, Served: served} // m452: inside the 2500 ring - a request BEYOND the ring is no longer a SHORT
 	}
 	barHorizonWarn(start, h(154), "MNQ", "5m", "api/handler_klines.go:377", 2500)
 	for i := 1; i < 12; i++ { // 4m40s of further reads from two callers

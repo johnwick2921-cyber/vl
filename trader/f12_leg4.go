@@ -37,6 +37,63 @@ func Leg4FromBrokerAt(
 	interval time.Duration,
 	ledger []OpenOrder,
 	now time.Time,
+) CutoverLeg {
+	return Leg4FromBrokerWithPositionsAt(c, account, symbol, interval, ledger, nil, now)
+}
+
+// Leg4Position is one open position the broker reports, enough to recognise its
+// protective exit orders.
+type Leg4Position struct {
+	Symbol string
+	Long   bool
+	Qty    float64
+}
+
+// protectiveExits splits the broker's working orders into those that are the
+// protective stop/target of an open position (exit-side action, same symbol,
+// quantity no larger than the position) and the rest. The armed_orders ledger
+// records ENTRY placements only: once the entry fills the row is terminal and
+// the bot's bracket orders at NT8 have no ledger row by design, so counting
+// them against the ledger printed a false "MISMATCH" for every open position
+// (real case 2026-11-11/12, trader 12345, rows 771/775). With NO open position
+// nothing is split, so an orphan order while flat is still a mismatch.
+func protectiveExits(working []nt.NT8Order, positions []Leg4Position) (prot, rest []nt.NT8Order) {
+	for _, o := range working {
+		isProt := false
+		act := strings.ToLower(strings.TrimSpace(o.Action))
+		for _, p := range positions {
+			if p.Qty <= 0 || !strings.EqualFold(strings.TrimSpace(p.Symbol), strings.TrimSpace(o.Symbol)) {
+				continue
+			}
+			exitAct := "sell"
+			if !p.Long {
+				exitAct = "buy"
+			}
+			if act == exitAct && float64(o.Quantity) <= p.Qty {
+				isProt = true
+				break
+			}
+		}
+		if isProt {
+			prot = append(prot, o)
+		} else {
+			rest = append(rest, o)
+		}
+	}
+	return prot, rest
+}
+
+// Leg4FromBrokerWithPositionsAt is Leg4FromBrokerAt that also knows the open
+// positions, so protective exits are named as such instead of being compared to
+// the entry ledger. It never loosens the verdict: any working order at the
+// broker still FAILS the leg; only the explanation changes.
+func Leg4FromBrokerWithPositionsAt(
+	c *nt.OrderSnapshotCache,
+	account, symbol string,
+	interval time.Duration,
+	ledger []OpenOrder,
+	positions []Leg4Position,
+	now time.Time,
 ) (result CutoverLeg) {
 	const name = "working_orders"
 	workingLedger := make([]OpenOrder, 0, len(ledger))
@@ -104,6 +161,7 @@ func Leg4FromBrokerAt(
 	for _, o := range ledger {
 		ledgerIDs = append(ledgerIDs, o.OrderID)
 	}
+	prot, working := protectiveExits(working, positions)
 	if len(working) != len(ledger) {
 		brokerIDs := make([]string, 0, len(working))
 		for _, o := range working {
@@ -116,14 +174,23 @@ func Leg4FromBrokerAt(
 			Source: src + " × armed_orders ledger"}
 	}
 
-	if len(working) > 0 {
+	if len(working)+len(prot) > 0 {
 		ids := make([]string, 0, len(working))
 		for _, o := range working {
 			ids = append(ids, fmt.Sprintf("%s(%s %s @%.2f)", o.OrderID, o.State, o.Type, orderPrice(o)))
 		}
-		return CutoverLeg{N: 4, Name: name, Pass: false,
-			Detail: fmt.Sprintf("%d working order(s) at the broker: %s", len(working), strings.Join(ids, " · ")),
-			Source: src}
+		pids := make([]string, 0, len(prot))
+		for _, o := range prot {
+			pids = append(pids, fmt.Sprintf("%s(%s %s @%.2f)", o.OrderID, o.State, o.Type, orderPrice(o)))
+		}
+		detail := fmt.Sprintf("%d working order(s) at the broker: %s", len(working), strings.Join(ids, " · "))
+		if len(prot) > 0 {
+			detail = fmt.Sprintf("%d protective exit order(s) of an open position (not in the entry ledger by design): %s", len(prot), strings.Join(pids, " · "))
+			if len(working) > 0 {
+				detail += fmt.Sprintf("; plus %d working order(s): %s", len(working), strings.Join(ids, " · "))
+			}
+		}
+		return CutoverLeg{N: 4, Name: name, Pass: false, Detail: detail, Source: src}
 	}
 	return CutoverLeg{N: 4, Name: name, Pass: true,
 		Detail: fmt.Sprintf("0 working order(s) at the broker (ledger agrees: %d)", len(ledger)),

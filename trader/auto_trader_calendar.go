@@ -190,7 +190,12 @@ func (at *AutoTrader) currentT1Windows(now time.Time) []kernel.CTWindow {
 	reg := at.sessionRegistry(now) // W8
 	sess, ok := reg.ActiveSession(now)
 	if !ok {
-		return nil
+		// m308 — no active session (between windows, or every session off):
+		// the red-news T1 blackout is session-INDEPENDENT, so read the windows
+		// for the trade date with NO session currency filter — the strategy's
+		// t1_currencies alone decides what is HARD. The mentor (SWING4H) is
+		// session-independent, so a blackout must not vanish between sessions.
+		return at.t1WindowsFor(plannerTradeDateCT(now), nil)
 	}
 	return at.t1WindowsFor(plannerTradeDateCT(now), sess)
 }
@@ -200,8 +205,18 @@ func (at *AutoTrader) currentT1Windows(now time.Time) []kernel.CTWindow {
 // will enforce (no-trade-band wave, 2026-09-02). A read authors ASIA while NY
 // is still the active session, so "the session at now" is the wrong key there.
 func (at *AutoTrader) t1WindowsFor(tradeDate string, sess *kernel.SessionDef) []kernel.CTWindow {
-	if at.store == nil || sess == nil {
+	if at.store == nil {
 		return nil
+	}
+	// m308 — sess may be nil: the session-INDEPENDENT read (no active session).
+	// The session only scopes the event currency filter (EventsForSession) and
+	// names the log lines. With no session: NO currency filter and the logs say
+	// "(no session)".
+	name := "(no session)"
+	sessionScoped := false
+	if sess != nil {
+		name = sess.Name
+		sessionScoped = true
 	}
 	slice, err := at.store.Calendar().GetSlice(tradeDate)
 	if err == nil && slice != nil {
@@ -213,7 +228,7 @@ func (at *AutoTrader) t1WindowsFor(tradeDate string, sess *kernel.SessionDef) []
 			// which once per trade date.
 			if len(evs) == 0 {
 				if at.firstFor(&at.lastCalEmptyDate, tradeDate) {
-					at.logInfof("📅 calendar: %s fetched — no events scheduled (no T1 blackout for %s)", tradeDate, sess.Name)
+					at.logInfof("📅 calendar: %s fetched — no events scheduled (no T1 blackout for %s)", tradeDate, name)
 				}
 				return nil
 			}
@@ -222,25 +237,25 @@ func (at *AutoTrader) t1WindowsFor(tradeDate string, sess *kernel.SessionDef) []
 			// rest are advisory lines the plan-write path renders (plannerT1Lines)
 			// and this gate never sees. An event WITHOUT a currency fails closed
 			// to hard and is named once per trade date.
-			split := kernel.SplitT1(sessionPlannerEvents(evs, sess.Name), at.t1Currencies())
+			split := kernel.SplitT1(plannerEventsScoped(evs, name, sessionScoped), at.t1Currencies())
 			if len(split.Uncurrencied) > 0 && at.firstFor(&at.lastT1NoCurrencyWarn, tradeDate) {
 				for _, title := range split.Uncurrencied {
 					at.logWarnf("⚠️ T1 event without currency treated as hard: %s (%s %s, t1_currencies=%s)",
-						title, tradeDate, sess.Name, kernel.T1CurrencySetLabel(at.t1Currencies()))
+						title, tradeDate, name, kernel.T1CurrencySetLabel(at.t1Currencies()))
 				}
 			}
-			return at.widenT1Windows(split.Hard, tradeDate, sess)
+			return at.widenT1Windows(split.Hard, tradeDate, name)
 		}
 	}
 	// P0.6 fail-closed: no slice (or undecodable) → date-aware fallback.
 	if at.firstFor(&at.lastCalFailClosedAlert, tradeDate) {
 		at.emitAlert("P0", "calendar-slice-missing",
-			fmt.Sprintf("calendar-fail-closed:%s:%s", tradeDate, sess.Name),
+			fmt.Sprintf("calendar-fail-closed:%s:%s", tradeDate, name),
 			"Calendar slice missing",
 			fmt.Sprintf("No stored calendar slice for %s — session %s is now BLACKED OUT around the fallback times (fail-closed). Fix the calendar feed; this alert repeats daily until the slice exists.",
-				tradeDate, sess.Name))
+				tradeDate, name))
 	}
-	return at.widenT1Windows(at.calendarFallbackWindows(tradeDate, sess), tradeDate, sess)
+	return at.widenT1Windows(at.calendarFallbackWindows(tradeDate, name, sessionScoped), tradeDate, name)
 }
 
 // calendarFallbackWindows is the DATE-AWARE static fallback (P1, CTO 2026-10-05):
@@ -255,7 +270,7 @@ func (at *AutoTrader) t1WindowsFor(tradeDate string, sess *kernel.SessionDef) []
 //	(c) any other uncovered TRADING date → ONE conservative window: the standard
 //	    07:30 CT T1 print [07:20, 07:35) (mentorNewsPreWindow / mentorNewsPostWindow),
 //	    logged as such — not September's list.
-func (at *AutoTrader) calendarFallbackWindows(tradeDate string, sess *kernel.SessionDef) []kernel.CTWindow {
+func (at *AutoTrader) calendarFallbackWindows(tradeDate, name string, sessionScoped bool) []kernel.CTWindow {
 	loc := kernel.CTLocation()
 	// (a) covered: only that date's static events.
 	static := calendarStaticLoader()
@@ -266,7 +281,7 @@ func (at *AutoTrader) calendarFallbackWindows(tradeDate string, sess *kernel.Ses
 		}
 	}
 	if len(day) > 0 {
-		split := kernel.SplitT1(sessionPlannerEvents(day, sess.Name), at.t1Currencies())
+		split := kernel.SplitT1(plannerEventsScoped(day, name, sessionScoped), at.t1Currencies())
 		at.logWarnf("📅 calendar FAIL-CLOSED: no slice for %s — the static file covers this date; using its %d event(s) (%d window(s))",
 			tradeDate, len(day), len(split.Hard))
 		return split.Hard
@@ -288,15 +303,15 @@ func (at *AutoTrader) calendarFallbackWindows(tradeDate string, sess *kernel.Ses
 
 // widenT1Windows is the F6 clock-drift widening shared by the live and the
 // fallback paths (CLASS 145: capped by kernel.ClockWidenCapMinutes).
-func (at *AutoTrader) widenT1Windows(windows []kernel.CTWindow, tradeDate string, sess *kernel.SessionDef) []kernel.CTWindow {
+func (at *AutoTrader) widenT1Windows(windows []kernel.CTWindow, tradeDate, name string) []kernel.CTWindow {
 	if drift, ok := clockHoldDriftFn(at.futuresSymbol()); ok {
 		if _, widen := kernel.ClockHoldDecision(drift, true, kernel.ClockWarnMs(), kernel.C2ToleranceMs()); widen > 0 {
 			windows = kernel.WidenCTWindows(windows, drift)
 			if at.firstFor(&at.lastClockWidenLog, tradeDate) {
 				at.logWarnf("🕰 clock-hold: T1 no-trade windows widened by %dm (|drift| %dms, cap %dm) for %s %s (F6)",
-					kernel.ClockWidenMinutes(drift), widen, kernel.ClockWidenCapMinutes, tradeDate, sess.Name)
+					kernel.ClockWidenMinutes(drift), widen, kernel.ClockWidenCapMinutes, tradeDate, name)
 				if note := kernel.ClockDriftStaleNote(drift); note != "" {
-					at.logWarnf("🕰 clock-hold: %s — %s %s (CLASS 145)", note, tradeDate, sess.Name)
+					at.logWarnf("🕰 clock-hold: %s — %s %s (CLASS 145)", note, tradeDate, name)
 				}
 			}
 		}
@@ -308,9 +323,20 @@ func (at *AutoTrader) widenT1Windows(windows []kernel.CTWindow, tradeDate string
 // (session-sliced, CT time). Shared by the gate + the planner input + the plan
 // no-trade injection so all three agree.
 func sessionPlannerEvents(evs []calendar.Event, session string) []kernel.PlannerCalendarEvent {
+	return plannerEventsScoped(evs, session, true)
+}
+
+// plannerEventsScoped maps stored calendar.Events to PlannerCalendarEvents.
+// scoped: apply the session currency filter (EventsForSession). Unscoped (the
+// m308 session-independent read — no active session) includes EVERY event, and
+// the strategy's t1_currencies alone then decides what is HARD.
+func plannerEventsScoped(evs []calendar.Event, name string, scoped bool) []kernel.PlannerCalendarEvent {
+	if scoped {
+		evs = calendar.EventsForSession(evs, name)
+	}
 	loc := kernel.CTLocation()
-	var out []kernel.PlannerCalendarEvent
-	for _, e := range calendar.EventsForSession(evs, session) {
+	out := make([]kernel.PlannerCalendarEvent, 0, len(evs))
+	for _, e := range evs {
 		out = append(out, kernel.PlannerCalendarEvent{
 			TimeCT: e.Time.In(loc).Format("15:04"), Currency: e.Currency,
 			Title: e.Title, Impact: string(e.Impact),

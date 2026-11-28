@@ -75,8 +75,9 @@ func TestExcursionCloseCopiesCorrectedPnL(t *testing.T) {
 	es := excStore(t)
 	id, _ := es.Open(TradeExcursion{PositionID: 901, Side: "SHORT", EntryPx: 200, EntryTs: 5, Size: 1})
 	corrected := -155.0
+	stopFinal := 210.0
 	if err := es.Close(id, TradeExcursionClose{
-		ExitPx: 190, ExitTs: 99, ExitReason: "stop", StopPxFinal: 210,
+		ExitPx: 190, ExitTs: 99, ExitReason: "stop", StopPxFinal: &stopFinal,
 		PnlCorrected: &corrected, Ambiguous: true,
 	}); err != nil {
 		t.Fatalf("close: %v", err)

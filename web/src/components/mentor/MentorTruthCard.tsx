@@ -61,6 +61,14 @@ const fmtAsOf = (ms: number) =>
       })
     : '—'
 
+const fmtHM = (ms: number) =>
+  new Date(ms).toLocaleTimeString('en-US', {
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'America/Chicago',
+  })
+
 function dirWord(dir: string): string {
   if (dir === 'long') return 'LONG'
   if (dir === 'short') return 'SHORT'
@@ -126,6 +134,16 @@ export function MentorTruthCard({
           {fmtAsOf(truth.as_of_ms)} CT
         </span>
       </button>
+
+      {truth.chart_seeded_at ? (
+        <div
+          className="text-[10px]"
+          data-testid="mentor-chart-seeded"
+          style={{ color: 'var(--vl-faint)' }}
+        >
+          Chart overlays as of last close {fmtHM(truth.chart_seeded_at)} CT
+        </div>
+      ) : null}
 
       {stale && (
         <div

@@ -167,6 +167,34 @@ func (w *deadManWatchdog) entriesBlocked() bool {
 	return w.get() != dmLive
 }
 
+// entriesBlockedLive is entriesBlocked plus a LIVE sample of the link (m425b
+// S5). The cached state is advanced only every ~60s (runCycle / monitorTick),
+// so a drop — or a drop AND reconnect inside that window — left admission
+// reading dmLive. This also refuses when (a) the link is down right now, or
+// (b) it is up under a different connection epoch than the last sample (the
+// link was replaced unseen). It READS only: the state machine itself still
+// advances in stepEpoch, which will log, sweep and begin the episode.
+// connKnown=false (non-NT / no server) is exactly entriesBlocked().
+func (w *deadManWatchdog) entriesBlockedLive(connected, connKnown bool, epoch uint64, epochKnown bool) bool {
+	if w.entriesBlocked() {
+		return true
+	}
+	if !connKnown {
+		return false
+	}
+	if !connected {
+		return true
+	}
+	if epochKnown {
+		w.mu.Lock()
+		defer w.mu.Unlock()
+		if w.haveEpoch && epoch != w.epoch {
+			return true
+		}
+	}
+	return false
+}
+
 // watchdogEvent is what a single per-cycle step() produced, so the caller can log
 // and act (cancel unfilled entries on reconnect, etc.). Only transitions emit a
 // non-none event.

@@ -367,6 +367,36 @@ func TestDeployScriptsAreExecutable(t *testing.T) {
 	}
 }
 
+// TestCanonMirrorCarriesTheSafetyLaws (m468): the STANDING LAWS section mirrors
+// the laws that lived only in the untracked CLAUDE.md, and a lane that reads only
+// the tracked canon must still find the safety-critical ones. Each is pinned by
+// its name, and where a law names code, that code must still exist — so the law
+// cannot drop out of the canon, and cannot go on naming a guard that is gone.
+func TestCanonMirrorCarriesTheSafetyLaws(t *testing.T) {
+	flat := flattenProse(readRepoFile(t, canonPath))
+	for _, phrase := range []string{
+		"**SIM-only.** Every trade path is NinjaTrader SIM", "isAccountTradeable", "never weaken it", "SACRED",
+		"GUIDE CONTENT LAW", "web/src/guide/content/*", "VITE_GUIDE_BUILT_REV",
+		"AUDIT-PLAYBOOK LAW", "appended to that file in the SAME PR",
+		"kill -9", "SIGTERM exits 0 and does NOT relaunch",
+		"Canonical casing", "No fabricated values", "pnl_corrected", "Boot lines are READ",
+	} {
+		if !strings.Contains(flat, phrase) {
+			t.Errorf("%s no longer carries %q — a mirrored safety law dropped out of the tracked canon", canonPath, phrase)
+		}
+	}
+	// The code the laws name.
+	if !strings.Contains(readRepoFile(t, "../trader/ninjatrader/tcp_trader.go"), "func (t *TCPTrader) isAccountTradeable(") {
+		t.Error("the canon's SIM-only law names isAccountTradeable in trader/ninjatrader/tcp_trader.go, which no longer defines it — correct the law or restore the guard")
+	}
+	if st, err := os.Stat("../web/src/guide/content"); err != nil || !st.IsDir() {
+		t.Errorf("the canon's GUIDE CONTENT LAW names web/src/guide/content, which is gone (%v)", err)
+	}
+	if !strings.Contains(readRepoFile(t, "../web/src/guide/guide-built-rev.test.ts"), "VITE_GUIDE_BUILT_REV") {
+		t.Error("the canon's GUIDE CONTENT LAW names VITE_GUIDE_BUILT_REV, which the guide no longer stamps")
+	}
+}
+
 // TestCanonDocNeverNamesTheOldLockTool pins the CANON-FIX direction: after the
 // rename the tool is deploy/vl-lock.sh (the old name is only a wrapper), and a
 // canon doc that names the old tool in its verb block is exactly the drift the

@@ -11,14 +11,15 @@ import (
 // identifier). nil / empty / nil-tuning → ON (the release #31 default); only an
 // explicit false reads OFF. MUTANT (nil → OFF) → RED.
 func TestMentorExec2mKnobOnNilIsOn(t *testing.T) {
-	if !mentorExec2mKnobOn(nil) {
-		t.Fatal("nil risk control → ON (the release #31 default)")
+	// m472 A1: nil → OFF, the 1m all day [Oct D4.2 @ 22:56-23:46] (was ON, release #31).
+	if mentorExec2mKnobOn(nil) {
+		t.Fatal("nil risk control → OFF (the m472 A1 default)")
 	}
-	if !mentorExec2mKnobOn(&store.RiskControlConfig{}) {
-		t.Fatal("empty risk control → ON")
+	if mentorExec2mKnobOn(&store.RiskControlConfig{}) {
+		t.Fatal("empty risk control → OFF")
 	}
-	if !mentorExec2mKnobOn(&store.RiskControlConfig{MentorTuning: &store.MentorTuning{}}) {
-		t.Fatal("nil tuning → ON")
+	if mentorExec2mKnobOn(&store.RiskControlConfig{MentorTuning: &store.MentorTuning{}}) {
+		t.Fatal("nil tuning → OFF")
 	}
 	off := false
 	if mentorExec2mKnobOn(&store.RiskControlConfig{MentorTuning: &store.MentorTuning{Exec2mAfter30m: &off}}) {
@@ -39,8 +40,18 @@ func TestMentorRebuildTrailFrameWarnsOnTheNewDefault(t *testing.T) {
 	at := &AutoTrader{config: AutoTraderConfig{StrategyConfig: &store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true}}}}
 	row := store.ArmedOrderDB{Condition: "ISB", Scenario: "isb-x", SignalID: "sig", TraderID: "t"}
 	at.mentorRebuildTrailFrame(row, &mentorLivePos{})
-	if n := at.mentorCountSnapshot()["trail_tf_unknown_after_restart"]; n != 1 {
-		t.Fatalf("trail_tf_unknown_after_restart = %d, want 1 (nil tuning reads ON and WARNs)", n)
+	// m472 A1 [Oct D4.2 @ 22:56-23:46]: nil tuning reads OFF (1m all day) — the
+	// trail frame is the 1m, known, so no WARN.
+	if n := at.mentorCountSnapshot()["trail_tf_unknown_after_restart"]; n != 0 {
+		t.Fatalf("trail_tf_unknown_after_restart = %d, want 0 (nil tuning reads OFF, 1m trail)", n)
+	}
+
+	// An explicit ON (the September schedule) makes the frame unknown → WARN + count.
+	on := true
+	atOn := &AutoTrader{config: AutoTraderConfig{StrategyConfig: &store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true, MentorTuning: &store.MentorTuning{Exec2mAfter30m: &on}}}}}
+	atOn.mentorRebuildTrailFrame(row, &mentorLivePos{})
+	if n := atOn.mentorCountSnapshot()["trail_tf_unknown_after_restart"]; n != 1 {
+		t.Fatalf("explicit ON must WARN; trail_tf_unknown_after_restart = %d, want 1", n)
 	}
 
 	off := false
@@ -57,7 +68,8 @@ func TestMentorRebuildTrailFrameWarnsOnTheNewDefault(t *testing.T) {
 // too, never silently trail the 1m. MUTANT (isMentorExec2mSetup drops PHL/PLH)
 // → count 0 → RED.
 func TestMentorRebuildTrailFrameWarnsForPHL(t *testing.T) {
-	at := &AutoTrader{config: AutoTraderConfig{StrategyConfig: &store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true}}}}
+	on := true // m472 A1: the 2m schedule is now opt-in
+	at := &AutoTrader{config: AutoTraderConfig{StrategyConfig: &store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true, MentorTuning: &store.MentorTuning{Exec2mAfter30m: &on}}}}}
 	for _, cond := range []string{"PHL", "PLH"} {
 		row := store.ArmedOrderDB{Condition: cond, Scenario: "phl-x", SignalID: "sig", TraderID: "t"}
 		at.mentorRebuildTrailFrame(row, &mentorLivePos{})

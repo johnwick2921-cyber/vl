@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"vl/kernel/mentor"
 	"vl/market"
@@ -40,7 +41,7 @@ type driveMove struct {
 func newDriveAT(t *testing.T) (*AutoTrader, func() []driveMove) {
 	t.Helper()
 	at := &AutoTrader{
-		config: AutoTraderConfig{StrategyConfig: &store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true, MentorTrailMode: "off"}}},
+		config: AutoTraderConfig{StrategyConfig: &store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true, MentorTrailMode: "off", MentorTuning: octA2SeptExitTuning()}}},
 		trader: &nttrader.TCPTrader{},
 	}
 	oldBroker := mentorBrokerLegStopRead
@@ -524,9 +525,10 @@ func TestMentorExitDrivePosB_ArmsBE(t *testing.T) {
 // The single leg trails only AFTER the 1:1 point (entry + R) printed on a
 // PRIOR candle (CTO gate, release #4: the course trails the runner after the
 // 1:1 point), then takes the TIGHTER of the live 1:1 and the candle trail, the
-// trail sitting 1 TICK beyond the candle's low (item 7 ruling [X8 @15:40–17:13]).
-// Mutants: trail straight after BE (candle 1 moves to 11.75) → RED; trail at
-// the low exactly (13.5) → RED.
+// trail sitting one tick BEYOND the candle's low (m283 P2 — the same rule as
+// mentorCandleTrailStop [X8 part1 @16:18–16:31; D2.4 p1 @08:11–08:24]).
+// Mutants: trail straight after BE (candle 1 moves to 11.75) → RED; trail AT
+// the low (13.5) → RED.
 func TestMentorExitDrivePosB_SingleLegTrails(t *testing.T) {
 	at, moves := newDriveAT(t)
 	p := bPos("B", "long", 10, 10, 16, 5) // R = 2 → the 1:1 point is 12
@@ -538,7 +540,7 @@ func TestMentorExitDrivePosB_SingleLegTrails(t *testing.T) {
 	if !p.Pos.Scaled {
 		t.Fatal("the 1:1 point printed — Scaled must be set")
 	}
-	// Candle 2: 1:1 = 2·14−16 = 12; trail = low 13.5 − 1 tick = 13.25 → 13.25.
+	// Candle 2: 1:1 = 2·14−16 = 12; trail = low 13.5 − 1 tick = 13.25.
 	at.mentorExitDrivePos(nil, p, 14, 14.5, 13.5, 0)
 	assertMoves(t, moves(), driveMove{"entry", "long", 13.25})
 }
@@ -576,7 +578,7 @@ func TestMentorExitDrivePosC_NeverMoves(t *testing.T) {
 	assertMoves(t, moves())
 }
 
-// Mode A (resonance): no trail, no 1:1 tightening [D2.4 p1].
+// Mode A (resonance): no trail, no 1:1 tightening [D2.4 p1 @02:17–02:29].
 func TestMentorExitDrivePosA_NoMoves(t *testing.T) {
 	at, moves := newDriveAT(t)
 	p := bPos("A-resonance", "long", 10, 10, 16, 5)
@@ -626,9 +628,12 @@ func TestMentorMoveLegStop_NeverWidens(t *testing.T) {
 // whole position past the 1:1 partial).
 func TestMentorArmResonanceOnISB(t *testing.T) {
 	at, moves := newDriveAT(t)
+	// m186 W-MENTOR-EXACT: the runner TP default is OFF (the mentor never places
+	// a runner TP); pin the not_split branch by enabling it explicitly.
+	at.config.StrategyConfig.RiskControl.MentorResonanceRunnerTPOldHigh = cxBool(true)
 	p := bPos("B", "long", 10, 9, 16, 5)
 	p.Pos.Origin = "PHL"
-	p.BarsSinceFill = 1
+	p.BarsSinceFill = 2 // one candle AFTER the fill candle (c52 W2 B18)
 	p.RunnerTarget = 20
 	at.mentorRegisterLivePos("sig-1", p)
 	at.mentorArmResonanceOnISB("long")
@@ -981,4 +986,292 @@ func TestMentorExitDriveForgetsSignalMapsOnFullCloseOnly(t *testing.T) {
 			t.Fatalf("the full close must clear stopBySignal[%s]", k)
 		}
 	}
+}
+
+// TestMentorX8TrapDodgeExit pins the X8 trap-dodge exit at the production hook
+// (m186 DS-108, [X8 part1 @07:31–08:07]): a LONG with the 5m trigger on the
+// SELL side and a CLOSED 2m candle ABOVE the EMA34 is a fake breakout → a market
+// close is sent through mentorCloseLegAtMarketWire. MUTANT: drop the
+// mentor.X8TrapDodge call in mentorX8TrapDodgeExit → no close → RED.
+func TestMentorX8TrapDodgeExit(t *testing.T) {
+	at, _ := newDriveAT(t)
+	cfg := mentor.DefaultConfig()
+	cfg.Enabled = true
+	e := mentor.New(cfg)
+	e.State.EMA34 = 100
+	e.State.Trigger = mentor.TriggerLine{Dir: mentor.SideShort, Price: 99}
+	at.mentorEval = e
+
+	p := bPos("B", "long", 100, 98, 104, 1)
+
+	var mu sync.Mutex
+	var closes []string
+	old := mentorCloseLegAtMarketWire
+	mentorCloseLegAtMarketWire = func(_ *AutoTrader, _ *nttrader.TCPTrader, side string, qty int) error {
+		mu.Lock()
+		closes = append(closes, side)
+		mu.Unlock()
+		return nil
+	}
+	t.Cleanup(func() { mentorCloseLegAtMarketWire = old })
+
+	// Two 2m closes at 100 seed the 2m EMA34 at 100; the third closes at 101.5
+	// (State.EMA34 is no longer read by X8 — the line is built from the 2m bars).
+	base := int64(120_000_000_000) // 2m-aligned
+	bars := x8TwoMCandles(base, 100, 100, 101.5)
+	if !at.mentorX8TrapDodgeExit(nil, p, bars) {
+		t.Fatal("a 2m close above the EMA34 against a 5m sell trigger must exit the long")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(closes) != 1 || closes[0] != "long" {
+		t.Fatalf("close = %v, want exactly one 'long' market close", closes)
+	}
+}
+
+// TestMentorX8TrapDodgeExemptsSwingAndNonTrap — the swing (held by the 4h) never
+// fires the trap-dodge, and a same-side trigger is not a trap.
+func TestMentorX8TrapDodgeExemptsSwingAndNonTrap(t *testing.T) {
+	at, _ := newDriveAT(t)
+	cfg := mentor.DefaultConfig()
+	cfg.Enabled = true
+	e := mentor.New(cfg)
+	e.State.EMA34 = 100
+	e.State.Trigger = mentor.TriggerLine{Dir: mentor.SideShort, Price: 99}
+	at.mentorEval = e
+
+	closed := false
+	old := mentorCloseLegAtMarketWire
+	mentorCloseLegAtMarketWire = func(_ *AutoTrader, _ *nttrader.TCPTrader, _ string, _ int) error {
+		closed = true
+		return nil
+	}
+	t.Cleanup(func() { mentorCloseLegAtMarketWire = old })
+
+	base := int64(120_000_000_000)
+	bars := x8TwoMCandles(base, 100, 100, 101.5)
+	// SWING is exempt.
+	if at.mentorX8TrapDodgeExit(nil, bPos("swing", "long", 100, 98, 104, 1), bars) {
+		t.Fatal("a SWING4H position must not fire the X8 trap-dodge")
+	}
+	// A SHORT with a SELL trigger (same side) is not a trap.
+	if at.mentorX8TrapDodgeExit(nil, bPos("B", "short", 100, 102, 96, 1), bars) {
+		t.Fatal("a short with a 5m sell trigger is not a trap")
+	}
+	if closed {
+		t.Fatal("no close may be sent for a swing or a non-trap")
+	}
+}
+
+// TestMentorX8TrapDodgeOneShot pins the m262 one-shot latch: two candles in a
+// row that BOTH meet the X8 trap-dodge send exactly ONE market close — never a
+// second close while the first fill is in flight. MUTANT: drop the p.X8Exited
+// latch → the second candle sends a second close → RED.
+func TestMentorX8TrapDodgeOneShot(t *testing.T) {
+	at, _ := newDriveAT(t)
+	cfg := mentor.DefaultConfig()
+	cfg.Enabled = true
+	e := mentor.New(cfg)
+	e.State.EMA34 = 100
+	e.State.Trigger = mentor.TriggerLine{Dir: mentor.SideShort, Price: 99}
+	at.mentorEval = e
+
+	p := bPos("B", "long", 100, 98, 104, 1)
+
+	var mu sync.Mutex
+	closes := 0
+	old := mentorCloseLegAtMarketWire
+	mentorCloseLegAtMarketWire = func(_ *AutoTrader, _ *nttrader.TCPTrader, side string, qty int) error {
+		mu.Lock()
+		closes++
+		mu.Unlock()
+		return nil
+	}
+	t.Cleanup(func() { mentorCloseLegAtMarketWire = old })
+
+	base := int64(120_000_000_000)
+	bars := x8TwoMCandles(base, 100, 100, 101.5)
+	// Two candles in a row that both meet X8.
+	if !at.mentorX8TrapDodgeExit(nil, p, bars) {
+		t.Fatal("the first trap candle must exit")
+	}
+	if at.mentorX8TrapDodgeExit(nil, p, bars) {
+		t.Fatal("the second trap candle must NOT send a second close (latched)")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if closes != 1 {
+		t.Fatalf("closes = %d, want exactly 1 (the one-shot latch)", closes)
+	}
+}
+
+// x8TwoMCandles builds one CLOSED 2m candle per close value: two 1m bars in one
+// 2m bucket, both closing at the same price, so the 2m candle close is exactly
+// that price. base must be 2m-aligned.
+func x8TwoMCandles(base int64, closes ...float64) []market.Kline {
+	bars := make([]market.Kline, 0, len(closes)*2)
+	for i, c := range closes {
+		o := base + int64(i)*120_000
+		bars = append(bars,
+			market.Kline{OpenTime: o, CloseTime: o + 59_999, Open: c, High: c + 1, Low: c - 1, Close: c, Final: true},
+			market.Kline{OpenTime: o + 60_000, CloseTime: o + 119_999, Open: c, High: c + 1, Low: c - 1, Close: c, Final: true},
+		)
+	}
+	return bars
+}
+
+// TestMentorX8TrapDodgeUses2mEMA34 pins the m308 fix: X8 compares the closed 2m
+// candle against the EMA34 built from the 2m closes, NOT the evaluator's 1m
+// EMA34 (State.EMA34). The 2m EMA34 (100, from three 2m closes at 100) and the
+// 1m EMA34 (State.EMA34 = 101) STRADDLE the 2m close (100.5): the 2m read says
+// "above the EMA34 → exit", the 1m read says "below → sit". MUTANT: revert
+// mentorX8TrapDodgeExit to ema34 := at.mentorEval.State.EMA34 → the long does
+// NOT exit → RED.
+func TestMentorX8TrapDodgeUses2mEMA34(t *testing.T) {
+	at, _ := newDriveAT(t)
+	cfg := mentor.DefaultConfig()
+	cfg.Enabled = true
+	e := mentor.New(cfg)
+	e.State.EMA34 = 101 // the 1m EMA34 — ABOVE the 2m close; must NOT be read
+	e.State.Trigger = mentor.TriggerLine{Dir: mentor.SideShort, Price: 99}
+	at.mentorEval = e
+
+	p := bPos("B", "long", 100, 98, 104, 1)
+
+	closes := 0
+	old := mentorCloseLegAtMarketWire
+	mentorCloseLegAtMarketWire = func(_ *AutoTrader, _ *nttrader.TCPTrader, side string, qty int) error {
+		closes++
+		return nil
+	}
+	t.Cleanup(func() { mentorCloseLegAtMarketWire = old })
+
+	bars := x8TwoMCandles(120_000_000_000, 100, 100, 100, 100.5)
+	if !at.mentorX8TrapDodgeExit(nil, p, bars) {
+		t.Fatal("a 2m close (100.5) above the 2m EMA34 (100) against a 5m sell trigger must exit — the 1m EMA34 (101) says sit and must not be read")
+	}
+	if closes != 1 {
+		t.Fatalf("closes = %d, want exactly 1", closes)
+	}
+}
+
+// B1 (m329): X8 must not Flatten the account's other resting arms. It exits
+// with ONE marketable limit (its fill cancels only this position's bracket);
+// the market flatten (which cancels every working order for the instrument)
+// is not sent. MUTANT: send mentorCloseLegAtMarketWire straight away in
+// mentorX8SendExit -> market closes = 1, limits = 0 -> RED.
+func x8B1Setup(t *testing.T, fresh bool) (*AutoTrader, *mentorLivePos, *[]float64, *[]string) {
+	at, _ := newDriveAT(t)
+	cfg := mentor.DefaultConfig()
+	cfg.Enabled = true
+	e := mentor.New(cfg)
+	e.State.Trigger = mentor.TriggerLine{Dir: mentor.SideShort, Price: 99}
+	at.mentorEval = e
+	p := bPos("B", "long", 100, 98, 104, 1)
+	var limits []float64
+	var markets []string
+	oldL, oldM, oldP := mentorX8LimitWire, mentorCloseLegAtMarketWire, mentorLatestPriceSeam
+	mentorX8LimitWire = func(_ *AutoTrader, _ *nttrader.TCPTrader, _ string, l float64) error {
+		limits = append(limits, l)
+		return nil
+	}
+	mentorCloseLegAtMarketWire = func(_ *AutoTrader, _ *nttrader.TCPTrader, side string, _ int) error {
+		markets = append(markets, side)
+		return nil
+	}
+	mentorLatestPriceSeam = func(*AutoTrader) (float64, bool) { return 101.5, fresh }
+	t.Cleanup(func() { mentorX8LimitWire, mentorCloseLegAtMarketWire, mentorLatestPriceSeam = oldL, oldM, oldP })
+	return at, p, &limits, &markets
+}
+
+func TestMentorX8ExitDoesNotFlattenOtherArms(t *testing.T) {
+	at, p, limits, markets := x8B1Setup(t, true)
+	bars := x8TwoMCandles(int64(120_000_000_000), 100, 100, 101.5)
+	if !at.mentorX8TrapDodgeExit(nil, p, bars) {
+		t.Fatal("X8 must fire")
+	}
+	if len(*markets) != 0 {
+		t.Fatalf("X8 sent a market flatten %v — that cancels every other resting arm at NT8", *markets)
+	}
+	if len(*limits) != 1 || (*limits)[0] >= 101.5 {
+		t.Fatalf("want exactly one marketable limit below the bid for a long, got %v", *limits)
+	}
+	// a second candle meeting X8 while the limit is in flight sends nothing more
+	at.mentorX8TrapDodgeExit(nil, p, bars)
+	if len(*limits) != 1 || len(*markets) != 0 {
+		t.Fatalf("one-shot broken: limits=%v markets=%v", *limits, *markets)
+	}
+}
+
+// TestMentorX8LimitRoundsToTickDirectionally (m390): the X8 marketable limit
+// must land ON a tick boundary AND round AWAY from the market so it stays
+// marketable — a sell exit (long close) rounds DOWN, a buy exit (short close)
+// rounds UP. Nearest rounding would move each half a tick toward the market.
+// MUTANT: replace WireStop with nearest RoundToTick in mentorX8SendExit →
+// long 96.63 → 96.75 (up, less marketable) → RED.
+func TestMentorX8LimitRoundsToTickDirectionally(t *testing.T) {
+	// LONG (sell exit): fresh 101.63 → raw limit 96.63 → rounds DOWN to 96.50.
+	at, p, limits, _ := x8B1Setup(t, true)
+	oldP := mentorLatestPriceSeam
+	mentorLatestPriceSeam = func(*AutoTrader) (float64, bool) { return 101.63, true }
+	t.Cleanup(func() { mentorLatestPriceSeam = oldP })
+	if err := at.mentorX8SendExit(nil, p); err != nil {
+		t.Fatalf("long send exit: %v", err)
+	}
+	if len(*limits) != 1 {
+		t.Fatalf("want exactly one limit, got %v", *limits)
+	}
+	if (*limits)[0] != 96.50 {
+		t.Fatalf("long sell limit = %.4f, want 96.50 (rounded DOWN onto the 0.25 grid)", (*limits)[0])
+	}
+
+	// SHORT (buy exit): fresh 101.37 → raw limit 106.37 → rounds UP to 106.50.
+	ats, ps, limitsS, _ := x8B1Setup(t, true)
+	ps.Pos.Side = "short"
+	mentorLatestPriceSeam = func(*AutoTrader) (float64, bool) { return 101.37, true }
+	if err := ats.mentorX8SendExit(nil, ps); err != nil {
+		t.Fatalf("short send exit: %v", err)
+	}
+	if len(*limitsS) != 1 {
+		t.Fatalf("short: want exactly one limit, got %v", *limitsS)
+	}
+	if (*limitsS)[0] != 106.50 {
+		t.Fatalf("short buy limit = %.4f, want 106.50 (rounded UP onto the 0.25 grid)", (*limitsS)[0])
+	}
+}
+
+func TestMentorX8StalePriceFallsBackToMarketFlatten(t *testing.T) {
+	at, p, limits, markets := x8B1Setup(t, false)
+	bars := x8TwoMCandles(int64(120_000_000_000), 100, 100, 101.5)
+	if !at.mentorX8TrapDodgeExit(nil, p, bars) {
+		t.Fatal("X8 must fire")
+	}
+	if len(*limits) != 0 || len(*markets) != 1 {
+		t.Fatalf("no fresh price: want one market close, got limits=%v markets=%v", *limits, *markets)
+	}
+}
+
+func TestMentorX8UnfilledLimitGetsOneMarketFallback(t *testing.T) {
+	at, p, limits, markets := x8B1Setup(t, true)
+	bars := x8TwoMCandles(int64(120_000_000_000), 100, 100, 101.5)
+	at.mentorX8TrapDodgeExit(nil, p, bars)
+	at.mentorX8TrapDodgeExit(nil, p, bars)
+	if len(*markets) != 0 {
+		t.Fatalf("fallback fired inside the grace window: %v", *markets)
+	}
+	p.X8LimitAt = time.Now().Add(-mentorX8LimitFallbackAfter - time.Second)
+	at.mentorX8TrapDodgeExit(nil, p, bars)
+	at.mentorX8TrapDodgeExit(nil, p, bars)
+	if len(*limits) != 1 || len(*markets) != 1 {
+		t.Fatalf("want 1 limit then exactly 1 market fallback, got limits=%v markets=%v", *limits, *markets)
+	}
+}
+
+// octA2SeptExitTuning is the OCT-EXACT A2 row 17 revert for the exit-drive
+// mechanics tests: the X8 trap-dodge exit ON and the one-bracket resonance BE
+// at 0.25R (the Sept behaviour those tests pin). The October defaults (X8 OFF,
+// BE min 0) are pinned by oct_a2_test.go.
+func octA2SeptExitTuning() *store.MentorTuning {
+	on, minRR := true, mentorResonanceBEMinRR
+	return &store.MentorTuning{MentorX8TrapDodge: &on, MentorResonanceBEMinRR: &minRR}
 }

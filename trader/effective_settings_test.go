@@ -383,11 +383,11 @@ func TestEffectiveMentorPathsResolved(t *testing.T) {
 			t.Errorf("mentor path %s is unresolved — every mentor knob except mentor_done_after_win(_day_start) must resolve", path)
 		}
 	}
-	// Origin truth on a shipped-default value (the size table default 4 —
-	// MENTOR-SIZE-4, release #32: every intraday tier sizes 4, split 2+2).
+	// Origin truth on a shipped-default value (the size table default 5 —
+	// MENTOR-SIZE-5, course D1.1 p2 L1103; m186 reverts the 2026-10-16 flatten).
 	base := rows[rcPath+"mentor_base_contracts"]
-	if got := jsonVal(t, base.Effective); got != float64(4) {
-		t.Fatalf("mentor_base_contracts effective = %v, want shipped default 4", got)
+	if got := jsonVal(t, base.Effective); got != float64(5) {
+		t.Fatalf("mentor_base_contracts effective = %v, want shipped default 5", got)
 	}
 	if !strings.Contains(base.Origin, store.SourceShippedDefault) {
 		t.Fatalf("mentor_base_contracts origin = %q, want the shipped-default origin", base.Origin)
@@ -444,18 +444,19 @@ func TestEffectiveSettingsExitMechNotAppliedInMentorMode(t *testing.T) {
 
 // TestEffMentorDoneAfterWinResolvesSwitch — the switch was UI-BLIND (the panel
 // said "n/a — no resolver registered" while mentorDoneAfterWinEnabled read it).
-// absent → off / "shipped default (owner 2026-10-16: OFF)"; stored true → on /
+// absent → on / "shipped default (course default: ON)"; stored true → on /
 // "saved value"; stored false → off / "saved value". The day-start row resolves
-// too. Mutant: make the resolver return a literal true → the absent row reads
-// "on" → RED.
+// too. Mutant: make the resolver return a literal false → the absent row reads
+// "off" → RED.
 func TestEffMentorDoneAfterWinResolvesSwitch(t *testing.T) {
 	rc := func(inner string) string {
 		return `{"strategy_type":"ai_trading","ai_config":{"risk_control":` + inner + `}}`
 	}
 	absent := effRowsFor(t, rc(`{}`), "", "")
 	k := absent[rcPath+"mentor_done_after_win"]
-	if k.Effective != "off" || k.Origin != store.SourceShippedDefault+" (owner 2026-10-16: OFF)" || !k.Resolved {
-		t.Fatalf("absent: effective=%v origin=%q resolved=%v, want off / %q / true", k.Effective, k.Origin, k.Resolved, store.SourceShippedDefault+" (owner 2026-10-16: OFF)")
+	// OCT-EXACT A1 row 8: absent → OFF (was ON, m186); a stored true is the revert.
+	if k.Effective != "off" || k.Origin != store.SourceShippedDefault+" (OCT-EXACT A1 row 8: default OFF)" || !k.Resolved {
+		t.Fatalf("absent: effective=%v origin=%q resolved=%v, want off / %q / true", k.Effective, k.Origin, k.Resolved, store.SourceShippedDefault+" (OCT-EXACT A1 row 8: default OFF)")
 	}
 
 	storedTrue := effRowsFor(t, rc(`{"mentor_done_after_win":true}`), "", "")

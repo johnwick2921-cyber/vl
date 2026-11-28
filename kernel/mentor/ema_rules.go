@@ -9,7 +9,9 @@ import (
 // emaCross30 counts how many times the close CROSSED the EMA line over the
 // last 30 closed 1m candles (sign changes of close - ema between consecutive
 // bars). E4: "xien len xien xuong" [D4.2 p1 @ 22:27] — crossing back and forth
-// at the line is noise; the mentor never gives a number, so the knob gates.
+// at the line is noise; the mentor never gives a number, so the knob gates and
+// the DEFAULT is OFF (#45 — the numeric gate is removed; the qualitative
+// "not respected → off" rule is E2's loss relock).
 func emaCross30(bars []market.Kline, ema float64) int {
 	if len(bars) < 2 {
 		return 0
@@ -43,7 +45,8 @@ func emaSetupAllowed(e *Evaluator, lvl Level, bars []market.Kline, cfg Config) b
 	if e.State.EmaBlocked {
 		return false
 	}
-	// E4: crossing the line too many times in 30m is noise.
+	// E4: crossing the line too many times in 30m is noise. Default OFF
+	// (#45 — the mentor gives no count); an explicit knob re-enables it.
 	if cfg.EmaMaxCross30m > 0 && emaCross30(bars, lvl.Price) >= cfg.EmaMaxCross30m {
 		return false
 	}
@@ -86,7 +89,7 @@ func emaLossTick(e *Evaluator, emaPrice float64, cur market.Kline, now int64) {
 		case !s.EmaPendingFilled && now > s.EmaPendingExpiry:
 			s.EmaPendingSide = "" // (b) expired unfilled — no loss, no block
 		case s.EmaPendingFilled && touchStop:
-			s.EmaBlocked = true // (a) one loss at the line
+			s.EmaBlocked = e.Cfg.EmaLossRelock != EmaRelockOff // (a) one loss at the line; OCT-EXACT A2 row 6: "off" never blocks
 			s.EmaLossPrice = s.EmaPendingStop
 			s.EmaLossBarTime = cur.CloseTime
 			// CE-6: the zone the loss happened in — the trade's entry-to-stop.

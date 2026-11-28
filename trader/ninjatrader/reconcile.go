@@ -11,6 +11,7 @@ import (
 	"vl/discipline"
 	"vl/logger"
 	"vl/market"
+	ntwire "vl/provider/ninjatrader"
 	"vl/safe"
 	"vl/store"
 	"vl/telemetry"
@@ -67,6 +68,74 @@ const (
 	entryConfirmGraceMs = 45_000
 )
 
+// ReconcileSettleMs is the reconcile's own settle window, exported so the
+// data-truth broker-agreement check (trader/broker_agreement.go) uses the SAME
+// number instead of a copy: a fill frame can be momentarily in flight, so a
+// divergence must persist this long (3 reconcile passes) before it is real. It
+// is also exactly 2 x the AddOn's order-snapshot period (30 s), the bound after
+// which a broker book is called stale (trader.OrderSnapshotInterval).
+const ReconcileSettleMs = reconcileDivergenceGraceMs
+
+// OrphanGraceMs / UntrackedGraceMs-style exports for the same reason: a row
+// younger than this has not had its positions frame yet.
+const OrphanGraceMs = orphanGraceMs
+
+// HeldBook turns a broker positions snapshot into the reconcile's two maps,
+// keyed "SYMBOL|SIDE" (canonical symbol, upper-case side): average price and
+// quantity. It is the ONE definition of "what NT8 holds" - reconcilePositions
+// and the data-truth broker-agreement check both call it.
+func HeldBook(snap []ntwire.OpenPosition) (avg, qty map[string]float64) {
+	avg = make(map[string]float64, len(snap))
+	qty = make(map[string]float64, len(snap))
+	for _, p := range snap {
+		if p.Quantity == 0 {
+			continue
+		}
+		side := "LONG"
+		if strings.EqualFold(p.Side, "short") {
+			side = "SHORT"
+		}
+		key := market.Normalize(p.Symbol) + "|" + side
+		avg[key] = p.AvgPrice
+		qty[key] = float64(p.Quantity)
+	}
+	return avg, qty
+}
+
+// SetReconcileObserver installs fn to run after every reconcile pass (including
+// a pass that returned early because NT8 reported no positions). One observer;
+// nil removes it. fn must not block: it runs on the reconcile goroutine.
+func (t *TCPTrader) SetReconcileObserver(fn func()) {
+	if fn == nil {
+		t.reconcileObs.Store(nil)
+		return
+	}
+	t.reconcileObs.Store(&fn)
+}
+
+// ReconcilePassForTest runs one reconcile pass synchronously (TEST SEAM: the
+// production loop is a 20 s ticker). It is the same reconcilePositions.
+func (t *TCPTrader) ReconcilePassForTest(traderID, exchangeID, exchangeType string, st *store.Store) {
+	t.reconcilePositions(traderID, exchangeID, exchangeType, st)
+}
+
+func (t *TCPTrader) notifyReconcilePass() {
+	p := t.reconcileObs.Load()
+	if p == nil || *p == nil {
+		return
+	}
+	// The observer is data-truth SAMPLING, not protection. It runs on the
+	// safe.GoNet reconcile goroutine, whose recover freezes the trader and ends
+	// the loop: a bug in a check must never cost the protective reconcile
+	// (m447 review defect 3).
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Errorf("🚨 reconcile observer PANICKED (data-truth sampling; the reconcile loop continues): %v", r)
+		}
+	}()
+	(*p)()
+}
+
 // StartPositionReconcile launches the periodic reconcile goroutine (idempotent
 // via reconcileOnce). Wired next to StartCloseSync for the ninjatrader exchange.
 func (t *TCPTrader) StartPositionReconcile(traderID, exchangeID, exchangeType string, st *store.Store) {
@@ -118,6 +187,11 @@ func (t *TCPTrader) StartPositionReconcile(traderID, exchangeID, exchangeType st
 
 // reconcilePositions runs one reconcile pass. See file header for semantics.
 func (t *TCPTrader) reconcilePositions(traderID, exchangeID, exchangeType string, st *store.Store) {
+	// m447: the data-truth broker-agreement check samples on THIS cadence (the
+	// reconcile loop runs every reconcileInterval whether or not anything tries
+	// to enter), so a disagreement's first-seen time is the reconcile's, not the
+	// first entry attempt's. Deferred so it also runs on the early returns.
+	defer t.notifyReconcilePass()
 	// Reconcile against THIS trader's OWN bound account, not the shared connection
 	// CurrentAccount() (display-switchable). Otherwise viewing another account would
 	// make reconcile read the WRONG account's positions and mis-clear this trader's
@@ -145,27 +219,14 @@ func (t *TCPTrader) reconcilePositions(traderID, exchangeID, exchangeType string
 	t.sweepUnconfirmedEntries(traderID, st, time.Now())
 
 	// NT8-held positions keyed "SYMBOL|SIDE" → average price (canonical form).
-	held := make(map[string]float64, len(snap))
-	heldQty := make(map[string]float64, len(snap))
-	for _, p := range snap {
-		if p.Quantity == 0 {
-			continue
-		}
-		side := "LONG"
-		if strings.EqualFold(p.Side, "short") {
-			side = "SHORT"
-		}
-		key := market.Normalize(p.Symbol) + "|" + side
-		held[key] = p.AvgPrice
-		heldQty[key] = float64(p.Quantity)
-	}
+	held, heldQty := HeldBook(snap)
 
 	rows, err := st.Position().GetOpenPositions(traderID)
 	if err != nil {
 		logger.Warnf("ninjatrader/tcp: reconcile list open positions failed: %v", err)
 		return
 	}
-	nowMs := time.Now().UTC().UnixMilli()
+	nowMs := t.server.ReceiptNow().UTC().UnixMilli() // same clock as the positions frame read above
 	if t.flatSince == nil {
 		t.flatSince = make(map[int64]int64)
 	}
@@ -497,7 +558,9 @@ func (t *TCPTrader) reconcilePositions(traderID, exchangeID, exchangeType string
 			}
 		}
 		if manualVerdict {
-			flagAdoptedManual(st, traderID, row.ID, sym, side, qty)
+			if why := t.flagManualUnlessOwnReverse(st, traderID, row.ID, sym, side, qty, avg, firstSeen); why != "" {
+				origin = "UNATTRIBUTED entry kept BOT (" + why + ")" // look-twice C
+			}
 		}
 		logger.Warnf("🧩 reconcile: MATERIALIZED untracked NT8 position %s %s qty=%.0f @ %.2f (acct=%s) — %s now tracked; its close will record real P&L", sym, side, qty, avg, acct, origin)
 		delete(t.untrackedSince, key)
@@ -715,6 +778,12 @@ func unassignedOpenForTrader(st *store.Store, traderID, symbol, side string) (*s
 		}
 	}
 	return newest, nil
+}
+
+// UnassignedOpenForTrader is unassignedOpenForTrader for the data-truth
+// broker-agreement check: the reconcile's own second owner lookup, not a copy.
+func UnassignedOpenForTrader(st *store.Store, traderID, symbol, side string) (*store.TraderPosition, error) {
+	return unassignedOpenForTrader(st, traderID, symbol, side)
 }
 
 // flagAdoptedManual (R22 PNL-TRUTH, owner ruling R1) marks an adopted NT8

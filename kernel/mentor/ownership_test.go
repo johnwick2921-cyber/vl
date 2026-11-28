@@ -26,7 +26,7 @@ func frozenDayLatch(anchorMs int64, v DayVerdict) DayLatch {
 // produced the first intent — including the ISB missing-target early return —
 // is checked.
 func TestTickStampsSpentDay(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	e := New(cfg)
 	bars := loadFixture(t, "mnq_1m_2026-09-15_rth", "1m")
@@ -57,9 +57,10 @@ func TestTickStampsSpentDay(t *testing.T) {
 func TestRecordedDaysCarrySetupAndGeometry(t *testing.T) {
 	fixtures := []string{"mnq_1m_2026-09-15_rth", "mnq_1m_2026-09-16_rth", "mnq_1m_2026-08-28_rth", "mnq_1m_2026-09-13_boxframe"}
 	totalEntries := 0
+	lateRefusedBefore := SwingLateDayRRRefused()
 	for _, fix := range fixtures {
 		bars := loadFixture(t, fix, "1m")
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.Enabled = true
 		// B52 (release #29) ships ON and changes the box set on these tapes
 		// (post-escape boxes ban the old entries). This A7 invariant is about
@@ -98,7 +99,11 @@ func TestRecordedDaysCarrySetupAndGeometry(t *testing.T) {
 			t.Fatalf("%s: untagged_setup = %d — an emit site forgot its Setup tag", fix, e.State.Refusals["untagged_setup"])
 		}
 	}
-	if totalEntries == 0 {
+	// m186 D5.2 late-day cut: these RTH tapes author §8 swings only in the
+	// LAST 4h bucket, where the 25-pt cap refuses the default 30-pt stop. The
+	// swing path is still wired — the refusal is counted. If runSwing were
+	// unwired, neither the entries NOR the counter would move → RED.
+	if totalEntries == 0 && SwingLateDayRRRefused() == lateRefusedBefore {
 		t.Fatal("no entry intents across the recorded fixtures — the invariant proves nothing")
 	}
 }
@@ -126,7 +131,7 @@ func TestDayGateBlocksEveryIntradaySetup(t *testing.T) {
 		{DayNotMeasured, "isb_day_not_measured", "isb_day_off"},
 		{DayOff, "isb_day_off", "isb_day_not_measured"},
 	} {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.Enabled = true
 		e := New(cfg)
 		e.State.Trigger = TriggerLine{Dir: SideLong, Price: 90}

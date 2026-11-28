@@ -43,7 +43,7 @@ type mentorLivePos struct {
 	Legs          [3]mentorLeg   // single bracket: [0] = the whole position; 2-pair split: [0] = leg 1, [1] = the runner; 3-pair (release #31): [0] = leg 1, [1] = the runner partial, [2] = the runner
 	FillBarOpen   int64          // the fill candle's OpenTime
 	FillBarClose  float64        // the fill candle's close (ISB leg-1 TP)
-	BarsSinceFill int            // closed 1m candles since the fill
+	BarsSinceFill int            // closed 1m candles since the fill (the fill candle is bar 1)
 	FlatReads     int            // consecutive closed candles the account read flat on this side
 	RunnerTarget  float64        // #360 item 5: the level beyond the old high (resonance runner target); 0 = none
 	SpentDay      bool           // §7 spent day → mode D (runner ≤ 2)
@@ -71,6 +71,32 @@ type mentorLivePos struct {
 	// limit does not re-render CONFIRMED (and re-count it) every candle. A new
 	// modify (a new want) resets it to 0.
 	TPModConfirmedWant float64
+	// ConfTPTries (C52 W1 A2) counts the sends of the confluence leg-1 TP move
+	// (mentorLeg1TPToC) so a broker that keeps refusing it is tried a bounded
+	// number of times, not once a candle forever. Guarded by mentorExitMu.
+	ConfTPTries int
+	// FramesAfterFill / frameFillSeen (c52 W2 B18): the closed ENTRY-FRAME
+	// candles (TrailTFMin 2 or 5) that closed AFTER the candle the fill landed
+	// in — the resonance window counts in the frame the entry was read on
+	// ("nếu mình trade khung nào thì mình gồng theo khung đó" [X8 @18:02–18:14];
+	// "trong vòng 3 cây nến sau đó. Đếm 1, 2, 3" [D2.4 p1 @01:44–01:56]). The
+	// first closed frame candle seen IS the fill's candle (not counted). A 1m
+	// entry counts BarsSinceFill-1 instead (candlesAfterFill). Written by the
+	// exit drive goroutine only.
+	FramesAfterFill int
+	frameFillSeen   bool
+	// ResonanceSpent (release #53, m437b) — the position was REBUILT from the
+	// broker book after a restart, so its fill age is unknown: BarsSinceFill /
+	// FramesAfterFill restart at 0 and would re-open the 3-candle resonance
+	// window on the 2nd–4th candle after the boot, flipping a mature PHL/PLH
+	// runner to mode A (and uncapping its TP). Same shape as ISBPartialDone:
+	// a rebuild never re-runs a fill-relative window. candlesAfterFill reports
+	// "past the window" while set.
+	ResonanceSpent bool
+	// UncapTries (c52 W2 A3) counts the sends of the mode-A runner "no cap"
+	// take-profit move (mentorResonanceRunnerUncap): bounded, never once a
+	// candle forever. Drive goroutine only.
+	UncapTries int
 	// BEWaitLogged — the "close not past break-even, BE waits" line fired once.
 	BEWaitLogged bool
 	// ModeSource / ModeWhy (P2-2 rel22) say WHERE Pos.Mode came from — the
@@ -81,17 +107,65 @@ type mentorLivePos struct {
 	ModeWhy    string
 	// TrailTFMin is the frame the ENTRY was read on, and so the frame the
 	// runner trails on: "nếu như mình trade khung nào thì mình gồng theo khung
-	// đó, theo cây nến của khung đó" [X8 @18:02–18:14]. 2 = the X5-10 exec-2m
-	// schedule read the setup — the ISB pair or PHL/PLH — on closed 2m candles
-	// (carried from the intent's ExecTFMin via mentorExecFrames); 0 = the 1m
-	// (every other setup, and every named setup when exec_2m_after_30m is
-	// explicitly OFF).
+	// đó, theo cây nến của khung đó" [X8 @18:02–18:14]. 1 = a 1m entry, 2 = a
+	// 2m entry, 5 = a 5m entry (carried from the intent's ExecTFMin via
+	// mentorExecFrames; m417 stamps the frame at every kernel authoring site and
+	// on the box's drawn frame). 0 = unknown (an ORB entry, an old
+	// position, a restart rebuild) → the X8 trap-dodge keeps the 2m. Every
+	// `TrailTFMin > 1` trail check treats 1 exactly like 0 (both trail the 1m).
 	TrailTFMin int
+	// X8Exited (m262 one-shot latch): the X8 trap-dodge market close was
+	// SENT for this position — never send a second close while the fill is in
+	// flight (never rely on NT8 idempotence). Set before the send; reset on a
+	// failed send so the next candle may retry. Guarded by mentorExitMu.
+	X8Exited bool
+	// X8LimitAt / X8MarketFallback (B1, m329): X8 exits with a marketable
+	// limit (so it does not Flatten away other resting arms); X8LimitAt is when
+	// it was sent, X8MarketFallback latches the single market follow-up if the
+	// position is still open after the grace window. Guarded by mentorExitMu.
+	X8LimitAt        time.Time
+	X8MarketFallback bool
 	// trailBar / trailBarOK: the closed TrailTFMin candle THIS drive pass
 	// trails on, set by mentorExitDrive for a 2m position (ok=false while the
 	// 2m candle is still forming — the trail waits for it to close).
 	trailBar   market.Kline
 	trailBarOK bool
+}
+
+// noteEntryFrameCandle counts one closed entry-frame candle for a 2m/5m entry
+// (c52 W2 B18). Called once per drive pass AFTER trailBar was set: trailBarOK is
+// true only on the 1m bar that closes a frame candle. The first one is the
+// candle the fill landed in (not counted); every later one is "a candle after
+// the fill". A 1m entry (TrailTFMin 0 or 1) is counted from BarsSinceFill.
+func (p *mentorLivePos) noteEntryFrameCandle() {
+	if p == nil || p.TrailTFMin <= 1 || !p.trailBarOK {
+		return
+	}
+	if !p.frameFillSeen {
+		p.frameFillSeen = true
+		return
+	}
+	p.FramesAfterFill++
+}
+
+// candlesAfterFill is the resonance window's clock (c52 W2 B18): how many
+// candles of the ENTRY frame closed AFTER the candle the fill landed in —
+// "đếm 1, 2, 3" after the fill [D2.4 p1 @01:44–01:56, @04:44–04:53]. 1m entry:
+// BarsSinceFill counts the fill candle as bar 1, so it is BarsSinceFill-1.
+func (p *mentorLivePos) candlesAfterFill() int {
+	if p == nil {
+		return 0
+	}
+	if p.ResonanceSpent {
+		return mentorResonanceMaxCandles + 1 // m437b: rebuilt — the window is long spent
+	}
+	if p.TrailTFMin > 1 {
+		return p.FramesAfterFill
+	}
+	if p.BarsSinceFill > 1 {
+		return p.BarsSinceFill - 1
+	}
+	return 0
 }
 
 // mentorRunnerLeg returns the RUNNER leg (Final=true) of a live position, or
@@ -186,7 +260,7 @@ func mentorResonanceOpenLegs(p *mentorLivePos, exited [3]bool) []*mentorLeg {
 //     between authoring and fill;
 //  3. the setup's own rule: SWING4H holds by the 4h → "swing";
 //  4. the COURSE default, B "normal" — trail every closed candle
-//     [00-METHOD §6 "Mode B — normal", D2.4 p1 @ 07:01]. No strategy-level
+//     [00-METHOD section 6 "Mode B — normal", D2.4 p1 @ 07:01]. No strategy-level
 //     exit-mode default exists to read first (no such knob).
 //
 // class is the counter suffix (exit_mode_<class>); why is the log text.
@@ -301,7 +375,7 @@ func (at *AutoTrader) mentorBuildLivePos(r store.ArmedOrderDB, u ntwire.OrderUpd
 	}
 	// X8 @18:02–18:14: the runner trails on the frame the entry was read on —
 	// carried from the intent's ExecTFMin, keyed trader+scenario like the
-	// runner target. Absent → the 1m (TrailTFMin 0).
+	// runner target. Absent → unknown (TrailTFMin 0 → the X8 reads the 2m).
 	if v, ok := mentorExecFrames.Load(mentorRunnerTargetKey(at.id, r.Scenario)); ok {
 		lp.TrailTFMin, _ = v.(int)
 	}
@@ -569,6 +643,30 @@ func (at *AutoTrader) mentorMarkLeg1Scaled(p ntwire.PositionClosePayload) {
 	if at == nil || p.SignalID == "" {
 		return
 	}
+	// #47: a broker exit that FLATTENS the signal closes its Limits.openTrade —
+	// the ORIGINAL stop ("sl") is the only exit that counts as a loss; a
+	// break-even, trailed stop, partial, manual, news or EOD flat drops it.
+	switch {
+	case p.ExitReason == "sl":
+		// #47 P1: the AddOn derives exit_reason from the ORDER NAME suffix, and
+		// a MOVED stop (break-even or trail) keeps "-sl" — so the fill PRICE,
+		// not the reason, decides. m308 P2(a): a loss is simply "the fill is on
+		// the losing side of ENTRY by more than one tick" — a tightened 1:1 stop
+		// still on the loss side IS a loss, BE and profitable trails are not.
+		// Q3 ruling (CTO): the mentor counts a TRADE, not a leg — a leg-1 stop
+		// with the runner still live is UNDECIDED and the defer is INTENDED:
+		// neither drop nor book, the runner's own receipt decides the one trade.
+		if p.Leg == 1 && at.mentorRunnerStillOpen(p.SignalID) {
+			break
+		}
+		entryPx := at.mentorLedgerEntry(p.SignalID)
+		tick := market.FuturesTickSize(p.Symbol)
+		at.mentorEnqueueExit(p.SignalID, mentorStopFillIsLoss(p.PositionSide, p.ExitPrice, entryPx, tick))
+	case p.ExitReason == "manual":
+		at.mentorEnqueueExit(p.SignalID, false)
+	case p.ExitReason == "tp" && p.Leg == 2:
+		at.mentorEnqueueExit(p.SignalID, false) // the runner scaled — the position is flat
+	}
 	if p.Leg == 1 && p.ExitReason == "tp" {
 		if at.mentorLatchLeg1Scaled(p.SignalID, mentorCloseReceiptMs(p)) {
 			at.mentorCount("leg1_at_target")
@@ -582,6 +680,78 @@ func (at *AutoTrader) mentorMarkLeg1Scaled(p ntwire.PositionClosePayload) {
 			at.logInfof("🧑‍🏫 mentor leg 2 (runner partial) closed on the broker TP receipt: %s (%s)", p.SignalID, p.PositionSide)
 		}
 	}
+}
+
+// mentorStopFillIsLoss (#47 P1, m308 P2(a)) decides whether a broker "sl" exit
+// is a real stop-out loss. The AddOn derives exit_reason from the ORDER NAME
+// suffix (VLTraderTCPClient.cs): a stop MOVED to break-even, trailed, or
+// tightened to 1:1 keeps "-sl", so the fill PRICE — not the reason — decides.
+// The rule is simply: a loss = the fill is on the losing side of ENTRY by more
+// than one tick (long: fill < entry − tick; short: fill > entry + tick). A
+// break-even fill (≈ entry) or a trailed stop in profit is NOT a loss; a slipped
+// or tightened stop still on the loss side IS. A missing fill/entry price fails
+// CLOSED to loss=true (the pre-#47 reading of a named stop exit).
+func mentorStopFillIsLoss(side string, fillPx, entryPx, tick float64) bool {
+	if fillPx <= 0 || entryPx <= 0 {
+		return true
+	}
+	if tick <= 0 {
+		tick = 0.25
+	}
+	switch strings.ToLower(strings.TrimSpace(side)) {
+	case "long":
+		return fillPx < entryPx-tick
+	case "short":
+		return fillPx > entryPx+tick
+	default:
+		return true // unknown side — fail closed
+	}
+}
+
+// mentorLedgerEntry reads a signal's FILL entry from the armed-orders ledger
+// (FillPrice, falling back to the authored EntryPx). The live position's entry
+// is the same value but may be gone by the time a whole-position close receipt
+// arrives; the ledger survives. Returns 0 when unreadable — the caller fails
+// closed to loss=true.
+func (at *AutoTrader) mentorLedgerEntry(signalID string) float64 {
+	if at == nil || at.store == nil || signalID == "" {
+		return 0
+	}
+	ledger := at.store.ArmedOrders()
+	if ledger == nil {
+		return 0
+	}
+	var r store.ArmedOrderDB
+	if err := ledger.DB().Where("signal_id = ?", signalID).First(&r).Error; err != nil {
+		return 0
+	}
+	if r.FillPrice > 0 {
+		return r.FillPrice
+	}
+	return r.EntryPx
+}
+
+// mentorRunnerStillOpen reports whether a leg-1 stop exit leaves a runner
+// (wire leg 2/3) still live — the trade is undecided and the runner's own
+// receipt decides loss vs drop (#47 P3). A live position that is missing (a
+// restart without the split record) reads false: the receipt is judged on its
+// own fill price.
+func (at *AutoTrader) mentorRunnerStillOpen(signalID string) bool {
+	if at == nil || signalID == "" {
+		return false
+	}
+	at.mentorExitMu.Lock()
+	defer at.mentorExitMu.Unlock()
+	lp, ok := at.mentorLivePos[signalID]
+	if !ok || lp == nil {
+		return false
+	}
+	for i := 1; i < len(lp.Legs); i++ {
+		if lp.Legs[i].SignalID != "" && lp.Legs[i].Qty > 0 && !lp.Legs[i].Exited {
+			return true
+		}
+	}
+	return false
 }
 
 // mentorMarkLeg2Exited marks a live position's wire-2 leg (the runner partial)
@@ -659,8 +829,8 @@ var mentorRunnerTargets sync.Map
 // mentorExecFrames carries an intent's ExecTFMin (the frame its entry was READ
 // on — 2 under the X5-10 exec-2m schedule) from the authoring
 // (mentorArmIntent, keyed trader+scenario) to the fill-time live position, the
-// same way as mentorRunnerTargets: no schema change. Only a 2m entry is stored;
-// a 1m entry leaves no key (absent = the 1m).
+// same way as mentorRunnerTargets: no schema change. m409: a 1m entry stores 1,
+// a 2m/5m entry its frame; absent = unknown (the X8 trap-dodge keeps the 2m).
 var mentorExecFrames sync.Map
 
 // ── REL17-F2 RESTART REBUILD ────────────────────────────────────────────────
@@ -828,14 +998,14 @@ func isMentorExec2mSetup(cond string) bool {
 }
 
 // mentorExec2mKnobOn reads the X5-10 exec_2m_after_30m knob as stored (nil →
-// ON, the release #31 DefaultConfig value) without the tuning resolver's side
+// OFF, the m472 A1 DefaultConfig value; was ON from release #31) without the tuning resolver's side
 // effects. It must agree with the kernel DefaultConfig (ONE canonicalizer per
 // identifier): a restart rebuild on a strategy with no mentor_tuning (the live
-// MNQ trader) reads the knob ON, matching the frame the entry was actually read
+// MNQ trader) reads the knob OFF, matching the frame the entry was actually read
 // on.
 func mentorExec2mKnobOn(rc *store.RiskControlConfig) bool {
 	if rc == nil || rc.MentorTuning == nil || rc.MentorTuning.Exec2mAfter30m == nil {
-		return true // nil → ON (release #31 default)
+		return false // nil → OFF (m472 A1 default: the 1m all day [Oct D4.2 @ 22:56-23:46])
 	}
 	return *rc.MentorTuning.Exec2mAfter30m
 }
@@ -1127,7 +1297,7 @@ func (at *AutoTrader) mentorBuildLivePosFromBook(r store.ArmedOrderDB, pos *stor
 	}
 	// Release #22: the fill candle is unknown after a restart — never resolve
 	// the ISB candle-3 partial off a later candle (it is now a REAL modify).
-	lp := &mentorLivePos{Pos: pos2, ISBPartialDone: true}
+	lp := &mentorLivePos{Pos: pos2, ISBPartialDone: true, ResonanceSpent: true}
 	if splitLive {
 		lp.Legs[0] = mentorLeg{SignalID: r.SignalID, Qty: leg1Qty, TP: leg1TP, Stop: leg1Stop, Final: false, Wire: 1}
 		if leg3Live {

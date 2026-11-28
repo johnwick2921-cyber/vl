@@ -10,7 +10,7 @@ import (
 // setup locations, "used again and again". Both the ISB-side verdict and the
 // PHL/PLH-side level check must accept the edges.
 func TestBoxEdgeIsALocation(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	levels := []Level{
 		{Key: "ftgh:100:90:top", Kind: KindFTGHEdge, Price: 100},
@@ -52,8 +52,9 @@ func TestBoxBanFilter(t *testing.T) {
 // level_invalid and never marks the edge ISB-only; at a key level the same
 // close does both.
 func TestBoxEdgeExemptFromInvalidLevel(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
+	cfg.KeyLevelBreakRetest = KeyLevelBreakRetestOff // LL-2: the September first-touch ISB-only path under test
 	wrongWay := []Intent{
 		{Action: CancelArm, Reason: "close through"},
 		{Action: LevelInvalid, LevelKey: "x"},
@@ -84,8 +85,9 @@ func TestBoxEdgeExemptFromInvalidLevel(t *testing.T) {
 // at the level emits no CancelArm (nothing to cancel); with one resting, the
 // cancel carries that order's ArmID. Mutant: keep the id-less cancel → RED.
 func TestWrongWayCancelBindsToTheRestingOrderOrIsDropped(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
+	cfg.KeyLevelBreakRetest = KeyLevelBreakRetestOff // LL-2: the September first-touch ISB-only path under test
 	wrongWay := []Intent{
 		{Action: CancelArm, Reason: "close through"},
 		{Action: LevelInvalid, LevelKey: "k"},

@@ -43,7 +43,7 @@ func TestExec2mISBIntentCarriesItsFrame(t *testing.T) {
 	}
 	// The room rule is OFF here (RoomMultiple 0): this pin is about the frame
 	// stamp, and the fixture's own swing high at 106 sits inside the room.
-	off := DefaultConfig()
+	off := preOctCfg()
 	off.Enabled = true
 	off.RoomMultiple = 0
 	off.Exec2mAfter30m = false
@@ -52,11 +52,11 @@ func TestExec2mISBIntentCarriesItsFrame(t *testing.T) {
 		t.Fatal("fixture: knob OFF, the 1m read must emit the ISB")
 	}
 	for _, in := range gotOff {
-		if in.ExecTFMin != 0 {
-			t.Fatalf("knob OFF: a 1m ISB must carry no frame stamp (byte-identical), got ExecTFMin=%d", in.ExecTFMin)
+		if in.ExecTFMin != 1 {
+			t.Fatalf("knob OFF: a 1m ISB must carry ExecTFMin=1 (m417 stamps the 1m), got ExecTFMin=%d", in.ExecTFMin)
 		}
 	}
-	on := DefaultConfig()
+	on := preOctCfg()
 	on.Enabled = true
 	on.RoomMultiple = 0
 	on.Exec2mAfter30m = true

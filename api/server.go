@@ -47,6 +47,13 @@ type Server struct {
 	// (handler_updates.go updatesForbid).
 	updatesWarned sync.Map
 
+	// m420b/B4: the latest updater check, cached with a timestamp so
+	// GET /api/updates can affirm update_available / latest_tag only while
+	// fresh. updCheckStop ends the background loop at Shutdown.
+	updCheck     updateCheckCache
+	updCheckOnce sync.Once
+	updCheckStop chan struct{}
+
 	// friendMode (W-FRIEND-HOSTED Segment 2) is decided ONCE at NewServer: when
 	// set, the update / installer / maintenance routes are not registered (404),
 	// the updater glue is not wired, and the owner API prefix 404s. Everything
@@ -298,6 +305,9 @@ NOTE: The id field is "trader_id" (NOT "id"). Always read trader_id from this en
 			s.routeWithSchema(protected, "GET", "/traders/:id/mentor-truth", "Mentor 'what trades' panel (live evaluator state, read-only)",
 				`:id = trader_id from GET /api/my-traders. Returns the 4h/1h/5m trigger directions, HTF verdict, mentor key levels + today's visits, history depth, and window/day-stop state. mentor mode OFF -> {"enabled":false}.`,
 				s.handleMentorTruth)
+			s.routeWithSchema(protected, "GET", "/traders/:id/pep-truth", "Pep mode card (box, signal state, trades today, stop/target, flat countdown; read-only)",
+				`:id = trader_id from GET /api/my-traders. Returns the resolved style and contracts, the opening box (high/low/size/drawn), the signal state, trades today (from the durable one-trade-per-day record), the newest entry's stop/target, and the seconds to pep's own flat time. pep mode OFF -> {"enabled":false,"mode":"ai|mentor|pep|conflict"}.`,
+				s.handlePepTruth)
 			s.routeWithSchema(protected, "POST", "/traders", "Create a new AI trader",
 				`Body: {"name":"<string, required>","ai_model_id":"<EXACT id field from GET /api/models — e.g. 'abc123_deepseek', NOT the provider name 'deepseek'>","exchange_id":"<EXACT id field from GET /api/exchanges — e.g. '05785d3b-841e-...', NOT the type name>","strategy_id":"<EXACT id field from GET /api/strategies>","scan_interval_minutes":<int, default 3, minimum 3>}
 IMPORTANT: ai_model_id and exchange_id must be the full "id" value from the Account State, not the provider/type name.`,
@@ -615,6 +625,10 @@ Returns: {"frozen":{"<trader_id>":"<reason>"}}  (empty object = none frozen)`,
 				`Query: ?trader_id=<EXACT trader_id>
 Clears the freeze so NEW entries resume. Returns: {"trader_id":"<id>","was_frozen":<bool>,"cleared":<bool>}`,
 				s.handleClearFreeze)
+			s.routeWithSchema(protected, "POST", "/risk/ack-fill-price", "Acknowledge far fills — owner action (m447 data-truth fill_price)",
+				`Query: ?symbol=<EXACT symbol, e.g. MNQ>
+Two fills in one CME session far from the stored 1m bars pause NEW entries for the symbol; this lifts the pause until the next far fill. Returns: {"symbol":"<sym>","acknowledged":<bool>}  (false = no pause was standing)`,
+				s.handleAckFillPrice)
 			s.routeWithSchema(protected, "GET", "/audit/decisions", "Decision audit trail (Plan 4 T23)",
 				`Query: ?trader_id=<EXACT trader_id>&since=<YYYY-MM-DD, default 7d ago>&limit=<int, default 100, max 1000>
 Returns: []DecisionRecord JSON ordered by timestamp DESC, including PromptVersion, AIModel, AILatencyMs, RiskCheck*, ExecutionStatus, FillPrice, FillLatencyMs.`,
@@ -1088,11 +1102,13 @@ func (s *Server) Start() error {
 		Addr:    addr,
 		Handler: s.router,
 	}
+	s.startUpdateCheckLoop()
 	return s.httpServer.ListenAndServe()
 }
 
 // Shutdown Gracefully shutdown server
 func (s *Server) Shutdown() error {
+	s.stopUpdateCheckLoop()
 	if s.httpServer == nil {
 		return nil
 	}

@@ -1,6 +1,7 @@
 package mentor
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -49,6 +50,25 @@ func TestBoxReturnBarsEveryVisit(t *testing.T) {
 	}
 }
 
+// TestBoxEntryIntentMintsArmID — bug-hunt #18: the BOX intent must carry a
+// stable ArmID so a real fill matches its Limits pend (and the G2 box identity
+// survives the fill). Mutant (blank the ArmID) → RED.
+func TestBoxEntryIntentMintsArmID(t *testing.T) {
+	cfg := preOctCfg()
+	cfg.LocTriggerFilter = false
+	cfg.PingPongCandleMaxPts = 0
+	b := Box{Kind: FTGL, Top: 98, Bottom: 95, Key: "ftgl:98.00:95.00"}
+	ref := market.Kline{OpenTime: 12_345_000, CloseTime: 12_345_000 + 59_999, High: 99, Low: 96, Close: 98.5}
+	lvls := []Level{{Key: "old_extreme:110", Kind: KindOldExtreme, Price: 110}}
+	out := boxEntryIntent(ref, b, []Box{b}, lvls, TriggerLine{}, nil, cfg)
+	if len(out) != 1 {
+		t.Fatalf("boxEntryIntent = %d intents, want 1", len(out))
+	}
+	if out[0].ArmID == "" || !strings.HasPrefix(out[0].ArmID, "box-") {
+		t.Fatalf("BOX intent must mint a stable ArmID, got %q", out[0].ArmID)
+	}
+}
+
 // TestBoxFullAndIncrementalWalksAgree — B10 T1 FOLD (CTO 21:16Z): ONE
 // seeding rule for both walks. For every box on the fixture tapes the full
 // walk (BoxReturnBars from FormedAt) and the live walk (BoxReturnBarsFrom
@@ -93,13 +113,13 @@ func TestConfluenceVerdict(t *testing.T) {
 	buy := TriggerLine{Dir: SideLong, Price: 28990} // buy line under the entry → agrees
 	sell := TriggerLine{Dir: SideShort, Price: 29100}
 
-	if f := ConfluenceVerdict(b, SideLong, buy); !f.On || f.Side != SideLong {
+	if f := ConfluenceVerdict(b, SideLong, buy, 29025); !f.On || f.Side != SideLong {
 		t.Fatalf("FTGL + buy trigger = %+v, want On Long", f)
 	}
-	if f := ConfluenceVerdict(b, SideLong, sell); f.On {
+	if f := ConfluenceVerdict(b, SideLong, sell, 29025); f.On {
 		t.Fatal("sell trigger must not confluence a long")
 	}
-	if f := ConfluenceVerdict(b, SideLong, TriggerLine{}); f.On {
+	if f := ConfluenceVerdict(b, SideLong, TriggerLine{}, 29025); f.On {
 		t.Fatal("no trigger line can never agree — fail closed")
 	}
 	// B3: the key levels are IRRELEVANT — none, far or inside all confluence
@@ -108,19 +128,42 @@ func TestConfluenceVerdict(t *testing.T) {
 	inside := []Level{{Kind: KindKeyLevel, Price: 29010}}
 	_ = far
 	_ = inside
-	if f := ConfluenceVerdict(b, SideLong, buy); !f.On {
+	if f := ConfluenceVerdict(b, SideLong, buy, 29025); !f.On {
 		t.Fatal("an FTGL + buy trigger must confluence with NO key level at all")
 	}
 	// SHORT mirror: FTGH + sell trigger.
 	c := Box{Kind: FTGH, Top: 29100, Bottom: 29080}
-	if f := ConfluenceVerdict(c, SideShort, sell); !f.On || f.Side != SideShort {
+	if f := ConfluenceVerdict(c, SideShort, sell, 29075); !f.On || f.Side != SideShort {
 		t.Fatalf("FTGH + sell trigger = %+v, want On Short", f)
 	}
-	if f := ConfluenceVerdict(c, SideLong, buy); f.On {
+	if f := ConfluenceVerdict(c, SideLong, buy, 29075); f.On {
 		t.Fatal("a long against an FTGH must not confluence")
 	}
 	// Wrong box kind for the side.
-	if f := ConfluenceVerdict(b, SideShort, sell); f.On {
+	if f := ConfluenceVerdict(b, SideShort, sell, 28995); f.On {
 		t.Fatal("SHORT needs an FTGH, not an FTGL")
+	}
+}
+
+// C52 W1 A1 [D3.4 p3 @07:49–08:01; frame part3_07-50]: the trigger is judged
+// at the trade's REAL entry, not the box edge. With the buy line ABOVE the box
+// top and the entry at/above the line, the edge read said "below the buy line"
+// and refused confluence — for exactly the entries that survive the zone rule.
+func TestConfluenceVerdictUsesTheEntryNotTheBoxEdge(t *testing.T) {
+	b := Box{Kind: FTGL, Top: 29486, Bottom: 29470}
+	buy := TriggerLine{Dir: SideLong, Price: 29502.25} // ABOVE the box top
+	if f := ConfluenceVerdict(b, SideLong, buy, 29503); !f.On {
+		t.Fatal("entry above the buy line (line above the box top) must confluence")
+	}
+	if f := ConfluenceVerdict(b, SideLong, buy, 29490); f.On {
+		t.Fatal("an entry still BELOW the buy line must not confluence")
+	}
+	c := Box{Kind: FTGH, Top: 29100, Bottom: 29080}
+	sell := TriggerLine{Dir: SideShort, Price: 29070} // BELOW the box bottom
+	if f := ConfluenceVerdict(c, SideShort, sell, 29069); !f.On {
+		t.Fatal("short mirror: entry below the sell line (line below the box bottom) must confluence")
+	}
+	if f := ConfluenceVerdict(c, SideShort, sell, 29075); f.On {
+		t.Fatal("short mirror: an entry still ABOVE the sell line must not confluence")
 	}
 }

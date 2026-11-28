@@ -133,6 +133,13 @@ func (w *Worker) updateFriends(ctx context.Context, expectedSHA string) ([]Recei
 		}
 		return nil, nil // no active friends: nothing to sweep
 	}
+	// Never restart a friend we cannot prove booted: without a full release
+	// sha the boot check can only fail AFTER the restart already happened.
+	if active > 0 && len(expectedSHA) < bootLineShort {
+		w.notify("⚠️ Friend sweep skipped — no release sha to verify a friend boot against.")
+		results := []updaterjob.FriendResult{{Name: "*", State: string(FriendFailed), Note: "friend sweep skipped: no release sha"}}
+		return []Receipt{w.receipt("friend sweep skipped: no release sha", start, map[string]string{"active_friends": fmt.Sprintf("%d", active)}, nil)}, results
+	}
 	var results []updaterjob.FriendResult
 	var receipts []Receipt
 	ev := map[string]string{

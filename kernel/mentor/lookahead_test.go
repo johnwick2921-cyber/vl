@@ -11,7 +11,7 @@ import (
 // 5m bucket that has not broken anything draws no line; the line appears only
 // once the breaking minute arrives.
 func TestTriggerDoesNotFireBeforeTheBreakMinute(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	mk := func(i int, o, h, l, c float64) market.Kline {
 		return market.Kline{OpenTime: int64(i) * 60_000, CloseTime: int64(i)*60_000 + 59_999, Open: o, High: h, Low: l, Close: c}
@@ -39,7 +39,7 @@ func TestTriggerDoesNotFireBeforeTheBreakMinute(t *testing.T) {
 // box exists only after that 5m candle has CLOSED. The evaluator builds it from
 // the CLOSED 5m buckets, never from the forming one.
 func TestISBBoxFormedOnlyAfterClose(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	mk := func(i int, o, h, l, c float64) market.Kline {
 		return market.Kline{OpenTime: int64(i) * 60_000, CloseTime: int64(i)*60_000 + 59_999, Open: o, High: h, Low: l, Close: c}

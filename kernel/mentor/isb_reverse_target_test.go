@@ -45,7 +45,7 @@ func TestSuppressSamePairCounterISB(t *testing.T) {
 // reverse ISB fires LONG and the target resolves to that level.
 func isbReverseFixture(t *testing.T) (*Evaluator, []market.Kline, int64) {
 	t.Helper()
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Exec2mAfter30m = false // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 	cfg.Enabled = true
 	cfg.HTFGateNewsOnly = false // these pins exercise the direction gate itself (all-day)
@@ -54,6 +54,7 @@ func isbReverseFixture(t *testing.T) (*Evaluator, []market.Kline, int64) {
 	cfg.EMAPeriod9 = 9
 	cfg.EMALocationTFMinutes = 0
 	cfg.ISBReverseEMA9Enabled = true
+	cfg.ISBReverseTrend = ISBReverseTrendTrigger // oct round 2 D5.3: these synthetic pins drive the trend through the pinned 5m trigger (today's read)
 	cfg.ISBBufferPts = 0
 	cfg.LocTriggerFilter = false
 	cfg.RoomMultiple = 0.5
@@ -152,13 +153,13 @@ func TestReverseISBObeysThe4hAgainstANormalISB(t *testing.T) {
 // isbOverMaxStop check in ISBStopVerdict → RED (the reverse fires under the
 // knob). The fired-intent filter matches the RETAGGED PHL, so a regression
 // that silently drops the intent (or un-retags it) fails here too.
-func TestReverseISBSkipsTheTwenties(t *testing.T) {
+func TestReverseISBSkipsOverTheCeiling(t *testing.T) {
 	e, bars, now := isbReverseFixture(t)
-	if e.Cfg.CourseExits.ISBMaxStopPts != 30 {
-		t.Fatalf("CX-9 default must be 30; got %g", e.Cfg.CourseExits.ISBMaxStopPts)
+	if e.Cfg.CourseExits.ISBMaxStopPts != 20 {
+		t.Fatalf("CX-9 default must be 20 (m466 G23 D4.1-R12); got %g", e.Cfg.CourseExits.ISBMaxStopPts)
 	}
 	ins := e.Tick(bars, now)
-	// the default fires — retagged PHL (CX-6), a 5-pt stop below the 30-pt
+	// the default fires — retagged PHL (CX-6), a 5-pt stop below the 25-pt
 	// ceiling. Assert the intent is PRESENT (the old loop asserted nothing).
 	var fired *Intent
 	for i := range ins {
@@ -179,6 +180,7 @@ func TestReverseISBSkipsTheTwenties(t *testing.T) {
 
 	e2, bars2, now2 := isbReverseFixture(t)
 	e2.Cfg.CourseExits.ISBMaxStopPts = 4
+	e2.Cfg.CourseExits.StopSizeLadder = false // pins the ladder-OFF (pre-2026-11-10) ceiling; the ladder-ON path is stop_size_ladder_test.go
 	ins2 := e2.Tick(bars2, now2)
 	// the "must not fire" filter matches BOTH the retagged PHL and a forward
 	// ISB, so a retag regression cannot make the refusal loop silently pass.

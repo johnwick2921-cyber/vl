@@ -101,35 +101,64 @@ func TestRollDayKeyFindsFirstDenseSessionDay(t *testing.T) {
 	}
 }
 
-// TestMeasureRollGapLastFullSessionBeforeRoll — the gap is the median over the
-// LAST FULL session day before the roll (>=10 overlapping native 1h bars), NOT
-// the whole overlap. Session 09-14 has 9 bars (<10) and must be skipped in
-// favour of 09-11 (23 bars).
+// TestMeasureRollGapLastFullSessionBeforeRoll — the gap is measured on the
+// SESSION-OPEN EVENING (17:00–23:59 CT) of the LAST FULL session day before the
+// roll (>=10 overlapping native 1h bars for the day selection). Session 09-14
+// has 9 bars (<10) and must be skipped in favour of 09-11 (23 bars).
 func TestMeasureRollGapLastFullSessionBeforeRoll(t *testing.T) {
-	// Session 09-11: 23 overlapping native 1h bars. Session 09-14: only 9
-	// (17:00→01:00, the live MNQ 09-26 tail shape) — below the 10-bar floor.
+	// Session 09-11: 23 overlapping native 1h bars. Session 09-14: only 8
+	// (02:00→09:00 — the roll-day tail shape: the newer contract's first live
+	// bars land mid-session, AFTER the 17:00 evening) — below the 10-bar floor
+	// and with ZERO evening overlap.
 	newer1h := append(
 		native1hSession(2026, 9, 10, 17, 110, 110),
-		native1hN(2026, 9, 13, 17, 9, 110, 110)...)
+		native1hN(2026, 9, 14, 2, 8, 110, 110)...)
 	older1h := append(
 		native1hSession(2026, 9, 10, 17, 100, 100),
-		native1hN(2026, 9, 13, 17, 9, 100, 100)...)
+		native1hN(2026, 9, 14, 2, 8, 100, 100)...)
 	rollDay := "2026-09-15"
 
 	got := lastFullOverlapBefore(newer1h, older1h, rollDay)
 	if got != "2026-09-11" {
 		t.Fatalf("lastFullOverlapBefore = %q, want 2026-09-11 (09-14 has <10 bars)", got)
 	}
+	// The evening (17:00–23:59) holds 7 of the 23 native 1h bars; the gap is
+	// the median over those 7, not the whole 23.
 	gap, ok := measureRollGap(newer1h, older1h, got)
-	if !ok || gap.N != 23 || gap.Gap != 10 {
-		t.Fatalf("measureRollGap = %+v, %v; want N=23 gap=10", gap, ok)
+	if !ok || gap.N != 7 || gap.Gap != 10 {
+		t.Fatalf("measureRollGap = %+v, %v; want N=7 gap=10", gap, ok)
 	}
 	if gap.Min != 10 || gap.Max != 10 {
 		t.Fatalf("spread = [%.2f..%.2f], want [10..10]", gap.Min, gap.Max)
 	}
-	// The 9-bar day must NOT produce a measured gap.
+	// A session whose evening has FEWER than minEveningOverlap overlapping
+	// bars must NOT produce a measured gap (the roll-day tail shape: the newer
+	// contract's first live bars land mid-session, after the evening).
 	if _, ok := measureRollGap(newer1h, older1h, "2026-09-14"); ok {
-		t.Fatal("measureRollGap on the 9-bar day must be ok=false")
+		t.Fatal("measureRollGap on a session with <7 evening bars must be ok=false")
+	}
+}
+
+// TestMeasureRollGapUsesSessionOpenEvening pins the m335 fix: the gap is read
+// at the SESSION OPEN (the 17:00–23:59 evening), NOT the whole-day median. The
+// Sep/Dec basis is stable ~10 through the evening and drifts UP to ~20 through
+// RTH (the real 2026-09-11 shape: 291 evening → 299.75 RTH close). MUTANT: drop
+// the sessionOpenEveningCT filter in measureRollGap → the whole-day median
+// (20) wins → RED.
+func TestMeasureRollGapUsesSessionOpenEvening(t *testing.T) {
+	// older (09-26): close 100 all session. newer (12-26): close 110 in the
+	// evening (basis 10), close 120 overnight+RTH (basis 20).
+	older1h := native1hSession(2026, 9, 10, 17, 100, 100)
+	newer1h := make([]market.Kline, 0, 23)
+	newer1h = append(newer1h, native1hN(2026, 9, 10, 17, 7, 110, 110)...) // 17:00–23:00
+	newer1h = append(newer1h, native1hN(2026, 9, 11, 0, 16, 120, 120)...) // 00:00–15:00
+
+	gap, ok := measureRollGap(newer1h, older1h, "2026-09-11")
+	if !ok || gap.N != 7 || gap.Gap != 10 {
+		t.Fatalf("measureRollGap = %+v, %v; want the evening median N=7 gap=10 (the RTH drift to 20 must not leak in)", gap, ok)
+	}
+	if gap.Min != 10 || gap.Max != 10 {
+		t.Fatalf("spread = [%.2f..%.2f], want [10..10]", gap.Min, gap.Max)
 	}
 }
 
@@ -394,9 +423,10 @@ func TestSeedFullDeletionOverFullHistory(t *testing.T) {
 	c2.CloseTime = keyLevel1HCandleCloseTime(c2.OpenTime)
 	c3.CloseTime = keyLevel1HCandleCloseTime(c3.OpenTime)
 
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.KeyLevelPrunePts = 0.5
+	cfg.KeyLevelDeleteOn1HClose = KeyLevelDeleteOn1HCloseOn // LL-1: the deck deletion under test (October default keeps)
 	e := New(cfg)
 	now := auditMs(2026, time.September, 30, 12, 0, 0)
 	SeedFull(e, nil, []market.Kline{c1, c2, c3}, now)
@@ -462,7 +492,7 @@ func TestSeedFullDrawsLevelFromOlderContract(t *testing.T) {
 		t.Fatalf("stitch stopped at %q, want full", stopped)
 	}
 
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.KeyLevelPrunePts = 0.5
 	e := New(cfg)
@@ -476,5 +506,98 @@ func TestSeedFullDrawsLevelFromOlderContract(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("seeded levels = %+v, want the back-adjusted older-contract level at 112", e.State.SeedLevels)
+	}
+}
+
+// m445 round 4 (D1) — the REAL 2026-09-14 shape. MNQ 09-26 has a 22-minute hole
+// at 09:36–09:57 CT (its last stored bar is 10:33); MNQ 12-26 STORES those
+// minutes (source=historical) and the live bars from 09:58. The cut keeps the
+// older to its last bar and the head strictly after it, so the series loses the
+// 22 minutes although a contract recorded them. The stitched series is NOT
+// changed (the mentor's numbers are not the gate's business); SeamCovered names
+// the dropped-but-stored minutes so the data-integrity gate does not read a roll
+// seam as lost data. A sparse pre-roll snapshot (1 bar a day) is NOT covered,
+// and a minute the older stores is not covered either (it is in the series).
+func TestRollStitcherSeamCoveredNamesStoredMinutesTheCutDropped(t *testing.T) {
+	older := rthRange1m(2026, 9, 14, 8, 30, 9, 36, 98, 99)
+	older = append(older, rthRange1m(2026, 9, 14, 9, 58, 10, 34, 98, 99)...) // last stored bar 10:33
+	older1h := native1hSession(2026, 9, 10, 17, 100, 100)
+
+	newer := rthRange1m(2026, 9, 14, 9, 36, 9, 58, 110, 111) // the 22 minutes the older lacks
+	newer = append(newer, rthRange1m(2026, 9, 14, 9, 58, 15, 0, 110, 111)...)
+	// a sparse pre-roll import snapshot INSIDE the older's recorded span but in a
+	// session where the head has one bar (09-10 09:40): must not be "covered"
+	newer = append([]market.Kline{{OpenTime: auditMs(2026, 9, 10, 9, 40, 0), Open: 110, High: 110, Low: 110, Close: 110}}, newer...)
+	newer = append(newer, denseSession1m(2026, 9, 14, 1380, 112, 113)...)
+	newer1h := append(native1hSession(2026, 9, 10, 17, 110, 110), native1hSession(2026, 9, 14, 17, 110, 110)...)
+	older = append([]market.Kline{{OpenTime: auditMs(2026, 9, 10, 8, 30, 0), Open: 98, High: 98, Low: 98, Close: 98}}, older...)
+
+	s := NewRollStitcher(Contract1M{Contract: "MNQ 12-26", Bars: newer, Bars1H: newer1h})
+	if !s.Add(Contract1M{Contract: "MNQ 09-26", Bars: older, Bars1H: older1h}) {
+		t.Fatal("the stitch must measure this pair")
+	}
+	stitched, _, _, _ := s.Result()
+	have := map[int64]bool{}
+	for _, b := range stitched {
+		have[b.OpenTime] = true
+	}
+	covered := s.SeamCovered()
+	want := map[int64]bool{}
+	for ms := auditMs(2026, 9, 14, 9, 36, 0); ms < auditMs(2026, 9, 14, 9, 58, 0); ms += 60_000 {
+		want[ms] = true
+		if have[ms] {
+			t.Fatalf("setup: minute %d is in the stitched series — the cut no longer drops it (the series must stay as it was)", ms)
+		}
+	}
+	if len(covered) != len(want) {
+		t.Fatalf("SeamCovered = %d minutes, want exactly the 22 stored-by-the-head-only minutes 09:36–09:57: %v", len(covered), covered)
+	}
+	for i, ms := range covered {
+		if !want[ms] {
+			t.Fatalf("covered minute %d is not one of the 22", ms)
+		}
+		if i > 0 && covered[i-1] >= ms {
+			t.Fatal("SeamCovered must be ascending and unique")
+		}
+	}
+}
+
+// m445 round 5 (M1) — the older-span guard of seamCoveredBy. A DENSE head
+// session that lies BEFORE the older contract's first stored bar is outside the
+// older's recorded span: the stitched series simply starts later there, which is
+// the start of recorded history, not a roll seam, so it must not be reported as
+// "stored but dropped" (the gate would then excuse real holes at the start of a
+// contract's history). Same data as the 09-14 pin plus a dense head day before
+// the older's first bar; the 22 seam minutes are still, and only, covered.
+func TestRollStitcherSeamCoveredIgnoresHeadMinutesBeforeTheOlderHasAnyBar(t *testing.T) {
+	older := rthRange1m(2026, 9, 14, 8, 30, 9, 36, 98, 99)
+	older = append(older, rthRange1m(2026, 9, 14, 9, 58, 10, 34, 98, 99)...)
+	older1h := native1hSession(2026, 9, 10, 17, 100, 100)
+	older = append([]market.Kline{{OpenTime: auditMs(2026, 9, 10, 8, 30, 0), Open: 98, High: 98, Low: 98, Close: 98}}, older...)
+
+	newer := rthRange1m(2026, 9, 14, 9, 36, 9, 58, 110, 111)
+	newer = append(newer, rthRange1m(2026, 9, 14, 9, 58, 15, 0, 110, 111)...)
+	newer = append(newer, denseSession1m(2026, 9, 14, 1380, 112, 113)...)
+	// the dense head day BEFORE the older's first bar (09-10 08:30): 120 bars, well over minSnapshotSessionBars
+	early := rthRange1m(2026, 9, 9, 8, 30, 10, 30, 110, 110)
+	if len(early) < minSnapshotSessionBars {
+		t.Fatalf("setup: the early head day must be dense, got %d bars", len(early))
+	}
+	newer = append(early, newer...)
+	newer1h := append(native1hSession(2026, 9, 10, 17, 110, 110), native1hSession(2026, 9, 14, 17, 110, 110)...)
+
+	s := NewRollStitcher(Contract1M{Contract: "MNQ 12-26", Bars: newer, Bars1H: newer1h})
+	if !s.Add(Contract1M{Contract: "MNQ 09-26", Bars: older, Bars1H: older1h}) {
+		t.Fatal("the stitch must measure this pair")
+	}
+	first := older[0].OpenTime
+	covered := s.SeamCovered()
+	if len(covered) != 22 {
+		t.Fatalf("SeamCovered = %d minutes, want only the 22 seam minutes 09-14 09:36–09:57", len(covered))
+	}
+	for _, ms := range covered {
+		if ms < first {
+			t.Fatalf("minute %d lies before the older contract's first stored bar (%d): not a seam minute", ms, first)
+		}
 	}
 }

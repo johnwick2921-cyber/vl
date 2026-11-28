@@ -30,9 +30,18 @@ const (
 )
 
 func r22Cfg() Config {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.RealFillOnly = true
+	cfg.ISBStackTinyStopPts = 12.5                         // oct round 2 G2: the recorded-day pins ran the September tiny-stop hold
+	cfg.ISBTargetFillClose = false                         // oct round 2 D2-G3: the recorded-day pins ran the September level-target rule
+	cfg.TriggerFromOpen = false                            // oct round 2 G4: the recorded-day pins read the trigger over the whole history
+	cfg.TriggerEscalation = true                           // oct round 2 G3: the recorded-day pins ran the September trigger escalation
+	cfg.ISBReverseTrend = ISBReverseTrendTrigger           // oct round 2 D5.3: the recorded-day pins read the reverse ISB's trend from the 5m trigger
+	cfg.Counter5mReduceSize = Counter5mReduceOff           // oct round 2 D5.4-SCALP: the recorded-day pins carry no counter_5m flag
+	cfg.HTFGateNewsOnly = false                            // oct round 2 D2-G7: the recorded-day pins ran the m462 all-session 4h/1h gate
+	cfg.PHLEntryBufferPts, cfg.PHLStopBufferPts = 0.5, 0.5 // m472 A3: recorded-day pins predate the October 1/1 [Oct D2.3 @ 46:20-47:20]
+	cfg.TrendlineEntryTouch = TrendlineEntryFourth         // m472 A2: these recorded-day pins predate the October "third" default [Oct D3.2 @ 31:17]
 	// B52 (release #29) ships ON in production and changes the box set on the
 	// recorded days (post-escape boxes cascade). These r22 tests pin the
 	// LEVEL fix against the pre-B52 box world — the knob OFF reproduces
@@ -41,6 +50,11 @@ func r22Cfg() Config {
 	// The recorded 10-12/10-13 days ran the 1m read (exec_2m defaulted OFF
 	// then) — pin it so the r22 level expectations hold.
 	cfg.Exec2mAfter30m = false
+	// EmaMaxCross30m now defaults OFF (#45 — the mentor gives no count); the
+	// r22 refusal-counter test must still see the E4 gate fire on the recorded
+	// days, so pin it ON explicitly.
+	cfg.EmaMaxCross30m = 2
+	cfg.PHLRoomMultiple = 1 // review: these pins passed at the 1R PHL room (phl_room_multiple=1, the default again since answers-1112 Q2)
 	return cfg
 }
 
@@ -75,7 +89,9 @@ func r22Replay(t *testing.T, fixture string, open int64, cfg Config, each func(e
 func r22OldExtremePrices(levels []Level) []float64 {
 	var ps []float64
 	for _, l := range levels {
-		if l.Kind == KindOldExtreme {
+		// m428 R2: a flat support/resistance (two same-role swings at the same price) is
+		// an EXTRA old low/high level beside the nearest pair — this pin counts the pivot pair.
+		if l.Kind == KindOldExtreme && !strings.Contains(l.Key, "flat_") {
 			ps = append(ps, l.Price)
 		}
 	}
@@ -140,7 +156,7 @@ func TestR22OldExtremeZoneShareIsTheSinglePair1013(t *testing.T) {
 			return
 		}
 		n++
-		if touchesOldExtreme(cur, e.State.Levels) {
+		if touchesOldExtreme(cur, e.State.Levels, 2) {
 			zone++
 		}
 	})
@@ -300,7 +316,7 @@ func TestR22VisitCapSeparatesTriggerLinePositions(t *testing.T) {
 // in the r22 PR body.
 func TestR22PHLPlacesAtTheTriggerLine1012(t *testing.T) {
 	total, atTrigger := 0, 0
-	r22Replay(t, "mnq_1m_2026-10-12_session", r22Open1012, r22Cfg(), func(_ *Evaluator, _ []market.Kline, out []Intent) {
+	e := r22Replay(t, "mnq_1m_2026-10-12_session", r22Open1012, r22Cfg(), func(_ *Evaluator, _ []market.Kline, out []Intent) {
 		for _, in := range out {
 			if in.Action != PlaceStopEntry || in.Setup != "PHL" && in.Setup != "PLH" {
 				continue
@@ -311,8 +327,19 @@ func TestR22PHLPlacesAtTheTriggerLine1012(t *testing.T) {
 			}
 		}
 	})
-	if atTrigger == 0 || total < 2 {
-		t.Fatalf("10-12 replay placed %d PHL/PLH (%d at the trigger-line retest), want >= 2 with >= 1 at the trigger line", total, atTrigger)
+	// m427: with the owner's whole-candle break read over the candle's whole life
+	// a sloped trendline that the close-time read killed at 23:57 now stays alive
+	// and is the nearer target, so the one trigger-retest PHL of that day (31256)
+	// is refused by the target floor (phl_target_below_floor) instead of placed.
+	// The retest is still evaluated — pinned EXACTLY (CTO, #50): no trigger-line
+	// placement and at least one floor refusal, so any later shift is seen.
+	// phl audit PHL-1: the day's two ROLLING PLH rungs (03:19 sell stop 31,150
+	// → old low 31,124; 08:13 sell stop 31,070.75 → old low 31,018) read a
+	// 5m/15m pivot while the 1m low each pullback started from was still
+	// unconfirmed — the stale-target class PHL-1 removed — so the day places
+	// its one LEVEL PHL/PLH (>= 1 pinned; it was >= 2 with the rolling pair).
+	if total < 1 || atTrigger != 0 || e.State.Refusals["phl_target_below_floor"] == 0 {
+		t.Fatalf("10-12 replay placed %d PHL/PLH (%d at the trigger-line retest, %d floor-refused), want >= 1, 0 at the trigger line, >= 1 floor-refused (m427 whole-life break)", total, atTrigger, e.State.Refusals["phl_target_below_floor"])
 	}
 }
 
@@ -392,7 +419,9 @@ func TestR22ChartDrawsTheTradingOldExtremes1013(t *testing.T) {
 // through it) — never the total that includes deleted levels.
 func TestR22SeedLineCountsLiveKeyLevels(t *testing.T) {
 	bars := loadFixture(t, "mnq_1m_2026-10-13_session", "1m")
-	e := New(r22Cfg())
+	cfg := r22Cfg()
+	cfg.KeyLevelDeleteOn1HClose = KeyLevelDeleteOn1HCloseOn // LL-1: the count split needs the deck deletion
+	e := New(cfg)
 	Seed(e, bars, BarCloseInstant(bars[len(bars)-1]))
 	live, deleted := 0, 0
 	for _, l := range e.State.SeedLevels {

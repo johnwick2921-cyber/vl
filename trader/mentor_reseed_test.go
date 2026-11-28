@@ -133,7 +133,7 @@ func TestMentorReseedsAfterTheHistoryRefill1014(t *testing.T) {
 	seedAt := seedStateCT(8, 22, 40)
 	setMentorNowSource(func() time.Time { return seedAt })
 	at.mentorSeedAtStart()
-	if got := seedStateLine(at.mentorEval.State.HTF.OneH); got != "short@30790.75 since 10-14 07:00" {
+	if got := seedStateLine(at.mentorEval.State.HTF.OneH); got != "short@30790.75 since 10-14 07:48" { // B3 (W7): the break minute, not the 07:00 bucket open
 		t.Fatalf("control: the holed store must seed the live boot's 1h line, got %s", got)
 	}
 
@@ -180,8 +180,8 @@ func TestMentorReseedsAfterTheHistoryRefill1014(t *testing.T) {
 			seedStateLine(got.HTF.OneH), seedStateLine(truth.State.HTF.OneH), seedStateLine(got.HTF.FourH), seedStateLine(truth.State.HTF.FourH),
 			seedStateLine(got.Trigger), seedStateLine(truth.State.Trigger), got.EMA34, truth.State.EMA34)
 	}
-	if l := seedStateLine(got.HTF.OneH); l != "short@30716.00 since 10-14 07:00" {
-		t.Fatalf("the 1h line must be the never-stopped truth short@30716.00 since 10-14 07:00, got %s", l)
+	if l := seedStateLine(got.HTF.OneH); l != "short@30716.00 since 10-14 07:35" { // B3 (W7): the break minute, not the 07:00 bucket open
+		t.Fatalf("the 1h line must be the never-stopped truth short@30716.00 since 10-14 07:35, got %s", l)
 	}
 	c := at.mentorCountSnapshot()
 	if c["reseed_after_refill"] != 1 || c["reseed_changed"] != 1 {

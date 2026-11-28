@@ -180,13 +180,30 @@ export function computeDayTotal(
   let total = 0
   for (const p of positions) {
     if (kinds.get(p.id) !== 'normal') continue
+    // m240: an OPEN partial has exit_time=0 — its booked leg P&L is visible
+    // (visibleTotal sums it as a normal resolved row), so its day must fall out
+    // by last activity (updated_at), never be dropped. A CLOSED row keeps exit_time.
     const exitMs = new Date(p.exit_time || 0).getTime()
-    if (!exitMs || exitMs < sessionDayStartMs) continue
+    const dayTs = exitMs || new Date(p.updated_at || 0).getTime()
+    if (!dayTs || dayTs < sessionDayStartMs) continue
     if (typeof p.pnl_corrected !== 'number' || isNaN(p.pnl_corrected)) continue
     total += p.pnl_corrected
   }
   return Math.round(total * 100) / 100
 }
+
+// M251-S2: the "time" sort key. An OPEN partial has exit_time=0; sorting on
+// exit_time||0 sank it to the bottom. Use last activity (updated_at) instead,
+// the same fallback computeDayTotal uses. A CLOSED row keeps exit_time.
+export function positionSortTimeMs(p: HistoricalPosition): number {
+  const exitMs = new Date(p.exit_time || 0).getTime()
+  return exitMs > 0 ? exitMs : new Date(p.updated_at || 0).getTime() || 0
+}
+
+// M251-S2: says exactly what computeDayTotal counts. The daily-loss gate is
+// narrower (closed trades only) and the tooltip must not claim otherwise.
+export const SESSION_DAY_TOOLTIP =
+  "Bot P&L in the CME session day (from 17:00 CT — the risk gates' day). Includes partial legs already booked on trades that are still OPEN (dated by last activity); the daily-loss gate counts CLOSED trades only. Same exclusion rule as the ledger: unknown / test-seam / duplicate / manual rows excluded, corrections win."
 
 // Stats Card Component with formula tooltip
 function StatCard({
@@ -378,6 +395,73 @@ function DirectionStatsCard({
   )
 }
 
+// C13: USD value of a 1.00-point move for ONE contract — mirrors
+// market/futures_symbol.go futuresPointValues (the Go side is the source of
+// truth). The history wire row has no point_value field today; a row-level
+// point_value (if the server ever sends one) wins over the table. Unknown
+// symbol -> 1 (no multiplier), never a guess.
+const POINT_VALUE_BY_ROOT: Record<string, number> = {
+  NQ: 20,
+  MNQ: 2,
+  ES: 50,
+  MES: 5,
+  RTY: 50,
+  M2K: 5,
+  YM: 5,
+  MYM: 0.5,
+  CL: 1000,
+  MCL: 100,
+  NG: 10000,
+  GC: 100,
+  MGC: 10,
+  SI: 5000,
+  ZB: 1000,
+  ZN: 1000,
+  ZF: 1000,
+  ZT: 2000,
+}
+
+export function pointValueFor(p: {
+  symbol?: string
+  point_value?: number
+}): number {
+  if (typeof p.point_value === 'number' && p.point_value > 0) {
+    return p.point_value
+  }
+  // "MNQ", "MNQ 06-26", "MNQ.c.0" -> root "MNQ"
+  const root = (p.symbol || '').toUpperCase().split(/[\s.]/)[0]
+  return POINT_VALUE_BY_ROOT[root] ?? 1
+}
+
+// null = both resolved (caller compares the numbers and applies the order);
+// otherwise the final comparator result with unresolved rows pinned LAST.
+export function comparePnl(
+  a: HistoricalPosition,
+  b: HistoricalPosition
+): number | null {
+  const ak = pnlSortKey(a)
+  const bk = pnlSortKey(b)
+  if (ak !== null && bk !== null) return null
+  if (ak === bk) return 0
+  return ak === null ? 1 : -1
+}
+
+// Fee text: a zero (or sub-cent-rounding-to-zero-after-negation) fee reads
+// "0.00", never "-0.00".
+export function formatFee(fee: number): string {
+  const f = fee || 0
+  if (f <= 0) return '0.00'
+  return '-' + (f < 0.01 ? f.toFixed(4) : f.toFixed(2))
+}
+
+// P&L sort key: the DISPLAYED figure (pnl_corrected). NULL = unresolved, which
+// sorts LAST in either direction (see the sort below).
+export function pnlSortKey(p: HistoricalPosition): number | null {
+  return typeof p.pnl_corrected === 'number' && !isNaN(p.pnl_corrected)
+    ? p.pnl_corrected
+    : null
+}
+
 // Position Row Component
 function PositionRow({
   position,
@@ -484,6 +568,21 @@ function PositionRow({
               MANUAL · excluded
             </span>
           )}
+          {(position.status === 'OPEN' ||
+            position.pnl_status === 'partial') && (
+            <span
+              data-testid="partial-open-badge"
+              className="px-2 py-0.5 rounded text-xs font-semibold"
+              style={{
+                background: '#0E3A5C',
+                color: '#5EA8F7',
+                border: '1px solid #1D5A87',
+              }}
+              title="Position still open — a leg has already closed, so the P&L shown is the realized partial only, not the final trade."
+            >
+              partial · open
+            </span>
+          )}
           {kind === 'unresolved' && (
             <span
               className="px-2 py-0.5 rounded text-xs font-semibold"
@@ -529,7 +628,7 @@ function PositionRow({
         className="py-3 px-4 text-right font-mono"
         style={{ color: '#EAECEF' }}
       >
-        {formatNumber(entryPrice * displayQty)}
+        {formatNumber(entryPrice * displayQty * pointValueFor(position))}
       </td>
 
       {/* P&L */}
@@ -576,10 +675,7 @@ function PositionRow({
         className="py-3 px-4 text-right font-mono text-xs"
         style={{ color: '#848E9C' }}
       >
-        -
-        {(position.fee || 0) < 0.01 && (position.fee || 0) > 0
-          ? (position.fee || 0).toFixed(4)
-          : (position.fee || 0).toFixed(2)}
+        {formatFee(position.fee || 0)}
       </td>
 
       {/* Duration */}
@@ -719,13 +815,15 @@ export function PositionHistory({ traderId }: PositionHistoryProps) {
       let comparison = 0
       switch (sortBy) {
         case 'time':
-          comparison =
-            new Date(a.exit_time || 0).getTime() -
-            new Date(b.exit_time || 0).getTime()
+          comparison = positionSortTimeMs(a) - positionSortTimeMs(b)
           break
-        case 'pnl':
-          comparison = (a.realized_pnl || 0) - (b.realized_pnl || 0)
+        case 'pnl': {
+          // C13: sort by the DISPLAYED figure; NULL (unresolved) always last.
+          const r = comparePnl(a, b)
+          if (r !== null) return r
+          comparison = (pnlSortKey(a) as number) - (pnlSortKey(b) as number)
           break
+        }
         case 'pnl_pct': {
           const aPrice = a.entry_price || 1
           const bPrice = b.entry_price || 1
@@ -916,7 +1014,7 @@ export function PositionHistory({ traderId }: PositionHistoryProps) {
               formatNumber(stats.total_pnl || 0)
             }
             color={(stats.total_pnl || 0) >= 0 ? '#0ECB81' : '#F6465D'}
-            subtitle={`Bot trades only · ${historyScopeLabel(statsScope)} · ${stats.manual_excluded_line ?? 'Manual (excluded): n/a'} · ${t('positionHistory.fee', language)}: -${formatNumber(stats.total_fee || 0)}`}
+            subtitle={`Bot trades only · ${historyScopeLabel(statsScope)} · ${stats.manual_excluded_line ?? 'Manual (excluded): n/a'} · ${t('positionHistory.fee', language)}: ${(stats.total_fee || 0) > 0 ? '-' + formatNumber(stats.total_fee || 0) : '0.00'}`}
             metricKey="total_return"
             language={language}
           />
@@ -1265,7 +1363,14 @@ export function PositionHistory({ traderId }: PositionHistoryProps) {
             </span>
             {totalFilteredCount > 0 && (
               <span>
-                {t('positionHistory.totalPnL', language)}:{' '}
+                {t('positionHistory.totalPnL', language)}{' '}
+                <span
+                  title="Sum of the rows loaded here only (not the all-history card above). Unresolved rows are excluded."
+                  style={{ color: '#848E9C' }}
+                >
+                  (last {positions.length} loaded)
+                </span>
+                :{' '}
                 <span
                   style={{
                     color: visibleTotal >= 0 ? '#0ECB81' : '#F6465D',
@@ -1276,7 +1381,7 @@ export function PositionHistory({ traderId }: PositionHistoryProps) {
                 </span>
               </span>
             )}
-            <span title="Bot trades closed in the CME session day (from 17:00 CT — the risk gates' day). Same exclusion rule as the ledger: unknown / test-seam / duplicate / manual rows excluded, corrections win.">
+            <span title={SESSION_DAY_TOOLTIP}>
               Session day (from 17:00 CT):{' '}
               {dayTotal === null ? (
                 <span className="font-mono">n/a</span>

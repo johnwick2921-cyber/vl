@@ -34,6 +34,15 @@ type mentorFunnel struct {
 	filled   int
 	lastEmit time.Time
 	lastFp   string
+
+	// m469 why-no-trade. The kernel and trader refusal ledgers count from the
+	// trader's start and are NOT reset at 17:00, so a nightly figure read from
+	// them raw would mix sessions. The funnel keeps the ledgers it last saw
+	// and, at each session roll, a copy of them as the baseline the new
+	// session's figures are diffed against.
+	lastKernel, lastTrader map[string]int // the ledgers as of the last tick
+	baseKernel, baseTrader map[string]int // the ledgers at this session's roll (nil = since the trader started)
+	since                  time.Time      // when this session's counting began: the 17:00 roll, or the trader's start
 }
 
 func (f *mentorFunnel) reset(dayKey string) {
@@ -67,10 +76,15 @@ func (f *mentorFunnel) bumpFilled() {
 // (rescan P3-N8): entries and other actions are counted apart — "intents 38 ·
 // authored 0" on 10-14 was 37 LevelInvalid/ConfluenceUpgrade + 1 entry.
 func (at *AutoTrader) mentorFunnelTick(bars int, intents []mentor.Intent) {
+	at.mentorFunnelTickAt(time.Now(), bars, intents)
+}
+
+// mentorFunnelTickAt is mentorFunnelTick with the clock passed in (tests drive
+// session rolls with it).
+func (at *AutoTrader) mentorFunnelTickAt(now time.Time, bars int, intents []mentor.Intent) {
 	if at == nil || !at.mentorEnabled() {
 		return
 	}
-	now := time.Now()
 	dayKey := kernel.CMESessionDayKey(now)
 	kernelRefusals := mentorKernelRefusals(at)
 	kernelFills := mentorKernelFills(at)
@@ -79,8 +93,23 @@ func (at *AutoTrader) mentorFunnelTick(bars int, intents []mentor.Intent) {
 	f := &at.mentorFunnel
 	f.mu.Lock()
 	if f.dayKey != dayKey {
+		if f.dayKey == "" {
+			// The first tick since this trader started: nothing earlier was
+			// seen, so this session's figures run from the trader's start.
+			f.baseKernel, f.baseTrader = nil, nil
+			f.since = at.startTime
+			if f.since.IsZero() {
+				f.since = now
+			}
+		} else {
+			// A session roll: what the ledgers held at the end of the last
+			// session is the baseline this session is measured from.
+			f.baseKernel, f.baseTrader = copyCounts(f.lastKernel), copyCounts(f.lastTrader)
+			f.since = kernel.CMESessionDayStart(now)
+		}
 		f.reset(dayKey)
 	}
+	f.lastKernel, f.lastTrader = kernelRefusals, traderRefusals
 	f.bars += bars
 	for _, in := range intents {
 		if in.Action == mentor.PlaceStopEntry || in.Action == mentor.PlaceStopLimitEntry {

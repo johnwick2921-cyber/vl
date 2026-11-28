@@ -119,3 +119,52 @@ func TestE2EAddonNT8ClosedCompletesDLLPlacedNoRestart(t *testing.T) {
 		t.Fatalf("NT8 restarted %d times with NT8 closed, want 0", *starts)
 	}
 }
+
+// The dotnet fallback built it: the addon_build receipt says why the ps1 builder failed
+// (before, Build threw that error away, so a job could not tell).
+func TestE2EAddonBuildReceiptKeepsThePs1Error(t *testing.T) {
+	r := newRig(t, withCSChanged())
+	r.w.runWin = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		if strings.Contains(name, "powershell") && winFlag(args, "-Out") != "" && !hasWinFlag(args, "-Custom") {
+			return []byte("ERROR CS0246: AddOnBase"), errors.New("ps1 build failed")
+		}
+		return r.box.fakeRunWin(ctx, name, args...)
+	}
+	j := r.runToEnd(t)
+	r.noViolations(t)
+	if j.State != updaterjob.StateComplete || j.Addon == nil || j.Addon.BuiltBy != addonbuild.BuiltByDotnet {
+		t.Fatalf("job %s addon=%+v, want complete by the dotnet fallback", j.State, j.Addon)
+	}
+	for _, rc := range j.Receipts {
+		if rc.Step == "addon_build" {
+			if !strings.Contains(rc.Evidence["ps1_error"], "CS0246") {
+				t.Fatalf("addon_build evidence = %v, want ps1_error with the compiler line", rc.Evidence)
+			}
+			return
+		}
+	}
+	t.Fatal("no addon_build receipt")
+}
+
+// A bot-only release (ninjascript unchanged) builds no AddOn, NT8 open or closed: the
+// install goes nt8_skipped -> activate and no builder is run by the job.
+func TestE2EAddonUnchangedInstallRunsNoBuilder(t *testing.T) {
+	for name, opts := range map[string][]rigOpt{"nt8 open": nil, "nt8 closed": {withNT8Down(absentDown)}} {
+		t.Run(name, func(t *testing.T) {
+			r := newRig(t, opts...)
+			j := r.runToEnd(t)
+			r.noViolations(t)
+			if j.State != updaterjob.StateComplete || j.NT8 == nil || j.NT8.Decision != updaterjob.NT8Skipped {
+				t.Fatalf("job %s nt8=%+v, want complete with nt8 skipped", j.State, j.NT8)
+			}
+			if j.Addon != nil && (j.Addon.DllPath != "" || j.Addon.BuiltBy != "") {
+				t.Fatalf("an unchanged AddOn was built: %+v", j.Addon)
+			}
+			for _, rc := range j.Receipts {
+				if strings.HasPrefix(rc.Step, "addon_") || strings.HasPrefix(rc.Step, "nt8_restart") {
+					t.Fatalf("unchanged ninjascript ran step %s", rc.Step)
+				}
+			}
+		})
+	}
+}

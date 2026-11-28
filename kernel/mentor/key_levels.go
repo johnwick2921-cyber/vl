@@ -14,16 +14,24 @@ import (
 //
 //  1. bars = 1H RTH only: candles anchored at 08:30 CT (first candle
 //     08:30–09:29), external (ETH) candles excluded [slide 31: "Khung 1H ONLY
-//     · Không tính external hours · Bắt đầu từ lúc market open"];
+//     · Không tính external hours · Bắt đầu từ lúc market open"]; levels are
+//     drawn on the RTH session only, never the Asia/Europe ETH session
+//     [D5.3 p1 @12:57–13:50].
 //  2. each candle colour (close > open = green) is one trend;
 //  3. at EVERY colour change a line is drawn at the OPEN of the SECOND candle
 //     (red → green: open of the green candle; green → red: open of the red).
 //     NEVER the wick. Draw them even after a gap [D5.3 p1 @ 14:24–15:58];
 //  4. PRUNE: two levels less than KeyLevelPrunePts (20) apart → delete one,
 //     keep the more recent [@ 16:08–16:44];
-//  5. DELETE: a level is deleted when a 1H RTH candle's BODY closes through
-//     it (open one side, close the other) — handled by the evaluator via
-//     levelDeletedBy1HBody, not here (deletion is session state).
+//  5. DELETE (deck / September, knob key_level_delete_on_1h_close=on): a
+//     level is deleted when a 1H RTH candle's BODY closes through it (open one
+//     side, close the other) — handled by the evaluator via
+//     levelDeletedBy1HBody, not here (deletion is session state). October
+//     never states a deletion either way; the default keeps the level (LL-1,
+//     default off) as an INFERENCE [B]: "Key Level nó là quá khứ"
+//     [OctD5.2-R15 @04:44] and his drawn stack / the WE3 quiz level 27,997.75
+//     both hold levels a 1H body crossed long before [OctD5.2-R19/R20
+//     @07:20–07:42] (WE3 is a quiz example, not a trade).
 //
 // The 2025 tiers (15m ETH wicks, 30–60 spacing, 4h red recolouring) are
 // SUPERSEDED and not built. No lookback cap (F7 stands).
@@ -83,7 +91,7 @@ func pruneLevelsByRecency(levels []Level, prunePts float64) []Level {
 	for _, l := range sorted {
 		drop := false
 		for _, k := range kept {
-			if abs(l.Price-k.Price) < prunePts {
+			if d := abs(l.Price - k.Price); d < prunePts || d == 0 { // A2 row 14: prune 0 still dedups the same price
 				drop = true
 				break
 			}
@@ -126,11 +134,21 @@ func isPreBucketed1H(bars []market.Kline) bool {
 // isPreBucketed1H) cannot reconstruct the 08:30 anchor: each bar is a
 // candle and the RTH filter keeps candles opening in [08:00, 15:00) — the
 // hour that contains the market open. The evaluator always feeds 1m bars.
+// keyLevelLastCandleEndMin is the minute-of-day (CT) the last RTH 1h key-level
+// candle ends: 15:15, SCREEN-READ not spoken [Oct D5.2 @ 00:04 black band ends ~15:15; RTH menu @ 02:14-02:40]
+// (the mentor says 15:00 and 16:00 in other breaths; owner/mentor to confirm 15:15). A var only so the frozen
+// pre-October identity goldens can pin the September 15:00 end (tests only).
+var keyLevelLastCandleEndMin = 15*60 + 15
+
 func keyLevel1HBars(bars []market.Kline) []market.Kline {
 	const (
 		anchorMin = 8*60 + 30 // 08:30 CT
-		rthEnd    = 15 * 60   // 15:00 CT
+		rthEnd    = 15 * 60   // 15:00 CT — last candle may not OPEN at/after this
+		// The last RTH 1h candle ends 15:15 CT, not 15:00: 1m bars opening
+		// before 15:15 belong to the 14:30 candle.
+		// [Oct D5.2 @ 02:14-02:40] (supersedes the Sep 15:00 end; D1.2 s_00665.jpg)
 	)
+	barEnd := keyLevelLastCandleEndMin // 15:15 CT
 	// pre-bucketed 1H input: every bar is already a candle
 	if isPreBucketed1H(bars) {
 		// Fresh slice: filtering into bars[:0] MUTATES the caller's backing
@@ -155,7 +173,7 @@ func keyLevel1HBars(bars []market.Kline) []market.Kline {
 	}
 	key := int64(-1)
 	for _, b := range bars {
-		if rthMinuteOf(b.OpenTime) >= rthEnd {
+		if rthMinuteOf(b.OpenTime) >= barEnd {
 			continue // post-close external minutes never enter the last candle
 		}
 		k := openMin(b.OpenTime)
@@ -215,11 +233,13 @@ func rthMinuteOf(ms int64) int {
 // read by Tick): with the knob ON the named setups (ISB + PHL/PLH) read the 2m
 // chart at every minute EXCEPT the RTH open +30 minutes (08:30 ≤ t < 09:00 CT),
 // when they stay on the 1m ("Trong dòng 30 phút đầu giờ em vẫn sẽ trade khung 1
-// phút … sau 30 phút em sẽ chuyển qua khung 2 phút" [X5 @00:41–01:14]). Overnight,
-// the Europe open (3am Texas) and the evening are all 2m. The schedule source is
+// phút … sau 30 phút em sẽ chuyển qua khung 2 phút" [X5 @00:41–01:14]). Overnight
+// and the Europe open (3am Texas) are 2m; the evening is 2m unless eveningSlow. The schedule source is
 // ~/mm-course/extra/notes/05-EXTRA.md:305-311 (X5 @00:07–01:17, X11
-// @17:06–19:35); "evening slow → 5m" is an OPEN COURSE QUESTION (no number for
-// "slow") and is not implemented.
+// @17:06–19:35); "evening slow → 5m" is layered on top by eveningSlow (eval.go;
+// the cutoff number is ours, the course gives none).
+// This predicate returns only the 1m-vs-2m half of the schedule; the 5m half
+// is applied by the Tick's `want = 5` branch after this predicate.
 //
 // `now` is the instant the just-closed 1m bar CLOSED (BarCloseInstant = the
 // bar's CloseTime + 1), so the bar's OPEN minute is `now − 60_000` — the window
@@ -229,6 +249,14 @@ func rthMinuteOf(ms int64) int {
 func exec2mReads2m(now int64) bool {
 	m := rthMinuteOf(now - 60_000) // the just-closed 1m bar's OPEN minute
 	return m < 8*60+30 || m >= 9*60
+}
+
+// inEveningWindow reports whether the just-closed 1m bar is in the evening /
+// overnight window: after the RTH close (15:00 CT) and before the Europe open
+// (03:00 CT the next day) [X11 @17:40–18:26].
+func inEveningWindow(now int64) bool {
+	m := rthMinuteOf(now - 60_000)
+	return m >= 15*60 || m < 3*60
 }
 
 // rthHourAnchor returns the open epoch of the RTH 1h candle a bar belongs
@@ -245,11 +273,12 @@ func rthHourAnchor(ms int64) int64 {
 }
 
 // keyLevel1HCandleCloseTime returns the scheduled close of an RTH hour candle.
-// The final 14:30 candle closes at the 15:00 RTH boundary.
+// The final 14:30 candle closes at 15:15 CT [Oct D5.2 @ 02:14-02:40]
+// (was the 15:00 boundary in September).
 func keyLevel1HCandleCloseTime(openMs int64) int64 {
 	t := time.UnixMilli(openMs).In(ctime())
 	closeMs := t.Add(time.Hour).UnixMilli()
-	rthEnd := time.Date(t.Year(), t.Month(), t.Day(), 15, 0, 0, 0, ctime()).UnixMilli()
+	rthEnd := time.Date(t.Year(), t.Month(), t.Day(), 0, keyLevelLastCandleEndMin, 0, 0, ctime()).UnixMilli()
 	if closeMs > rthEnd {
 		return rthEnd
 	}
@@ -259,6 +288,12 @@ func keyLevel1HCandleCloseTime(openMs int64) int64 {
 // candleColour: green iff close > open, red otherwise (§4.3 step 2).
 func candleColour(b market.Kline) bool {
 	return b.Close > b.Open
+}
+
+// keyLevelDeleteOn1HClose reports whether the deck's 1H body-close deletion
+// runs (LL-1). Only the explicit "on" deletes; "" / "off" is October's keep.
+func (c Config) keyLevelDeleteOn1HClose() bool {
+	return c.KeyLevelDeleteOn1HClose == KeyLevelDeleteOn1HCloseOn
 }
 
 // levelDeletedBy1HBody implements the KEY-LEVEL RULING deletion (final,

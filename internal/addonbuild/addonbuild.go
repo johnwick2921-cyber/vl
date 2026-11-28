@@ -29,7 +29,8 @@ import (
 
 // Config is everything Build/Place need that the caller supplies. DocsDir,
 // Exe, SourceDir and WorkDir are WSL paths (Exe may also be a Windows path,
-// as the worker's addonExe returns). DotnetExe and PowerShellExe are passed to
+// as the worker's addonExe returns; see nt8BinWindows for one with
+// backslashes). DotnetExe and PowerShellExe are passed to
 // Run verbatim.
 //
 //	DocsDir       - Documents\NinjaTrader 8 directory (bin/Custom must exist)
@@ -55,12 +56,13 @@ const (
 	BuiltByDotnet    = "dotnet"     // the dotnet.exe net48 csproj fallback
 )
 
-// Result is what Build returns: the built DLL (WSL path), its hex sha256, and
-// which builder produced it.
+// Result is what Build returns: the built DLL (WSL path), its hex sha256, which
+// builder produced it, and, when that was the fallback, why the ps1 builder failed.
 type Result struct {
-	DllPath string
-	Sha256  string
-	BuiltBy string
+	DllPath  string
+	Sha256   string
+	BuiltBy  string
+	Ps1Error string
 }
 
 // Sentinel errors returned by this package.
@@ -74,9 +76,16 @@ var (
 	ErrNoCustomDll     = errors.New("addonbuild: no NinjaTrader.Custom.dll to rebuild")
 )
 
-// nt8DocsGlob is the WSL glob Detect scans. A package var so tests can point it
-// at a temp dir.
+// nt8DocsGlob is the WSL glob Detect scans (the plain Documents path). A
+// package var so tests can point it at a temp dir.
 var nt8DocsGlob = "/mnt/c/Users/*/Documents/NinjaTrader 8"
+
+// nt8OneDriveGlob is the OneDrive-redirected Documents path (m385): Windows
+// folder redirection moves Documents under /mnt/c/Users/<u>/OneDrive/<folder>/,
+// and the redirected folder's name is LOCALIZED (e.g. "Tài liệu" = Documents),
+// so the middle component is a wildcard. A package var so tests can point it at
+// a temp dir.
+var nt8OneDriveGlob = "/mnt/c/Users/*/OneDrive/*/NinjaTrader 8"
 
 // Windows tool locations (W-UPDATER-WINPATH). The vl-updater user unit's PATH
 // has no /mnt/c entries (systemd does not inherit WSL's appendWindowsPath), so
@@ -109,19 +118,22 @@ func resolveWindowsExe(name, fixedWSL string) (string, error) {
 }
 
 // Detect returns the single Documents/NinjaTrader 8 directory (WSL path) that
-// has a bin/Custom folder. More than one candidate is an error naming them;
-// zero is an error.
+// has a bin/Custom folder, scanning BOTH the plain Documents path and the
+// OneDrive-redirected path (m385). More than one candidate is an error naming
+// them; zero is an error.
 func Detect() (docsDir string, err error) {
-	matches, _ := filepath.Glob(nt8DocsGlob)
 	var candidates []string
-	for _, m := range matches {
-		if isDir(filepath.Join(m, "bin", "Custom")) {
-			candidates = append(candidates, m)
+	for _, glob := range []string{nt8DocsGlob, nt8OneDriveGlob} {
+		matches, _ := filepath.Glob(glob)
+		for _, m := range matches {
+			if isDir(filepath.Join(m, "bin", "Custom")) {
+				candidates = append(candidates, m)
+			}
 		}
 	}
 	switch len(candidates) {
 	case 0:
-		return "", fmt.Errorf("%w: glob %q matched %d dir(s), none with bin/Custom", ErrNoNT8Dirs, nt8DocsGlob, len(matches))
+		return "", fmt.Errorf("%w: globs %q + %q matched no dir with bin/Custom", ErrNoNT8Dirs, nt8DocsGlob, nt8OneDriveGlob)
 	case 1:
 		return candidates[0], nil
 	default:
@@ -183,6 +195,7 @@ func Build(ctx context.Context, c Config) (Result, error) {
 	// FALLBACK: the dotnet.exe net48 csproj (needs the SDK).
 	dotnetDll, dotnetErr := buildViaDotnet(ctx, c, workDir, srcDir, docsDir, dotnetExe)
 	if dotnetErr == nil {
+		dotnetDll.Ps1Error = ps1Err.Error()
 		return dotnetDll, nil
 	}
 
@@ -270,8 +283,10 @@ func buildViaDotnet(ctx context.Context, c Config, workDir, srcDir, docsDir, dot
 }
 
 // nt8BinWindows returns the NinjaTrader bin directory as a Windows path,
-// derived from Exe (which may itself be a Windows or WSL path) with the
-// standard install location as the default.
+// derived from Exe when Exe is written with forward slashes (a WSL path, or
+// D:/...), with the standard install location as the default. An Exe with
+// BACKSLASHES (D:\...) gives the default too: filepath.Dir is "." for it on
+// Linux (TestExeWithBackslashesBuildsFromTheDefaultFolder).
 func nt8BinWindows(exe string) string {
 	if exe != "" {
 		dir := filepath.Dir(exe)
@@ -499,12 +514,13 @@ func BuildPs1() string { return buildPs1Script }
 // deploy copy; TestBuilderCsParityWithDeploy keeps them from drifting).
 func BuilderCs() string { return builderCs }
 
-// CompilerProbe proves the no-SDK ps1 path works on this box: it writes the
+// CompilerProbe says whether the ps1 can use this box's compiler and NinjaTrader.Core
+// (not whether a release's AddOn source compiles): it writes the
 // embedded build-addon.ps1 (and its VLCustomBuilder.cs sidekick) to a
 // worker-made temp dir and runs its -Probe mode, which loads Roslyn from NT8's
-// bin, resolves its dependencies, compiles a trivial source against the full
+// bin, resolves its dependencies, compiles one small AddOn type against the full
 // reference set, AND runs the builder's --selftest (FOLD 5 F1). ok is true only
-// when the probe prints both VL_ADDON_PROBE=ok and VL_SELFTEST_OK. Nothing
+// when the probe prints both VL_ADDON_PROBE=ok and VL_SELFTEST_OK and exits 0. Nothing
 // touches the real NT8 folder or starts NT8.
 func CompilerProbe(ctx context.Context, c Config) (ok bool, detail string) {
 	if c.Run == nil {
@@ -568,6 +584,12 @@ func clipBuildOut(out []byte) string {
 // returns the backup directory it created (or "" when there was nothing to back
 // up). On a sha mismatch the old DLL stays safe in the backup dir; the worker
 // must not let NT8 start until it restores or replaces the dest DLL.
+//
+// m343 (2026-10-22) — the backup is RECORDED, not just moved: Place writes a
+// sidecar meta (AddonBackupMetaName) next to the backed-up DLL with its sha256
+// and embedded build id, read at the moment it was moved out, so a later
+// restore can refuse a backup whose bytes no longer match what was recorded
+// (verify-on-restore).
 func Place(c Config, dll, sha, jobID string) (backupDir string, err error) {
 	destDir := filepath.Join(c.DocsDir, "bin", "Custom")
 	if !isDir(destDir) {
@@ -581,8 +603,12 @@ func Place(c Config, dll, sha, jobID string) (backupDir string, err error) {
 		if err := os.MkdirAll(backupDir, 0o755); err != nil {
 			return "", fmt.Errorf("addonbuild: mkdir backup: %w", err)
 		}
-		if err := os.Rename(destDll, filepath.Join(backupDir, "VL.AddOn.dll")); err != nil {
+		backupDll := filepath.Join(backupDir, "VL.AddOn.dll")
+		if err := os.Rename(destDll, backupDll); err != nil {
 			return "", fmt.Errorf("addonbuild: move old dll: %w", err)
+		}
+		if err := WriteAddonBackupMeta(backupDir, backupDll); err != nil {
+			return "", fmt.Errorf("addonbuild: record backup meta: %w", err)
 		}
 	}
 

@@ -22,9 +22,17 @@ func workedTouch() Touch {
 }
 
 func workedCfg() Config {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.PHLTargetShyPts = 6 // target 29,425.75
+	cfg.PHLRoomMultiple = 2 // oct round 2 D2-G2: these boundaries (room exactly 30, 29 < 30) were worked at the September 2R room; October's default is 1
+	// The spent-day / room boundaries below (room exactly 30, 29 < 30, the
+	// 15-pt cap) were worked on the pre-#59 offsets (entry +1.00, stop at the
+	// low). Pinned here so each gate keeps its exact boundary; the production
+	// offsets (0.50 / 0.50, D2.2-R10 [p1 @04:14–05:43]) are pinned by
+	// TestM464CourseDefaultsAreTheDrawnOffsets and TestPHLPLHWorkedExampleGeometry.
+	cfg.PHLEntryBufferPts = 1.0
+	cfg.PHLStopBufferPts = 0
 	return cfg
 }
 
@@ -42,7 +50,7 @@ func TestPHLPLHGatedAgreePasses(t *testing.T) {
 }
 
 // TestPHLPLHGatedCase3Refuses — 4h long, 1h short: the valid PHL is refused
-// until the 1h flips [D4.4 p1 @ 16:00].
+// until the 1h flips [D4.4 p1 @15:09–15:34].
 func TestPHLPLHGatedCase3Refuses(t *testing.T) {
 	htf := HTF{FourH: TriggerLine{Dir: SideLong, Price: 29400}, OneH: TriggerLine{Dir: SideShort, Price: 29350}}
 	if _, ok, reason := PHLPLHGated(workedTouch(), Level{Kind: KindOldExtreme, Price: 29_431.75}, 0, 3, workedCfg(), htf, DayTrade, DefaultDayGate()); ok || reason == "" {
@@ -150,7 +158,7 @@ func TestPHLPLHGatedSpentDayRoomIsToTheLevel(t *testing.T) {
 }
 
 // TestPHLPLHR2HigherLowRequired — R2: a HIGHER low is required; a flat low
-// is an FTGL, not a PHL [D2.2 p1 R2]. The mirror refuses a flat high.
+// is an FTGL, not a PHL [D2.2 p3 @08:45–10:02]. The mirror refuses a flat high.
 func TestPHLPLHR2HigherLowRequired(t *testing.T) {
 	cfg := workedCfg()
 	// prior swing low 29,387.5 — the reference low EQUALS it → flat → FTGL

@@ -16,7 +16,7 @@ func b5(minFrom1700 int, high, low, close float64) market.Kline {
 // the first 5m candle breaking the previous extreme draws the line at the
 // BROKEN extreme, wick included, and fixes the direction.
 func TestTriggerLineFirstBreakDrawsLine(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	bars := []market.Kline{
 		b5(0, 100, 96, 97),    // 17:00 bucket, recorded (no previous to break)
@@ -40,7 +40,7 @@ func TestTriggerLineFirstBreakDrawsLine(t *testing.T) {
 // needed. The evaluator feeds the still-forming 5m bucket and a break on it
 // draws the line at once.
 func TestTriggerFiresOnForming5mBucket(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	bars := []market.Kline{
 		b5(0, 100, 96, 97),  // closed bucket (no previous to break)
@@ -55,7 +55,7 @@ func TestTriggerFiresOnForming5mBucket(t *testing.T) {
 // TestTriggerLineSellBreak — mirror: a candle breaking the previous LOW draws
 // the sell line at that low.
 func TestTriggerLineSellBreak(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	bars := []market.Kline{
 		b5(0, 100, 96, 98),
@@ -71,7 +71,7 @@ func TestTriggerLineSellBreak(t *testing.T) {
 // means a re-tick on the same history changes nothing, and extending the
 // history by one bucket processes exactly that bucket.
 func TestTriggerTickIsIdempotentAndIncremental(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	bars := []market.Kline{
 		b5(0, 100, 96, 97),
@@ -97,7 +97,7 @@ func TestTriggerTickIsIdempotentAndIncremental(t *testing.T) {
 // reversal moves the line once; later breaks in the SAME direction never move
 // it; the NEXT reversal moves it again [D3.4 p1 @ 11:48–13:33].
 func TestTriggerLineMovesOnEveryReversalOnceEach(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	tl := TriggerLine{Dir: SideLong, Price: 100, LastBucket: b5(0, 0, 0, 0).OpenTime, LastBar: b5(0, 102, 101, 102)}
 	bars := []market.Kline{
@@ -148,7 +148,7 @@ func TestTriggerVerdictSideAndNoTradeZone(t *testing.T) {
 // (84 buckets incl. the pre-RTH lead-in) must draw a line and process every
 // bucket exactly once.
 func TestTriggerLineOnRecorded5mTape(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	bars := loadFixture(t, "mnq_5m_2026-09-15_rth", "5m")
 	got := TriggerTick(TriggerLine{}, bars, 5, cfg)
@@ -207,7 +207,7 @@ func TestISBConflictVerdict(t *testing.T) {
 // TestMidRangeISBOnly — §12 [D3.2 p2 @ 08:34]: between two levels, PHL/PLH is
 // banned and only the ISB survives.
 func TestMidRangeISBOnly(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.RangeGapPts = 100
 	levels := []Level{
@@ -228,7 +228,7 @@ func TestMidRangeISBOnly(t *testing.T) {
 		t.Fatal("one-sided level set is not mid-range")
 	}
 	// disabled (RangeGapPts 0) → filter off (L4)
-	if MidRange(levels, 100, DefaultConfig()) {
+	if MidRange(levels, 100, preOctCfg()) {
 		t.Fatal("disabled mid-range filter fired")
 	}
 }

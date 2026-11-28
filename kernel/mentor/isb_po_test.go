@@ -43,11 +43,11 @@ func TestDojiCandle1IsNotISB(t *testing.T) {
 	if dir := ISBDirection(doji); dir != "" {
 		t.Fatalf("a doji has no ISB direction, got %q", dir)
 	}
-	if _, _, ok, _ := ISBStopLimitOrder(doji, cur, DefaultConfig()); ok {
+	if _, _, ok, _ := ISBStopLimitOrder(doji, cur, preOctCfg()); ok {
 		t.Fatal("a doji candle 1 must not produce an ISB order")
 	}
 
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	e := newISBEval(cfg)
 	bars := []market.Kline{
@@ -71,8 +71,10 @@ func TestDojiCandle1IsNotISB(t *testing.T) {
 // THAT ISB with a named refusal and the tick CONTINUES (the old code returned
 // out, aborting PHL/box/swing/stacking for the minute).
 func TestISBMissingTargetSkipsOnlyThatISB(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
+	cfg.ISBTargetFillClose = false  // D2-G3 oct round 2: the September level-target rule
+	cfg.ISBNoLevelFillClose = false // answers-1112 Q3: … and the no-level refusal this test names (revert knob)
 	e := New(cfg)
 	e.State.Trigger = TriggerLine{Dir: SideLong, Price: 90}
 	e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 90}}
@@ -115,8 +117,9 @@ func TestISBMissingTargetSkipsOnlyThatISB(t *testing.T) {
 // 1:1 floor; |target−entry| < |entry−stop| is refused by name ("the target is
 // never smaller than the stop" [D1.2 p1 @ 07:48]) and no arm is placed.
 func TestISBTargetBelowFloorRefused(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
+	cfg.ISBTargetFillClose = false // D2-G3 oct round 2: the September level-target rule (isb_no_level_fill_close stays at its default: a level inside 1R is not its case)
 	e := New(cfg)
 	e.State.Trigger = TriggerLine{Dir: SideLong, Price: 90}
 	e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 90}}
@@ -169,11 +172,13 @@ func TestTargetFloorOK(t *testing.T) {
 // ceiling (CX-9), the HTF block, the R5 box block, the HTF side mismatch and
 // the DayOff branch all record a named refusal instead of dropping silently.
 func TestISBSilentDropsAllNamed(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.HTFGateNewsOnly = false // these pins exercise the direction gate itself (all-day)
 
 	t.Run("stop-over-max", func(t *testing.T) {
+		cfg := cfg
+		cfg.CourseExits.StopSizeLadder = false // pins the ladder-OFF (pre-2026-11-10) ceiling; the ladder-ON path is stop_size_ladder_test.go
 		e := newISBEval(cfg)
 		bars := []market.Kline{
 			rthBars(0, 121, 121.5, 120.5, 120),
@@ -189,12 +194,33 @@ func TestISBSilentDropsAllNamed(t *testing.T) {
 		}
 	})
 
+	// Stop-size ladder ON: a stop above mentor_wide_stop_max_pts is still
+	// refused BY NAME (isb_stop_over_max) — the same fixture, wide max 25.
+	t.Run("stop-over-wide-max-ladder-on", func(t *testing.T) {
+		cfg := cfg
+		cfg.CourseExits.StopSizeLadder = true
+		cfg.CourseExits.WideStopMaxPts = 25
+		e := newISBEval(cfg)
+		bars := []market.Kline{
+			rthBars(0, 121, 121.5, 120.5, 120),
+			rthBars(1, 95, 120, 90, 115),  // green candle 1, wide
+			rthBars(2, 100, 117, 90, 101), // ISB; stop = 27 + 3 = 30 pts > 25
+		}
+		if _, ok, why := ISBStopVerdict(bars[2], cfg); ok || why != ISBWideStopReason {
+			t.Fatalf("fixture: the 30-pt stop must be over the 25-pt wide max (ok=%v why=%q)", ok, why)
+		}
+		e.Tick(bars, bars[2].CloseTime+1)
+		if e.State.Refusals["isb_stop_over_max"] == 0 {
+			t.Fatalf("ladder ON over the wide max must be refused by name; ledger = %v", e.State.Refusals)
+		}
+	})
+
 	t.Run("htf-blocked", func(t *testing.T) {
 		e := newISBEval(cfg)
 		e.State.HTF = HTF{} // no 4h trigger → the read never starts
 		bars := isbFixture()
 		e.Tick(bars, bars[2].CloseTime+1)
-		if e.State.Refusals["isb_htf_blocked"] == 0 {
+		if e.State.Refusals["isb_htf_no_4h"] == 0 { // m462: was isb_htf_blocked
 			t.Fatalf("HTF block must be refused by name; ledger = %v", e.State.Refusals)
 		}
 	})
@@ -243,7 +269,7 @@ func TestISBSilentDropsAllNamed(t *testing.T) {
 // TestB9ISBOnSpentDayEmitsExactlyTheCap (level 36.4 pts out).
 func TestISBSpentDayTargetCap(t *testing.T) {
 	run := func(v DayVerdict) (*Intent, map[string]int) {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.Enabled = true
 		cfg.DayGateSpentPts = 300
 		cfg.DayGateTargetCapPts = 15

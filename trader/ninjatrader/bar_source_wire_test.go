@@ -17,7 +17,7 @@ import (
 // 'live', and a bar the ring labelled mixed stays mixed under either flag.
 func TestPersisterStampsTheFeedItWasHandedTheBarsFrom(t *testing.T) {
 	bars := []ntwire.Bar{
-		{T: 1_000, O: 1, H: 2, L: 0.5, C: 1.5, V: 3},
+		{T: 1_000, O: 1, H: 2, L: 0.5, C: 1.5, V: 3, Final: true}, // m416: a live bar is source=live only when FINAL
 		{T: 2_000, O: 1, H: 2, L: 0.5, C: 1.5, V: 3, Source: ntwire.BarSourceMixed},
 	}
 	live := barRowsForPersist("MNQ", "1m", "MNQ 12-26", false, bars)

@@ -83,11 +83,11 @@ func TestE5c_TheRingGuardStillRefusesPriorWeek(t *testing.T) {
 	start := time.Date(2026, 8, 31, 0, 0, 0, 0, loc)
 	end := start.AddDate(0, 0, 7)
 	// A ~33h ring: two calendar days of 1m bars, far under 4320.
-	cal := map[string]*calDayAgg{
-		"2026-08-31": {count: 900},
-		"2026-09-01": {count: 900},
+	calDays := map[string]int{
+		"2026-08-31": 900,
+		"2026-09-01": 900,
 	}
-	if pwCovered(cal, start, end, priorWeekMinBars) {
+	if pwCovered(calDays, start, end, priorWeekMinBars) {
 		t.Error("the 33h ring satisfied the prior-week guard — the guard was relaxed, which is exactly what the const block forbids")
 	}
 }

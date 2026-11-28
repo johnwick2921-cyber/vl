@@ -55,7 +55,10 @@ func contractFor(bh *store.BarHistoryStore, server *ntwire.TCPServer, symbol str
 // the callback writes can be pinned at the CALL SITE the worker actually
 // invokes (A29: built is not wired). The frame's `historical` flag names the
 // feed; a bar the ring has already labelled mixed (a boot minute across two
-// scales) keeps that label whichever feed carried it.
+// scales) keeps that label whichever feed carried it. The 2h/4h 16:00-close
+// stub is ALSO re-anchored at ring ingress (m169 DS-108 item 1); this call is
+// idempotent and still corrects the historical raw-frame path, whose bars arrive
+// close-stamped and bypass the ring on their way to the persister.
 func barRowsForPersist(symbol, tf, contract string, historical bool, closed []ntwire.Bar) []store.BarHistoryDB {
 	feedSrc := store.BarSourceLive
 	if historical {
@@ -66,9 +69,13 @@ func barRowsForPersist(symbol, tf, contract string, historical bool, closed []nt
 		bs := feedSrc
 		if b.Source == ntwire.BarSourceMixed {
 			bs = store.BarSourceMixed
+		} else if !historical && !b.Final {
+			// m416: the wall clock says closed, the AddOn never said final — the
+			// last forming snapshot. Stored correctable, never as sacred live.
+			bs = store.BarSourceLivePartial
 		}
 		rows = append(rows, store.BarHistoryDB{
-			Symbol: symbol, TF: tf, OpenTimeMs: b.T,
+			Symbol: symbol, TF: tf, OpenTimeMs: kernel.ReanchorCMEStub(tf, b.T),
 			O: b.O, H: b.H, L: b.L, C: b.C, V: b.V,
 			Convention: market.StampConvention(tf),
 			Contract:   contract,
@@ -78,13 +85,35 @@ func barRowsForPersist(symbol, tf, contract string, historical bool, closed []nt
 	return rows
 }
 
+// persistReport carries the outcome of the persister's last call to a caller
+// that must know whether the write landed (m426). A nil report is a no-op.
+type persistReport struct {
+	ok  bool
+	why string
+}
+
+func (r *persistReport) set(ok bool, why string) {
+	if r != nil {
+		r.ok, r.why = ok, why
+	}
+}
+
 // newBarPersister builds THE persister closure WireBarPersistence installs
 // (GAP-BACKFILL 2026-10-14: lifted out of the sync.Once, unchanged except for
 // the hole report after a live write, so a production-call-site test can drive
 // this exact closure against its own wire and store). server() is the wire the
 // closure reads verdicts and contracts from.
-func newBarPersister(bh *store.BarHistoryStore, server func() *ntwire.TCPServer) func(historical bool, symbol, tf string, bars []ntwire.Bar) {
+//
+// m426: the optional rep receives the OUTCOME of the last call (the persister's
+// signature is fixed by ntwire.SetBarPersister and returns nothing). Only the
+// m424 break flusher passes one; the frame-ingest call site is unchanged.
+func newBarPersister(bh *store.BarHistoryStore, server func() *ntwire.TCPServer, rep ...*persistReport) func(historical bool, symbol, tf string, bars []ntwire.Bar) {
+	var out *persistReport
+	if len(rep) > 0 {
+		out = rep[0]
+	}
 	return func(historical bool, symbol, tf string, bars []ntwire.Bar) {
+		out.set(false, "")
 		srv := server()
 		// BAR-SOURCE WAVE — a LIVE frame is the moment the ring has judged
 		// the replay it holds; release or discard the held replay rows for
@@ -102,6 +131,7 @@ func newBarPersister(bh *store.BarHistoryStore, server func() *ntwire.TCPServer)
 			closed = ntwire.OpenStampBars(closed, tf)
 		}
 		if len(closed) == 0 {
+			out.set(true, "")
 			return
 		}
 		// ROLL WAVE — stamp the contract the AddOn most recently named.
@@ -110,6 +140,7 @@ func newBarPersister(bh *store.BarHistoryStore, server func() *ntwire.TCPServer)
 		contract, src := contractFor(bh, srv, symbol)
 		if contract == "" {
 			logger.Warnf("bars: persist %s %s SKIPPED %d bar(s) — no contract has been named this process and the store holds none; a bar on an unknown price scale is not written (roll wave)", symbol, tf, len(closed))
+			out.set(false, "no contract known")
 			return
 		}
 		if src == "store-fallback" {
@@ -123,16 +154,22 @@ func newBarPersister(bh *store.BarHistoryStore, server func() *ntwire.TCPServer)
 			// AN UNVERIFIED REPLAY IS NOT THE RECORD. Held until the first
 			// live bar lets the ring judge its scale; see replayHold.
 			barReplayHold.add(symbol, tf, rows)
+			out.set(true, "")
 			return
 		}
 		if err := bh.InsertBars(rows); err != nil {
 			logger.Warnf("bars: persist %s %s failed: %v (never blocks the loop)", symbol, tf, err)
+			out.set(false, err.Error())
 			return
 		}
+		out.set(true, "")
 		// GAP-BACKFILL (2026-10-14) — a live 1m bar that lands after a run of
 		// missing open minutes opens a HOLE, and the tracker re-requests NT8's
 		// history for it on its own schedule (bar_holes.go).
 		barHoles.Load().observeLive(symbol, tf, contract, rows)
+		// m467: a live bar of a closed period the AddOn never finalised is
+		// re-asked of NT8, so its final bar can replace the snapshot.
+		noteLivePartials(barRepairs.Load(), rows)
 	}
 }
 
@@ -166,6 +203,17 @@ func WireBarPersistence(st *store.Store) {
 		holes := newBarHoleTracker(bh, barHolesServer.Load)
 		barHoles.Store(holes)
 		logger.Infof("%s", holes.bootLine())
+		// m467 — the bar-repair driver: what lives below the hole threshold.
+		repair := newBarRepairDriver(holes.wire, repairResolver(bh, func() *ntwire.BarCache {
+			if s := barHolesServer.Load(); s != nil {
+				return s.BarCache()
+			}
+			return nil
+		}), holes.minGap)
+		holes.repair = repair
+		barRepairs.Store(repair)
+		logger.Infof("%s", repair.bootLine())
+		logger.Infof("%s", holes.auditBootLine())
 		ntwire.SetBarPersister(newBarPersister(bh, serverFn))
 		// Boot backfill + prune loop: the singleton server starts lazily on the
 		// first trader load; poll for it briefly, then flush the cache. The
@@ -180,7 +228,28 @@ func WireBarPersistence(st *store.Store) {
 					// singleton turned the accessor's unsynchronized test seam
 					// into a periodic data race (CI -race, api package).
 					barHolesServer.Store(server)
+					// release #55 (integrator): the data-truth checks (m446) read the
+					// ring and the store, both reachable from here on.
+					WireDataTruthChecks(bh, server)
 					safe.GoNet("nt8-bar-holes", "", holes.run)
+					// m467: repairs run on their own schedule, and every
+					// cross_frame mismatch / ring partial replacement reaches them.
+					wireCrossFrameRepair(repair, func(sym string) string {
+						if f, ok := server.CurrentContract(sym); ok {
+							return f.Contract
+						}
+						return ""
+					})
+					server.BarCache().OnPartialReplaced(func(sym, tf string, n int) {
+						telemetry.IncRingPartialReplaced(n)
+						logger.Infof("🧰 bar repair: a replay REPLACED %d never-finalised live %s %s ring bar(s) with NT8's closed bar (same price scale; final live bars are never replaced)", n, sym, tf)
+					})
+					safe.GoNet("nt8-bar-repair", "", repair.run)
+					safe.GoNet("nt8-bar-gap-audit", "", holes.runAudit)
+					// m424 — session-final bar flush + closed-market replay-hold settle.
+					rep := &persistReport{}
+					bf := newBreakFlusher(server.BarCache, newBarPersister(bh, serverFn, rep), bh, rep) // the same closure type a frame reaches
+					safe.GoNet("nt8-bar-break-flush", "", bf.run)
 					backfilled := backfillBars(bh, server)
 					if backfilled == 0 {
 						// Cache still empty (replay in flight) — retry a few
@@ -206,7 +275,7 @@ func WireBarPersistence(st *store.Store) {
 					// best-known boot line describing a ring the bot no longer
 					// had — two lines about the same instant, and the older,
 					// more-read one wrong.
-					rehydrateRingFromStore(bh, server, time.Now())
+					rehydrateRingFromStore(bh, server, time.Now()) // #55 m449: the BOOT entry; it also opens the data-truth seed edge
 					// ROLL WAVE (D5) — when the AddOn names a NEW contract, the
 					// server has already purged the ring; reseed it from the
 					// store for the new contract only, and say so ONCE where
@@ -295,6 +364,9 @@ func WireBarPersistence(st *store.Store) {
 // INSERT OR IGNORE) and logs the spec boot line. Returns the flushed count so
 // the caller can retry while the AddOn's bars_historical replay is still
 // arriving (the cache is empty for the first seconds after a Go restart).
+// The 2h/4h 16:00-close stub is also re-anchored at ring ingress; this call is
+// idempotent, so a bar the ring already re-anchored is left as-is (m169 DS-108
+// item 1).
 func backfillBars(bh *store.BarHistoryStore, server *ntwire.TCPServer) int {
 	now := time.Now().UnixMilli()
 	total, held := 0, 0
@@ -313,7 +385,7 @@ func backfillBars(bh *store.BarHistoryStore, server *ntwire.TCPServer) int {
 			// BAR-SOURCE WAVE — the ring stamped each bar at Seed/Upsert; the
 			// backfill carries that through. A ring bar with no source is a
 			// programming error and is refused by InsertBars rather than guessed.
-			rows = append(rows, store.BarHistoryDB{Symbol: pair[0], TF: pair[1], OpenTimeMs: b.T,
+			rows = append(rows, store.BarHistoryDB{Symbol: pair[0], TF: pair[1], OpenTimeMs: kernel.ReanchorCMEStub(pair[1], b.T),
 				O: b.O, H: b.H, L: b.L, C: b.C, V: b.V, Convention: market.StampConvention(pair[1]),
 				Contract: contract, Source: b.Source})
 		}
@@ -528,6 +600,12 @@ func resetAfterBackfillHookForTest() {
 // refuses, blocks or blanks.
 func rehydrateRingFromStore(bh *store.BarHistoryStore, server *ntwire.TCPServer, now time.Time) {
 	rehydrateRingFromStoreWith(bh, server, now, false)
+	// #55 m449: the boot seed step is done (the AddOn replay was waited for, the
+	// ring rehydrated), however it ended - only NOW may the data-truth checks
+	// judge the ring. A replay that never came is judged (loudly, after the
+	// trader's boot grace) rather than waited on forever. The roll / scale-break
+	// reseeds call rehydrateRingFromStoreWith directly and do not move this edge.
+	MarkDataTruthSeeded()
 }
 
 // rehydrateRingFromStoreWith is the body; reseeded=true marks a roll-driven
@@ -578,6 +656,12 @@ func rehydrateRingFromStoreWith(bh *store.BarHistoryStore, server *ntwire.TCPSer
 				if added := cache.RehydrateUnion(symbol, tf, bars); added > 0 {
 					totalAdded += added
 					deepened++
+					// m327 (a): the aggregate tf was REBUILT from the STORE's 1m
+					// tape — the 1m store has history the boot seed may have
+					// missed (a restart hole healed after the seed). Announce the
+					// refill so the mentor tick re-seeds its 1m-derived state
+					// (EMA9/34, trigger lines) from the healed series.
+					NoteHistoryRefill(symbol, "1m", added, fmt.Sprintf("ring rehydrate %s %s from 1m (+%d union)", symbol, tf, added))
 					after := cache.Get(symbol, tf)
 					h := kernel.HorizonOf(barsToKlines(after, tf), tf, cache.MaxBars(), now)
 					logger.Infof("🧯 ring rehydrated %s %s FROM 1M [m134 2026-10-21]: nt8=%d 1m_bars=%d total=%d/%d (+%d union — interior holes filled, live bars win on overlap) · contract=%s (%s) · %s",
@@ -623,12 +707,32 @@ func rehydrateRingFromStoreWith(bh *store.BarHistoryStore, server *ntwire.TCPSer
 		rows, importExcluded := rehydrateRowsFor(rows, reseeded)
 		// guard (ii)
 		bars := rehydrateBarsFromRows(rows)
-		added := cache.RehydrateOlder(symbol, tf, bars)
+		// m395: the 1m ring itself must fill INTERIOR holes, not only extend
+		// the older end. A short NT8 replay tail at boot leaves a hole (m395:
+		// 10-22 00:11→07:50 CT, 458 min) that RehydrateOlder cannot reach — the
+		// store is complete, so time-union heals it. The aggregate TFs already
+		// rebuild from the 1m tape above (m134); the 1m was left on the
+		// older-only path and kept the hole.
+		var added int
+		mode := "older"
+		if tf == "1m" {
+			added = cache.RehydrateUnion(symbol, tf, bars)
+			mode = "union"
+		} else {
+			added = cache.RehydrateOlder(symbol, tf, bars)
+		}
 		if added == 0 {
 			continue
 		}
 		totalAdded += added
 		deepened++
+		// m327 (a): the 1m ring deepened from the store — the store now holds
+		// 1m history the boot seed may have missed (a restart hole healed after
+		// the seed). Announce the refill so the mentor tick re-seeds its
+		// history-derived state (EMA9/34, trigger lines) from the healed series.
+		if tf == "1m" {
+			NoteHistoryRefill(symbol, "1m", added, fmt.Sprintf("ring rehydrate %s 1m (+%d %s)", symbol, added, mode))
+		}
 		after := cache.Get(symbol, tf)
 		h := kernel.HorizonOf(barsToKlines(after, tf), tf, cache.MaxBars(), now)
 		// nt8=<what the ring held from NT8 before> store_live/store_hist=<what
@@ -636,8 +740,8 @@ func rehydrateRingFromStoreWith(bh *store.BarHistoryStore, server *ntwire.TCPSer
 		// (iii), counted in rehydrateRowsFor; LastNBarsOn filters only
 		// mixed+off-scale and hands imports to its callers> total=<t>/cap —
 		// every number READ, the [O] naming the ruling.
-		logger.Infof("🧯 ring rehydrated %s %s [O 2026-09-16]: nt8=%d store_live=%d store_hist=%d (post-drop excluded=%v) import=%d (refused at the door — guard iii) total=%d/%d (+%d older, all entered as historical — guard ii) · contract=%s (%s) · %s",
-			symbol, tf, before, storeLive, storeHist, reseeded, importExcluded, len(after), cache.MaxBars(), added, contract, src, h.Line())
+		logger.Infof("🧯 ring rehydrated %s %s [O 2026-09-16]: nt8=%d store_live=%d store_hist=%d (post-drop excluded=%v) import=%d (refused at the door — guard iii) total=%d/%d (+%d %s, all entered as historical — guard ii) · contract=%s (%s) · %s",
+			symbol, tf, before, storeLive, storeHist, reseeded, importExcluded, len(after), cache.MaxBars(), added, mode, contract, src, h.Line())
 	}
 	logger.Infof("🧯 ring rehydrate done [O \"i want fuull data\" 2026-09-16]: %d of %d symbol×tf pairs deepened, +%d bars total, %d read failure(s), %d pair(s) not selected · every rehydrated row enters as historical (replay-grade to this process); the regime baseline is served from the %s tail (condition (b)) · store retention %s=%dd (the ring is the cache; the store is the horizon)",
 		deepened, len(pairs), totalAdded, failed, skipped, rehydrateTimeframe, rehydrateTimeframe, store.RetentionDaysFor(rehydrateTimeframe))

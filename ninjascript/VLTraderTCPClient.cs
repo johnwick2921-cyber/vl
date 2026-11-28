@@ -71,7 +71,25 @@ namespace NinjaTrader.NinjaScript.AddOns
         // 2026-10-14-a (release #24, AC-1): close_position honours its `account` field.
         // 2026-10-21-b (release #43): strict connect.json, reconnect backoff 5s→60s,
         //   hello-first write gate, hello-close warning (superseded by -c).
-        private const string  VL_BUILD_ID             = "2026-10-21-c";
+        // 2026-10-22-a (release #46): order_update de-dupe keys on state+filled
+        //   (m227 bug-hunt #4) — the #45 source change shipped under the same id.
+        // 2026-10-22-b (release #46 P0 m373): e.Filled is an int, so "R" threw a
+        //   FormatException on every order_update — format with InvariantCulture.
+        // 2026-10-22-c (release #48 m387): CancelBracketsFor cancels EVERY matched
+        //   bracket; the build id also travels as the anchored VL_BUILD_ID_ANCHOR.
+        // 2026-10-22-d (release #48.2 m400): the anchor is now static READONLY, not
+        //   const — a const anchor sat in the #Blob heap IMMEDIATELY after the id
+        //   blob (no terminal byte), so the INSTALLED #46.1 reader read the next
+        //   blob's 0x30 size byte as a trailing '0' ("2026-10-22-c0") and refused.
+        private const string  VL_BUILD_ID             = "2026-10-22-d";
+        // m400 anchor: the id also travels as a folded user string "VL_BUILD_ID=<id>"
+        // (referenced in the CONNECTED log) so internal/addonbuild.BuildIDFromDLL can
+        // anchor to the constant instead of any id-shaped value in a comment or
+        // resource. static readonly (NOT const): a const anchor lands in the #Blob
+        // heap with no terminal byte, and its 0x30 size byte can be misread as a
+        // trailing '0' by the INSTALLED (older) reader's even-byte scan. A #US
+        // user string carries a terminal byte, which stops that scan.
+        private static readonly string VL_BUILD_ID_ANCHOR = "VL_BUILD_ID=" + VL_BUILD_ID;
         private const int    MAX_FRAME_BYTES         = 1 << 20; // 1 MB, spec L4376
 
         // === State ===
@@ -711,7 +729,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                     client = new TcpClient();
                     client.Connect(serverHost, serverPort);
                     stream = client.GetStream();
-                    LogInfo("VLTraderTCPClient: CONNECTED");
+                    LogInfo("VLTraderTCPClient: CONNECTED " + VL_BUILD_ID_ANCHOR);
                     // C11 — do NOT reset the backoff/log-throttle here: a refused key
                     // would otherwise reset it every connect and never grow. The reset
                     // happens in OnAuthenticated() on the server's hello reply.
@@ -1430,14 +1448,22 @@ namespace NinjaTrader.NinjaScript.AddOns
         private void CancelBracketsFor(string signalId, string rootSymbol, string acctName)
         {
             if (string.IsNullOrEmpty(signalId)) return;
-            PlacedBracket pb = null;
-            List<string> keysToRemove = new List<string>();
+            List<KeyValuePair<string, PlacedBracket>> victims = new List<KeyValuePair<string, PlacedBracket>>();
             lock (signalMapLock)
             {
-                placedBrackets.TryGetValue(signalId, out pb);
-                if (pb == null)
+                PlacedBracket direct = null;
+                placedBrackets.TryGetValue(signalId, out direct);
+                if (direct != null)
                 {
-                    // Fresh close id → find the entry bracket by (account, instrument).
+                    victims.Add(new KeyValuePair<string, PlacedBracket>(signalId, direct));
+                }
+                else
+                {
+                    // Fresh close id → find the entry bracket(s) by (account, instrument).
+                    // QUEUE-47 (DS-104): collect EVERY match. The old loop kept only
+                    // the LAST one (`pb = cand`) while retiring every matched key, so a
+                    // second bracket on the same instrument was dropped from tracking
+                    // with its orders still live.
                     foreach (var kv in placedBrackets)
                     {
                         var cand = kv.Value;
@@ -1449,17 +1475,19 @@ namespace NinjaTrader.NinjaScript.AddOns
                         if (string.Equals(candRoot, rootSymbol, StringComparison.OrdinalIgnoreCase)
                             && (string.IsNullOrEmpty(acctName) || string.Equals(candAcct, acctName, StringComparison.OrdinalIgnoreCase)))
                         {
-                            pb = cand;
-                            keysToRemove.Add(kv.Key);
+                            victims.Add(kv);
                         }
                     }
                 }
-                else
+                // QUEUE-47: cancel EVERY matched bracket, and retire a key from
+                // tracking only after that bracket's OWN orders were cancelled. A
+                // failed cancel leaves the key; nothing re-drives it — the legs
+                // settle through order_update or a later sweep (the next netting
+                // flat via CancelAllBracketsFor, or the next close).
+                foreach (var v in victims)
                 {
-                    keysToRemove.Add(signalId);
-                }
-                if (pb != null)
-                {
+                    PlacedBracket pb = v.Value;
+                    if (pb == null) { placedBrackets.Remove(v.Key); continue; }
                     Account ba = pb.Account ?? account;
                     var toCancel = new List<Order>();
                     if (pb.SlOrder != null) toCancel.Add(pb.SlOrder);
@@ -1470,11 +1498,13 @@ namespace NinjaTrader.NinjaScript.AddOns
                     // release #31: leg 3's pair too.
                     if (pb.SlOrder3 != null) toCancel.Add(pb.SlOrder3);
                     if (pb.TpOrder3 != null) toCancel.Add(pb.TpOrder3);
+                    bool retired = (toCancel.Count == 0); // nothing resting: the key is stale
                     if (toCancel.Count > 0 && ba != null)
                     {
                         try
                         {
                             ba.Cancel(toCancel);
+                            retired = true;
                             LogInfo("VLTraderTCPClient: bracket legs cancelled after exit (signal_id=" + signalId + ")");
                         }
                         catch (Exception ex)
@@ -1482,9 +1512,9 @@ namespace NinjaTrader.NinjaScript.AddOns
                             LogWarn("VLTraderTCPClient: bracket cancel after exit failed: " + ex.Message);
                         }
                     }
-                    foreach (var k in keysToRemove)
+                    if (retired)
                     {
-                        placedBrackets.Remove(k);
+                        placedBrackets.Remove(v.Key);
                     }
                 }
             }
@@ -2447,10 +2477,16 @@ namespace NinjaTrader.NinjaScript.AddOns
                 string state = e.OrderState.ToString().ToLowerInvariant();
                 string key = orderName.Length > 0 ? orderName : (e.Order.Oco ?? "");
                 if (string.IsNullOrEmpty(key)) return;
+                // bug-hunt #4: de-dupe on (state, cumulative filled) — a second
+                // PartFilled with a LARGER cumulative e.Filled must be SENT (Go's
+                // only cumulative-quantity feed is order_update), not suppressed
+                // as "the same state".
+                string filled = e.Filled.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                string stateKey = state + ":" + filled;
                 lock (signalMapLock)
                 {
-                    if (lastOrderState.TryGetValue(key, out var prev) && prev == state) return;
-                    lastOrderState[key] = state;
+                    if (lastOrderState.TryGetValue(key, out var prev) && prev == stateKey) return;
+                    lastOrderState[key] = stateKey;
                 }
                 string signalId = orderName.Length > 0 ? orderName : (e.Order.Oco ?? "");
                 // REVIEW-SPLIT-2 P2-3: strip the leg suffixes first so an

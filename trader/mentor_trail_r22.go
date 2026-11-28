@@ -9,6 +9,7 @@ import (
 	"time"
 
 	ntwire "vl/provider/ninjatrader"
+	"vl/store"
 	ntTrader "vl/trader/ninjatrader"
 )
 
@@ -30,15 +31,18 @@ import (
 //     the drive runs on closed 1m candles.
 //   - Wick or body: the candle's LOW for a long / HIGH for a short — "đặt ở DƯỚI
 //     ĐÁY cây nến … tới khi nào có một cây nến QUÉT CÁI ĐÁY thì … OUT" [X8
-//     @15:40–17:13]: the low (a wick extreme), not the body. 1 tick BEYOND it
-//     (item-7 ruling), never exactly at it.
+//     @15:40–17:13]: the low (a wick extreme), not the body — the stop sits one
+//     tick BEYOND it (m283 P2: a mere touch is not the break the course means,
+//     D2.4 p1 @08:11–08:24).
 //   - Break-even = the entry: "move the stop up to break-even (10)" — the entry
 //     of 10 [D1.2 p1 @10:31–15:20]. The course is SILENT on ± ticks: the
 //     conservative default here is the entry EXACTLY when it is on the tick grid
 //     (a stop-limit fill always is); an averaged off-grid fill rounds TOWARD
 //     PROFIT so the stop never sits a fraction of a tick on the loss side
 //     (MATH-EXECUTOR P3-1).
-//   - Never widen: "kéo stop loss ra xa" is on the do-not list [D2.3 p1 @18:08]
+
+//   - Never widen: "kéo stop loss ra xa" is on the do-not list [D1.2 p2 @00:08–00:24]
+
 //     — judged here against the BROKER's own stop, not the bot's belief (P2-3).
 
 const (
@@ -99,22 +103,100 @@ func mentorBEStopPrice(side string, entry, tick float64) float64 {
 	return math.Ceil(entry/tick-mentorGridEps) * tick
 }
 
-// mentorCandleTrailStop is the candle trail for ONE closed candle: 1 tick
-// beyond its low (long) / high (short), on the grid and rounded AWAY from the
-// market (long down, short up), so rounding never pulls it inside the rule.
-func mentorCandleTrailStop(side string, h, l, tick float64) float64 {
-	if strings.EqualFold(side, "short") {
-		v := h + tick
-		if tick <= 0 {
-			return v
-		}
-		return math.Ceil(v/tick-mentorGridEps) * tick
+// mentorBEOffsetMaxTicks bounds the be_offset_ticks knob.
+const mentorBEOffsetMaxTicks = 20
+
+// mentorBEOffsetDefaultTicks is the unset default (oct-exact B7): 4 ticks = 1
+// point on MNQ, "10 -> 11 do" [Oct D4.2 @13:00]. Stored 0 is the revert (BE at
+// the entry exactly, today's pre-oct-exact behaviour).
+// A var (not a const) ONLY so the trader test binary can pin the pre-October
+// mechanics at the entry (TestMain sets 0); production never assigns it.
+var mentorBEOffsetDefaultTicks = 4
+
+// mentorLeg1FixedPtsDefault is the unset default of mentor_leg1_fixed_pts
+// (oct-exact D2): a normal PHL/PLH sells leg 1 at +15 points [Oct D4.2 @12:16
+// R14 "bán 15 hay 20 điểm", @14:18 R18]. Stored 0 reverts to ceil(n/2) at +1R.
+// RULING RECORD (review fix, fidelity P2): the video scopes R14/R18 to the "setup gong loi"
+// (hold-profit) trade, and the bot has no separate flag for that setup - the gong-loi trade IS
+// the normal PHL/PLH, so CTO-decisions section D row 2 generalises it to every normal (fork B,
+// no confluence TP) PHL/PLH. R14 gives a RANGE ("15 hay 20 tuy tay", R18 uses 20 with 1 MNQ left):
+// 15 is the CTO's pick inside that 15-20 range, not a number the mentor fixes. n contracts sell
+// n-1 at the partial and leave ONE runner (R18). Knob mentor_leg1_fixed_pts: 20 is the other
+// October value, 0 reverts. October gives no sizing outside the gong-loi setup; whether the
+// generalisation to every PHL/PLH is wanted is an open mentor question.
+// A var ONLY so the trader test binary can pin the pre-October +1R mechanics
+// (TestMain sets 0); production never assigns it.
+var mentorLeg1FixedPtsDefault = 15.0
+
+// mentorLeg1FixedPts reads the knob as stored (nil / out of range -> default),
+// the clamp agrees with mentorTuningResolve.
+func mentorLeg1FixedPts(rc *store.RiskControlConfig) float64 {
+	if rc == nil || rc.MentorTuning == nil || rc.MentorTuning.MentorLeg1FixedPts == nil {
+		return mentorLeg1FixedPtsDefault
 	}
-	v := l - tick
-	if tick <= 0 {
+	if v := *rc.MentorTuning.MentorLeg1FixedPts; v >= 0 && v <= 100 {
 		return v
 	}
-	return math.Floor(v/tick+mentorGridEps) * tick
+	return mentorLeg1FixedPtsDefault
+}
+
+// mentorBEPastEntry moves a break-even price `ticks` ticks past it on the
+// profit side — long up, short down — so the stop sits a little beyond the
+// entry [Oct D4.2 @ 13:00-13:25]. ticks <= 0 (the knob OFF) or an unknown tick
+// returns be untouched, so OFF is byte-for-byte today's behaviour.
+func mentorBEPastEntry(side string, be, tick float64, ticks int) float64 {
+	if ticks <= 0 || tick <= 0 {
+		return be
+	}
+	if strings.EqualFold(side, "short") {
+		return be - float64(ticks)*tick
+	}
+	return be + float64(ticks)*tick
+}
+
+// mentorBEOffsetTicks reads the be_offset_ticks knob as stored (nil or out of
+// range → the October default 4; stored 0 = OFF) without the tuning resolver's counters; the clamp agrees
+// with mentorTuningResolve.
+func mentorBEOffsetTicks(rc *store.RiskControlConfig) int {
+	if rc == nil || rc.MentorTuning == nil || rc.MentorTuning.BEOffsetTicks == nil {
+		return mentorBEOffsetDefaultTicks // oct-exact B7: nil -> 4 (revert: stored 0)
+	}
+	if v := *rc.MentorTuning.BEOffsetTicks; v >= 0 && v <= mentorBEOffsetMaxTicks {
+		return v
+	}
+	return mentorBEOffsetDefaultTicks // out of range -> the default, like the resolver (oct-exact B7)
+}
+
+// mentorBEStop is the production break-even price for a mentor trade: the
+// entry (grid-rounded toward profit by mentorBEStopPrice) plus the knob.
+func (at *AutoTrader) mentorBEStop(side string, entry, tick float64) float64 {
+	return mentorBEPastEntry(side, mentorBEStopPrice(side, entry, tick), tick, mentorBEOffsetTicks(at.mentorRiskControl()))
+}
+
+// mentorSwingBEStop is a swing arm's break-even price: its entry as recorded
+// (unchanged, no grid rounding — today's behaviour) plus the knob.
+func (at *AutoTrader) mentorSwingBEStop(arm mentorLiveArm) float64 {
+	return mentorBEPastEntry(arm.Side, arm.Entry, at.mentorInstrumentTick(), mentorBEOffsetTicks(at.mentorRiskControl()))
+}
+
+// mentorCandleTrailStop is the candle trail for ONE closed candle: one tick
+// BEYOND its low (long) / high (short). The mentor's reason is the candle
+// BREAKING past the prior extreme — "khi nào có một cây nến VƯỢT QUA được đáy
+// cây nến trước đó … nó sẽ đi theo cái hướng mà nó phá" [D2.4 p1 @08:11–08:24,
+// @08:46–08:49] — so a stop AT the low would fire on a mere touch, not a break;
+// "đặt ở DƯỚI đáy cây nến 2 phút đó" [X8 part1 @16:18–16:31]. Rounded AWAY from
+// the market (long down, short up), so rounding never pulls it inside the rule.
+func mentorCandleTrailStop(side string, h, l, tick float64) float64 {
+	if strings.EqualFold(side, "short") {
+		if tick > 0 {
+			return math.Ceil((h+tick)/tick-mentorGridEps) * tick
+		}
+		return h
+	}
+	if tick > 0 {
+		return math.Floor((l-tick)/tick+mentorGridEps) * tick
+	}
+	return l
 }
 
 // mentorPartialTPPrice rounds the ISB candle-3 partial's leg-1 TP to the tick
@@ -179,7 +261,11 @@ var mentorBrokerLegStopRead = func(at *AutoTrader, nt *ntTrader.TCPTrader, side 
 		return 0, mentorBrokerStopUnknown
 	}
 	book, recvAt, ok := mentorStopBook(nt)
-	if !ok || recvAt.IsZero() || time.Since(recvAt) > snapshotMaxAge() {
+	// Freshness is judged on the MENTOR clock (mentorClockNow: wall-clock live, the
+	// replay clock in the full-day harness, which stamps receipts on it) — the same
+	// seam every mentor time gate reads. time.Since here read a replay-stamped book
+	// as years old, so a rebuilt swing's BE (m441) was refused forever.
+	if !ok || recvAt.IsZero() || mentorClockNow().Sub(recvAt) > snapshotMaxAge() {
 		return 0, mentorBrokerStopUnknown
 	}
 	price, found := 0.0, false
@@ -292,7 +378,7 @@ func (at *AutoTrader) mentorJudgeAgainstBroker(nt *ntTrader.TCPTrader, side stri
 //  1. confirmed, BE not armed → the runner's stop goes to break-even; that
 //     candle only arms BE.
 //  2. BE armed → on every closed candle that OPENED after the confirmation
-//     (I6), the runner's stop goes 1 tick beyond that candle's low (long) /
+//     (I6), the runner's stop goes one tick BEYOND that candle's low (long) /
 //     high (short) — only when that is TIGHTER; a lower low (long) / higher
 //     high (short) moves nothing. trail_tf=off stops at stage 1.
 //
@@ -307,14 +393,22 @@ func (at *AutoTrader) mentorExitDriveCandle(nt *ntTrader.TCPTrader, p *mentorLiv
 	if !scaledNow {
 		// stage 0. CX-4 (knob mentor_be_before_partial, default ON —
 		// course-defaults-30): BE at half-way to +1R before the partial
-		// [D1.2 p1 @12:41–13:12]. A 2m entry waits for its 2m candle to close
+		// [D1.2 p1 @12:34–13:12, @15:56–15:59]. A 2m entry waits for its 2m candle to close
 		// (frameOK), like stage 1: until then c is the unfilled trail bar's 0
 		// close, which read as "past half-way" for every short (10-20 20:42 CT,
 		// cf95ee3d: BE sent at "close 0.00", NT8 refused it below the market).
 		if p.TrailTFMin > 1 && !frameOK {
 			return
 		}
+		// c52 W2 B1: leg 1 keeps the LIVE 1:1 stop on every closed candle after
+		// the candle that armed BE — read BEFORE the BE step so the arming
+		// candle only arms BE (the same "BE, THEN live 1:1" order the
+		// non-candle drive uses).
+		wasArmed := pos.ArmedBE
 		at.mentorBEBeforePartialStep(nt, p, c)
+		if wasArmed {
+			at.mentorLeg1RR11Step(nt, p, c)
+		}
 		return
 	}
 	side := pos.Side
@@ -325,7 +419,7 @@ func (at *AutoTrader) mentorExitDriveCandle(nt *ntTrader.TCPTrader, p *mentorLiv
 		if p.TrailTFMin > 1 && !frameOK {
 			return
 		}
-		be := mentorBEStopPrice(side, pos.Entry, tick)
+		be := at.mentorBEStop(side, pos.Entry, tick)
 		// A break-even stop is only a stop while price is on the PROFIT side of
 		// it: with the close back through the entry, a sell stop above (buy
 		// stop below) the market is refused by NT8 and F1 would escalate a
@@ -428,7 +522,7 @@ func (at *AutoTrader) mentorExitDriveCandle(nt *ntTrader.TCPTrader, p *mentorLiv
 		frame = fmt.Sprintf("%dm", p.TrailTFMin)
 		at.mentorCount("trail_candle_moved_2m")
 	}
-	at.logInfof("🧑‍🏫 mentor candle trail: %s runner stop(s) → %.2f — 1 tick beyond the closed %s candle's %s %.2f [R3; D2.4 p1 @07:01; X8 @15:40, @18:02 the frame the entry was read on]",
+	at.logInfof("🧑‍🏫 mentor candle trail: %s runner stop(s) → %.2f — 1 tick beyond the closed %s candle's %s %.2f [R3; D2.4 p1 @08:11; X8 @16:18, @18:02 the frame the entry was read on]",
 		runners[0].SignalID, cand, frame, word, extreme)
 }
 
@@ -488,9 +582,9 @@ func mentorISBMarketableTP(side string, close, tick float64) float64 {
 
 // mentorClampMarketableTP (R-6, fold 2) clamps the marketable limit so it is
 // never a LOSS price: long → ≥ entry + 1 tick; short → ≤ entry − 1 tick
-// [D1.2 p1 @13:31–13:33 "at least tôi phải làm sao cho tôi đừng có bị lỗ"]. A
-// close within 8 ticks of the entry would otherwise book a loss at the candle-3
-// close.
+// [principle D1.2 p1 @13:24–13:33 "at least tôi phải làm sao cho tôi đừng có bị
+// lỗ"; mechanism D1.4 p1 @11:59–13:28]. A close within 8 ticks of the entry
+// would otherwise book a loss at the candle-3 close.
 func mentorClampMarketableTP(side string, want, entry, tick float64) float64 {
 	if tick <= 0 {
 		return want

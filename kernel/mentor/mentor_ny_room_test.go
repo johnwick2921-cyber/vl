@@ -28,7 +28,7 @@ import (
 // MUTANT: eval.go ISB room back on capped.Target → RED (refused "room").
 func TestMentorNYSpentDayISBRoomIsToTheLevel(t *testing.T) {
 	run := func(verdict DayVerdict, capPts float64) (Intent, map[string]int) {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.Exec2mAfter30m = false // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 		cfg.Enabled = true
 		cfg.EMAPeriod34 = 0
@@ -82,7 +82,7 @@ func TestMentorNYSpentDayISBRoomIsToTheLevel(t *testing.T) {
 func TestMentorNYSpentDayBoxRoomIsToTheLevel(t *testing.T) {
 	run := func(verdict DayVerdict, capPts float64) ([]Intent, map[string]int) {
 		e, bars, now := b9BoxFixture(HTF{FourH: TriggerLine{Dir: SideLong, Price: 93}}, verdict)
-		e.Cfg.RoomMultiple = DefaultConfig().RoomMultiple
+		e.Cfg.RoomMultiple = preOctCfg().RoomMultiple
 		e.Cfg.DayGateTargetCapPts = capPts
 		return b9BoxEntries(e.Tick(bars, now)), e.State.Refusals
 	}
@@ -125,7 +125,7 @@ func TestMentorNYSpentDayBoxRoomIsToTheLevel(t *testing.T) {
 func TestMentorNYSpentDayReverseISBRoomIsToTheLevel(t *testing.T) {
 	run := func(verdict DayVerdict, capPts float64) (Intent, map[string]int) {
 		e, bars, now := isbReverseFixture(t)
-		e.Cfg.RoomMultiple = DefaultConfig().RoomMultiple
+		e.Cfg.RoomMultiple = preOctCfg().RoomMultiple
 		e.Cfg.DayGateTargetCapPts = capPts
 		e.State.SeedLevels = []Level{
 			{Key: "K-below", Kind: KindKeyLevel, Price: 90},
@@ -168,7 +168,7 @@ func TestMentorNYSpentDayReverseISBRoomIsToTheLevel(t *testing.T) {
 // MUTANT: drop the spent-day room check at the ISB site → the cap-15 case emits → RED.
 func TestMentorNYSpentDayISBRoomIsTwiceTheCappedTarget(t *testing.T) {
 	run := func(capPts float64) (Intent, map[string]int) {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.Exec2mAfter30m = false // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 		cfg.Enabled = true
 		cfg.EMAPeriod34 = 0

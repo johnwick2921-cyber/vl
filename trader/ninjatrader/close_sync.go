@@ -4,10 +4,12 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
 	"vl/discipline"
+	"vl/internal/ownerpush"
 	"vl/logger"
 	"vl/market"
 	ntwire "vl/provider/ninjatrader"
@@ -50,6 +52,7 @@ func (t *TCPTrader) StartCloseSync(traderID, exchangeID, exchangeType string, st
 				// consumer still drains its channel and closes done after the skip.
 				if p.OrderedOwned {
 					t.MarkCloseConfirmed(p.Symbol, p.PositionSide)
+					t.ForgetSideStopOnClose(p.Symbol, p.PositionSide, p.SignalID, p.Leg) // m440 (N1)
 					continue
 				}
 				t.recordClose(traderID, exchangeID, exchangeType, st, pb, p)
@@ -57,6 +60,7 @@ func (t *TCPTrader) StartCloseSync(traderID, exchangeID, exchangeType string, st
 				// position_close arrived for this trader's bound account (frame path
 				// beats the 30s positions-snapshot heartbeat on a non-active account).
 				t.MarkCloseConfirmed(p.Symbol, p.PositionSide)
+				t.ForgetSideStopOnClose(p.Symbol, p.PositionSide, p.SignalID, p.Leg) // m440 (N1)
 			}
 		})
 		// Rejected exit/flatten watcher. The SIM/broker refused a close (e.g. "no
@@ -69,6 +73,13 @@ func (t *TCPTrader) StartCloseSync(traderID, exchangeID, exchangeType string, st
 		safe.GoNet("nt8-reject-watch", "traderID", func() {
 			for r := range rejects { // P5.4 router-fed (per-symbol)
 				telemetry.IncNT8CloseRejected() // r24: counted, never only a log line
+				// m442 #19/#6: an ops P0 to the alert center + owner push (one per
+				// episode), and the refusal-storm count for this position.
+				if OnCloseRejected != nil {
+					OnCloseRejected(traderID, r)
+				}
+				ownerpush.NoteRefusal(ownerpush.Refusal{Class: ownerpush.ClassCloseRejected, TraderID: traderID,
+					Subject: r.Symbol + " " + r.PositionSide, Detail: r.Reason})
 				logger.Warnf("🚨 NT close REJECTED: %s %s — STILL OPEN in NT8, NOT recording closed (reason: %q, account: %s). Will retry on next decision cycle / reconnect.",
 					r.Symbol, r.PositionSide, r.Reason, r.Account)
 			}
@@ -127,6 +138,10 @@ func (t *TCPTrader) recordClose(
 			exitMs = ts.UTC().UnixMilli()
 		}
 	}
+
+	// m447 (7): the exit's price is judged against the market of its minute -
+	// before any routing, so a close that finds no owner is judged too.
+	t.noteFill("exit", exitFillID(p.Account, symbol, side, p.SignalID, p.Seq, p.ExitTime), symbol, side, p.ExitPrice, exitMs, 0, nil, p.Account, exitFillEvent(p.Account, symbol, side, p.SignalID, p.Seq))
 
 	// OWNER-ROUTING: a position_close routes by SYMBOL to ONE trader's close-sync,
 	// which may NOT own the open row when multiple traders share a symbol — recording
@@ -234,7 +249,12 @@ func (t *TCPTrader) recordClose(
 			// column is non-NULL on every NEW close. The Δ≥$0.50 class-killer
 			// WARN lives inside the stamp. Skipped when the P&L is unknown: the
 			// row stays pnl_corrected NULL = UNRESOLVED.
-			st.StampPnlCorrectedOnClose(owner.ID, realizedPnL, realizedPnL)
+			//
+			// M251-S2: the builder writes realized_pnl = prior booked partial +
+			// this leg, so the stamp must be the TRUE TOTAL, not the leg alone
+			// (a +10 partial then a -20 leg is -10, not -20).
+			total := math.Round((owner.RealizedPnL+realizedPnL)*100) / 100
+			st.StampPnlCorrectedOnClose(owner.ID, total, total)
 		}
 		// WARN (honest-logs 2026-08-19): a position close with realized P&L is
 		// owner-visible truth — must reach the log_events sink + dashboard even
@@ -314,6 +334,8 @@ func (t *TCPTrader) recordCloseOrdered(
 			exitMs = ts.UTC().UnixMilli()
 		}
 	}
+	// m447 (7): same judgment on the ordered-worker path (the production one).
+	t.noteFill("exit", exitFillID(p.Account, symbol, side, p.SignalID, p.Seq, p.ExitTime), symbol, side, p.ExitPrice, exitMs, 0, nil, p.Account, exitFillEvent(p.Account, symbol, side, p.SignalID, p.Seq))
 	reason := strings.ToLower(strings.TrimSpace(p.ExitReason))
 	leg := "exit"
 	if reason == "sl" || reason == "tp" {
@@ -379,6 +401,7 @@ func (t *TCPTrader) recordCloseOrdered(
 		}
 		logger.Errorf("❌ NT8 exit PARKED after busy retries exhausted account=%s signal=%s qty=%.0f exit=%.2f — priced + receipt persisted (applied=false); RetryPendingNT8Exits will apply it",
 			p.Account, p.SignalID, qty, p.ExitPrice)
+		notifyExitUnapplied(traderID, receipt)
 		return
 	}
 	if result.Pending {
@@ -395,6 +418,7 @@ func (t *TCPTrader) recordCloseOrdered(
 		t.mu.Unlock()
 		logger.Warnf("NT8 exit receipt PENDING owned entry evidence account=%s signal=%s qty=%.0f exit=%.2f (retained + price parked for reconcile; will apply when the row catches up)",
 			p.Account, p.SignalID, qty, p.ExitPrice)
+		notifyExitUnapplied(traderID, receipt)
 		return
 	}
 	owner := result.Position
@@ -467,6 +491,11 @@ func (t *TCPTrader) RetryPendingNT8Exits(st *store.Store) {
 // position close (close_sync priced close, reconcile priced/flat close)
 // triggers exactly one post-exit rescan for the OWNING trader. Nil = no-op.
 var OnPositionClosed func(traderID string, positionID int64)
+
+// OnCloseRejected (m442 #19) is the package-level hook fired for every
+// position_close_rejected frame so the trader layer can raise an ops P0 for the
+// OWNING trader. Nil = no-op (log + counter only, as before).
+var OnCloseRejected func(traderID string, r ntwire.PositionCloseRejectedPayload)
 
 // OnPositionLegClosed (B2, BUILD-ALL) is the package-level hook fired with the
 // FULL position_close payload (leg + exit reason) so the mentor exit drive can

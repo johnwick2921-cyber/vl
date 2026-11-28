@@ -98,7 +98,7 @@ type TradeExcursionClose struct {
 	ExitPx       float64
 	ExitTs       int64
 	ExitReason   string
-	StopPxFinal  float64
+	StopPxFinal  *float64 // nil → not written (NULL): the final stop is unknown (no fabricated value)
 	PnlCorrected *float64 // nil → the column stays NULL (A22: never realized_pnl)
 	Ambiguous    bool
 	// Size is the WHOLE position's contract count at close (MATH-EXECUTOR
@@ -195,8 +195,11 @@ func (s *TradeExcursionStore) MarkNoCoverage(id int64) error {
 func (s *TradeExcursionStore) Close(id int64, c TradeExcursionClose) error {
 	up := map[string]any{
 		"exit_px": c.ExitPx, "exit_ts": c.ExitTs, "exit_reason": c.ExitReason,
-		"stop_px_final": c.StopPxFinal, "ambiguous_exit": c.Ambiguous,
-		"updated_at": time.Now(),
+		"ambiguous_exit": c.Ambiguous,
+		"updated_at":     time.Now(),
+	}
+	if c.StopPxFinal != nil { // m425b E1 — unknown stays NULL, never the initial stop
+		up["stop_px_final"] = *c.StopPxFinal
 	}
 	if c.PnlCorrected != nil { // A22 — absent stays NULL, never realized_pnl
 		up["pnl_corrected"] = *c.PnlCorrected

@@ -1,0 +1,10 @@
+{
+  "total_count": 5,
+  "check_runs": [
+    {"id": 100, "name": "Backend Tests", "status": "completed", "conclusion": "failure", "details_url": "https://github.com/example/repo/actions/runs/77/job/100"},
+    {"id": 300, "name": "Backend Tests", "status": "completed", "conclusion": "success", "details_url": "https://github.com/example/repo/actions/runs/77/job/300"},
+    {"id": 101, "name": "Frontend Tests", "status": "completed", "conclusion": "success", "details_url": "https://github.com/example/repo/actions/runs/77/job/101"},
+    {"id": 102, "name": "Go Unit Tests & Coverage", "status": "completed", "conclusion": "success", "details_url": "https://github.com/example/repo/actions/runs/78/job/102"},
+    {"id": 99, "name": "Backend Tests", "status": "completed", "conclusion": "cancelled", "details_url": "https://github.com/example/repo/actions/runs/77/job/99"}
+  ]
+}

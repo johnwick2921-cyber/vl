@@ -8,7 +8,7 @@
 # Modes:
 #   normal    compile every <Src>\*.cs into <Out>\VL.AddOn.dll and print
 #             "VL_ADDON_DLL=<path>" and "VL_ADDON_SHA256=<hex>".
-#   -Probe    compile a trivial source against the full reference set and print
+#   -Probe    compile one small AddOn type against the full reference set and print
 #             "VL_ADDON_PROBE=ok" - used by /api/updates/readiness to prove the
 #             no-SDK path actually works on this box.
 #   -Custom   compile VLCustomBuilder.cs (the C# builder sitting next to this
@@ -43,6 +43,17 @@ $ErrorActionPreference = 'Stop'
 function Fail([string]$msg) {
     Write-Output ("ERROR " + $msg)
     exit 1
+}
+
+# GAP 388 (m385): in NORMAL mode the AddOn's base types come from
+# NinjaTrader.Custom.dll and the csproj reference mirror, BOTH of which live
+# under -CustomDir (Documents\NinjaTrader 8\bin\Custom). Without it the compile
+# runs with no NT8 references and emits hundreds of "type not found" errors
+# (the partner box's first build: 388). Refuse up front with the exact fix
+# instead of compiling blind. -Probe (its caller always passes -CustomDir) and
+# -Custom (fails fast on its own) are not guarded here, only the VL.AddOn build.
+if (-not $Probe -and -not $Custom -and -not $CustomDir) {
+    Fail "-CustomDir is required in normal mode (the Documents\NinjaTrader 8\bin\Custom dir) - pass -CustomDir '<path>' alongside -Src and -Out"
 }
 
 if (-not $NT8Bin) { $NT8Bin = 'C:\Program Files\NinjaTrader 8\bin' }
@@ -222,6 +233,16 @@ if ($CustomDir) {
     Add-Ref (Join-Path $CustomDir 'NinjaTrader.Vendor.dll')
 }
 
+# 2b. NinjaTrader.Core / NinjaTrader.Gui from the INSTALLED NT8 itself. NT8 8.1.9.0
+#     ships a csproj with <ProjectReference> items and no HintPath for them. Add-Ref
+#     is first-wins, so a csproj that names them by HintPath is used unchanged.
+foreach ($n in @('NinjaTrader.Core.dll','NinjaTrader.Gui.dll')) {
+    Add-Ref (Join-Path $NT8Bin $n)
+    if (-not $refPaths.ContainsKey($n.ToLowerInvariant())) {
+        Fail ($n + ' not found: not in NinjaTrader.Custom.csproj and not in ' + $NT8Bin + ' - is NinjaTrader 8 installed there?')
+    }
+}
+
 # 3. Newtonsoft.Json (the dotnet recipe references it; harmless if unused).
 Add-Ref (Join-Path $NT8Bin 'Newtonsoft.Json.dll')
 
@@ -245,7 +266,9 @@ foreach ($key in ($refPaths.Keys | Sort-Object)) {
 $trees = New-Object 'System.Collections.Generic.List[Microsoft.CodeAnalysis.SyntaxTree]'
 
 if ($Probe) {
-    $trees.Add([Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree]::ParseText('public static class __VlAddonProbe { }'))
+    # A type of NinjaTrader.Core, not an empty class: the probe must be red when the real
+    # build would be (on 8.1.9.0, by hand, the empty class said ok and the build failed).
+    $trees.Add([Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree]::ParseText('public class __VlAddonProbe : NinjaTrader.NinjaScript.AddOnBase { public NinjaTrader.Cbi.Account A; }'))
     $asmName = '__VlAddonProbe'
 } else {
     if (-not $Src) { Fail "-Src is required" }

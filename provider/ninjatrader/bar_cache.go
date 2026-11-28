@@ -41,8 +41,12 @@ type BarCache struct {
 	// the new forming one, so it arrives with a smaller timestamp. finalisations
 	// counts those accepted as a close of a bar the ring already holds;
 	// outOfOrderDrops counts every other backwards bar, still refused.
-	finalisations   int64
-	outOfOrderDrops int64
+	partialReplaced int64 // m467: never-finalised live bars a replay replaced
+	// onPartialReplaced (m467) is told (under the cache lock: it must not call back
+	// into the cache) each time a replay replaced never-finalised live bars.
+	onPartialReplaced func(symbol, timeframe string, n int)
+	finalisations     int64
+	outOfOrderDrops   int64
 	// BAR-SOURCE WAVE: per key, whether a live bar has been seen this process
 	// (the scale-mismatch check runs once, on the first), and every mismatch
 	// detected, for the boot line.
@@ -66,6 +70,10 @@ type BarCache struct {
 	// bars (bar_overlap_verdict.go) — agreed sets the verdict, disagreed leaves
 	// the key armed. Read via OverlapVerdictCounts.
 	overlapAgreed, overlapDisagreed int64
+	// overlapDisagreedBySym is the same disagreeing count kept PER SYMBOL (m438,
+	// #53): the owner push for one symbol's unfilled hole must not be steered by
+	// another symbol's scale story. Read via OverlapDisagreedFor.
+	overlapDisagreedBySym map[string]int64
 	// overlapJudgeUntil — per SYMBOL, until when a replay is judged by
 	// same-minute overlap: armed only by the gap-backfill re-request
 	// (armOverlapVerdict), so every other replay keeps the first-live-bar rule.
@@ -211,6 +219,23 @@ func (c *BarCache) Finalisations() int64 {
 
 // OutOfOrderDrops reports backwards bars refused because the ring has never
 // held their timestamp — a genuine misordering, not a close.
+// OnPartialReplaced installs the m467 replace observer (the log line + counter
+// the repair driver owns). Runs under the cache lock: it must not call back in.
+func (c *BarCache) OnPartialReplaced(fn func(symbol, timeframe string, n int)) {
+	c.mu.Lock()
+	c.onPartialReplaced = fn
+	c.mu.Unlock()
+}
+
+// PartialsReplacedByReplay (m467) is how many ring bars a replay REPLACED: a
+// live bar the AddOn never finalised, in a period that had closed, overwritten
+// by NT8's own bar for the same period on the same price scale.
+func (c *BarCache) PartialsReplacedByReplay() int64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.partialReplaced
+}
+
 func (c *BarCache) OutOfOrderDrops() int64 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -271,6 +296,22 @@ func openStampBars(bars []Bar, timeframe string) []Bar {
 // without it the DB rows landed at T+1m (2499/2500 common-window mismatches).
 func OpenStampBars(bars []Bar, timeframe string) []Bar {
 	return openStampBars(bars, timeframe)
+}
+
+// reanchorStubBars shifts the NT8-native 2h/4h/6h/8h/12h 16:00-close stub +1h
+// in place (#34, m220 DS-104 — extends m169 DS-108's 2h/4h ingress). It runs
+// at WIRE INGRESS on OPEN-stamped bars, so the ring and the store agree on ONE
+// stamp: before this the ring kept NT8's 12:00/14:00 while the persister wrote
+// 13:00/15:00 — the chart splice showed two candles for one stub and boot
+// backfill doubled it. The persister and backfill read the already-re-anchored
+// ring.
+func reanchorStubBars(tf string, bars []Bar) []Bar {
+	for i := range bars {
+		if o := kernel.ReanchorCMEStub(tf, bars[i].T); o != bars[i].T {
+			bars[i].T = o
+		}
+	}
+	return bars
 }
 
 // timeframeMs mirrors the coded TF vocabulary (bars_market_bridge.go keeps the
@@ -334,6 +375,7 @@ func (c *BarCache) SeedHistorical(symbol, timeframe string, bars []Bar) {
 	}
 	bars, bad := dropPlaceholderBars(bars)
 	bars = openStampBars(bars, timeframe)         // close-stamp → OPEN-stamp, once, for every reader
+	bars = reanchorStubBars(timeframe, bars)      // #34: 16:00-close stub +1h at ingress
 	bars = stampSource(bars, BarSourceHistorical) // BAR-SOURCE WAVE: a replay is a replay
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -383,7 +425,13 @@ func (c *BarCache) SeedHistorical(symbol, timeframe string, bars []Bar) {
 	// A REPLAY NEVER OVERWRITES A LIVE BAR (bar-source wave). mergeBarsByTime
 	// said "incoming is freshest"; for a replay landing on minutes that already
 	// traded live, that put a back-adjusted bar over a real one.
-	merged := mergeSeedKeepingLive(existing, bars)
+	merged, replaced := mergeSeedKeepingFinal(existing, bars)
+	if replaced > 0 {
+		c.partialReplaced += int64(replaced)
+		if c.onPartialReplaced != nil {
+			c.onPartialReplaced(symbol, timeframe, replaced)
+		}
+	}
 	if len(merged) > c.maxBars {
 		merged = merged[len(merged)-c.maxBars:]
 	}
@@ -406,6 +454,10 @@ func (c *BarCache) SeedHistorical(symbol, timeframe string, bars []Bar) {
 			c.overlapAgreed++
 		} else {
 			c.overlapDisagreed++
+			if c.overlapDisagreedBySym == nil {
+				c.overlapDisagreedBySym = make(map[string]int64)
+			}
+			c.overlapDisagreedBySym[strings.ToUpper(symbol)]++
 		}
 	}
 }
@@ -462,8 +514,9 @@ func (c *BarCache) Upsert(symbol, timeframe string, bars []Bar) {
 		return
 	}
 	bars, bad := dropPlaceholderBars(bars)
-	bars = openStampBars(bars, timeframe)   // close-stamp → OPEN-stamp, once, for every reader
-	bars = stampSource(bars, BarSourceLive) // BAR-SOURCE WAVE: the minute as it traded
+	bars = openStampBars(bars, timeframe)    // close-stamp → OPEN-stamp, once, for every reader
+	bars = reanchorStubBars(timeframe, bars) // #34: 16:00-close stub +1h at ingress
+	bars = stampSource(bars, BarSourceLive)  // BAR-SOURCE WAVE: the minute as it traded
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.dropped += int64(bad)

@@ -46,7 +46,24 @@ pass=0
 ok()  { pass=$((pass+1)); echo "PASS $1"; }
 bad() { fail=$((fail+1)); echo "FAIL $1"; }
 
-sql() { sqlite3 -readonly "file:$DB?mode=ro" "$1" 2>/dev/null; }
+# m385 (b): the sqlite3 CLI is often absent on a fresh box — fall back to
+# python3's stdlib sqlite3 (read-only) with sqlite3's pipe-separated format.
+sql() {
+  if command -v sqlite3 >/dev/null 2>&1; then
+    sqlite3 -readonly "file:$DB?mode=ro" "$1" 2>/dev/null
+    return
+  fi
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c '
+import sqlite3, sys
+con = sqlite3.connect("file:'"$DB"'?mode=ro", uri=True)
+for row in con.execute(sys.argv[1]):
+    print("|".join("" if v is None else str(v) for v in row))
+' "$1" 2>/dev/null
+    return
+  fi
+  return 1
+}
 
 # ---------------------------------------------------------------------------
 # 1. stop-entry (attempted-entry) guard — the boot line reads the SAME
@@ -84,7 +101,7 @@ check_retention() {
 #    a secret ≥24 chars that is NOT the shipped default.
 # ---------------------------------------------------------------------------
 check_jwt() {
-  grep -q '🔑 JWT secret configured' "$LOG" 2>/dev/null || { bad "JWT boot line absent"; return; }
+  grep -q '🔑 JWT secret: configured (custom)' "$LOG" 2>/dev/null || { bad "JWT boot line absent"; return; }
   local v
   v=$(grep -E '^JWT_SECRET=' "$VL_ENV" 2>/dev/null | cut -d= -f2-)
   if [ -z "$v" ]; then bad "JWT_SECRET unset in .env (default-jwt-secret in force)"; return; fi
@@ -255,7 +272,7 @@ selfcheck() {
   done <<'NEEDLES'
 🎯 stop-entry:|trader/*.go
 🧹 retention:|main.go internal/retention/*.go
-🔑 JWT secret configured|main.go
+🔑 JWT secret: configured (custom)|main.go
 transport via NT_TRANSPORT env|trader/*.go
 ⚠️ transport:|trader/ninjatrader/*.go
 🧠 planner call (reasoning=|trader/*.go
@@ -279,7 +296,10 @@ if [ -z "$LOG" ] || [ ! -r "$LOG" ]; then
   exit 2
 fi
 echo "== postboot-check against $LOG"
-for t in sqlite3 strings python3 git; do command -v "$t" >/dev/null || echo "WARN $t missing — related checks will FAIL"; done
+for t in strings git; do command -v "$t" >/dev/null || echo "WARN $t missing — related checks will FAIL"; done
+if ! command -v sqlite3 >/dev/null 2>&1 && ! command -v python3 >/dev/null 2>&1; then
+  echo "WARN sqlite3 AND python3 missing — DB checks will FAIL (python3 is the sqlite3 fallback)"
+fi
 
 check_stop_entry
 check_retention

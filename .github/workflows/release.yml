@@ -28,6 +28,11 @@ on:
         description: 'optional 40-hex sha of the last released commit to prove rollback against (default: previous v* tag)'
         required: false
         default: ''
+      gate_only:
+        description: 'run ONLY the quality gate (no build, no signing, no release) — proves the gate on an existing tag'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -39,6 +44,45 @@ env:
   RELEASE_REPO: johnwick2921-cyber/vl
 
 jobs:
+  # m468 Q5 — the QUALITY GATE. A tag is released only after the test suite
+  # passed on that exact code: the required checks are read by NAME. Backend
+  # Tests and Frontend Tests must be green on the tagged commit ITSELF (the
+  # tag is pushed while they are still running, so nothing stands in for
+  # them); only the slow Go Unit Tests & Coverage may be answered by the PR
+  # head when its tree is identical. It waits up to 5 hours for a suite still
+  # running (deploy/release/quality-gate.sh). Born from #623, published at
+  # 08:31 UTC while the suite finished at 11:26 UTC.
+  # It reads checks only, so its token is read-only. It has no if: — it runs
+  # on every tag push and every dispatch, gate_only included.
+  quality-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 310
+    permissions:
+      contents: read
+      checks: read
+      actions: read
+      pull-requests: read
+    steps:
+      # The gate SCRIPT comes from the commit this workflow runs from (the tag
+      # itself on a tag push), so a gate_only dispatch can judge an OLD tag cut
+      # before the script existed. The tagged commit is only READ, by sha;
+      # full history brings every tag and the merge's second parent.
+      - name: Check out the gate (full history and tags)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Require the test suite green on the tagged code
+        env:
+          # The tag is USER-INFLUENCED: it rides env:, never a run: body.
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          case "$TAG" in v*) : ;; *) echo "REFUSED: '$TAG' is not a v* tag"; exit 1 ;; esac
+          SHA="$(git rev-parse --verify "refs/tags/${TAG}^{commit}")"
+          GATE_TAG="$TAG" bash deploy/release/quality-gate.sh "$SHA"
+
   # A rollback pair is advertised tested ONLY when this job has actually done
   # it: old creates the DB, new migrates it forward, and then OLD BOOTS THE
   # MIGRATED DB — the step nobody runs, and the one that fails at the moment a
@@ -46,6 +90,9 @@ jobs:
   # broker, and the verdict is read off the DATABASE rather than the process
   # (with no NT8 a binary is not expected to stay up).
   dbcompat:
+    # gate_only runs the quality gate and nothing else. Both spellings are
+    # checked (boolean input and its string form) so neither can slip through.
+    if: ${{ inputs.gate_only != true && github.event.inputs.gate_only != 'true' }}
     runs-on: ubuntu-latest
     outputs:
       rollback_pairs: ${{ steps.pairs.outputs.json }}
@@ -91,7 +138,10 @@ jobs:
           echo "json=[{\"to_release\":\"${OLD}\",\"tested\":${tested}}]" >> "$GITHUB_OUTPUT"
 
   release:
-    needs: [dbcompat]
+    # No release unless the quality gate passed; a gate_only dispatch never
+    # reaches this job (its own if: and the skipped dbcompat both stop it).
+    needs: [dbcompat, quality-gate]
+    if: ${{ inputs.gate_only != true && github.event.inputs.gate_only != 'true' }}
     runs-on: ubuntu-latest
     # The protected Environment carries the owner as a REQUIRED REVIEWER and
     # holds the signing key. No approval, no release, no signature.

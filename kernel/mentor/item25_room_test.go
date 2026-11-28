@@ -17,7 +17,7 @@ import (
 // 2R emits NO intent and counts "room" = 1. Mutant: delete the ISB room check
 // in eval.go → RED (the ISB emits).
 func TestISBRoomRuleRefused(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Exec2mAfter30m = false // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 	cfg.Enabled = true
 	cfg.EMAPeriod34 = 0
@@ -61,7 +61,7 @@ func TestISBRoomRuleRefused(t *testing.T) {
 // Mutant: compare the 1R target against 2R (the pre-fold rule) → the swing is
 // refused → RED.
 func TestSwingRejectRoomRule(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Exec2mAfter30m = false // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 	cfg.Enabled = true
 	cur := []market.Kline{

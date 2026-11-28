@@ -19,6 +19,7 @@ import (
 	"vl/config"
 	"vl/crypto"
 	"vl/expectancy"
+	"vl/internal/ownerpush"
 	"vl/internal/retention"
 	"vl/kernel"
 	"vl/logger"
@@ -83,6 +84,10 @@ func main() {
 	// env a SYSTEM unit lacks. Report reachability once at boot (never fatal).
 	logger.Info("friends control: systemctl --user reachable " + api.FriendControlSelfCheck())
 
+	// m386: the Friends page is OFF unless VL_FRIENDS_PAGE=1. The boot line reads
+	// the live flag so a box can be told at a glance whether the surface exists.
+	logger.Infof("👥 friends page: %s (VL_FRIENDS_PAGE)", friendsPageWord(cfg.FriendsPage))
+
 	// Initialize encryption service BEFORE database (so EncryptedString can decrypt on read)
 	logger.Info("🔐 Initializing encryption service...")
 	cryptoService, err := crypto.NewCryptoService()
@@ -102,6 +107,10 @@ func main() {
 	// auto-start inside LoadTradersFromStore) so every entry gate reads the
 	// hold file the CLI and the updater write.
 	trader.SetMaintenanceDataDir(resolveMaintenanceDataDir(cfg.DBPath))
+	// m451: the fill_price strikes (and the owner's acknowledgement) are kept in a
+	// small atomic file beside the DB so a kill -9 deploy does not lift a standing
+	// pause. Read at the data-truth boot wiring (trader.RegisterFillPrice).
+	trader.SetFillPriceStatePath(cfg.DBPath + ".fillprice.json")
 	// Ensure data directory exists (for SQLite)
 	if cfg.DBType == "sqlite" {
 		if dir := filepath.Dir(cfg.DBPath); dir != "." {
@@ -410,6 +419,27 @@ func main() {
 		}
 	})
 
+	// m433 (release #52) — persist the AddOn's last positions frame per account
+	// so the installation gate can quote "the last broker answer before the link
+	// went quiet" after a restart with the broker connection down. Evidence for
+	// one gate rule only; a failed write never costs the wire its cache.
+	ntTrader.SetPositionsSink(func(account string, openCount int) {
+		if err := st.NTPositionsLast().Upsert(account, openCount, time.Now().UnixMilli()); err != nil {
+			logger.Warnf("📇 positions: persist failed (live cache still served): %v", err)
+		}
+	})
+
+	// m471 L3-4: the owner-push channel starts BEFORE the traders load. A P0
+	// raised while they load - a trader refused at boot because another one
+	// already owns its account (boot_duplicate_symbol_account), a panic at
+	// start - was pushed into a channel that did not exist yet and was lost.
+	// The boot message itself is still sent below, once the rev is read.
+	// A friend instance never starts it (and ownerpush refuses it independently).
+	var ownerPushBootInfo ownerpush.BootInfo
+	if !cfg.IsFriendInstance() {
+		ownerPushBootInfo = ownerpush.Start(func(text string) error { return telegram.NotifyOwner(st, text) }, cfg.DBPath+".ownerpush.json")
+		logger.Infof("📣 owner push: ops alerts (feed down/back, trader down, protection, unfillable bar hole, refused exits/stops, a trader refused at boot, boot) -> the owner's bound Telegram chat · outbound only · %s · deduped per episode · failed sends retried with backoff · %s · no-op when no chat is bound", ownerpush.Limits(), ownerpush.OutagePolicy())
+	}
 	if err := traderManager.LoadTradersFromStore(st); err != nil {
 		logger.Fatalf("❌ Failed to load traders: %v", err)
 	}
@@ -802,6 +832,10 @@ func main() {
 	// DESIGN: a resolved "entry-oco=own" here would be a Go constant claiming
 	// the AddOn's behaviour (A11/A24).
 	logger.Infof("🧷 %s", trader.BracketsBootLine(nil, false, "", 0))
+	// LOOK TWICE (2026-11-24) — READ from PROTECTION_CONFIRM_MS.
+	logger.Infof("🧷 %s", trader.ProtectionConfirmBootLine())
+	// OWN REVERSE (look twice C) — READ from OWN_REVERSE.
+	logger.Infof("🔁 %s", trader.OwnReverseBootLine())
 	logger.Infof("🎛 %s", kernel.EntryLawBootLedger(nil)) // P1.4 (ledger-close 2026-08-19) — clock-guard block: live host-RTC drift,
 	// guard-timer freshness, last resync/check state. Log-only, best-effort.
 	kernel.LogClockGuardBoot()
@@ -856,6 +890,22 @@ func main() {
 	// never started, so a leaked owner token in a friend .env cannot post.
 	if !cfg.IsFriendInstance() {
 		safe.GoNet("telegram-bot", "", func() { telegram.Start(cfg, st, telegramReloadCh) })
+		// m432 (release #52): ops P0 alerts that matter while the bot cannot
+		// trade (feed down, trader down, unprotected position, an unfillable
+		// bar hole) also reach the owner's bound chat — OUTBOUND text only,
+		// deduped + rate-limited + async (internal/ownerpush). A friend
+		// instance never gets here (and ownerpush refuses it independently).
+		// m442: the sender RETURNS its outcome (a failed send is retried, not lost),
+		// held + deduped state survives a restart (file beside the DB), and the
+		// owner is told when the bot starts (rev + how the last process ended).
+		// m471: the channel itself is started BEFORE the traders load (see
+		// ownerPushBootInfo above); only the boot message waits for this point.
+		bootKey, bootText := ownerpush.BootMessage(integrity.Revision, ownerPushBootInfo, integrity.Refused, time.Now())
+		ownerpush.Push(bootKey, bootText)
+		// m448 (release #54): the nightly data report rides the same owner-push
+		// channel, once per CME session day after the 16:00 CT close.
+		startNightlyDataReport(cfg.DBPath, st, traderManager)
+		logger.Info("📊 nightly data report: once per CME session day at 16:10 CT -> the owner's bound Telegram chat · why no trade per trader (mentor funnel / AI cycle failures) first, then bars expected vs stored, holes, feed down, drops, trades+P&L, refusals, backup restore test · every figure read, n/a when unknown")
 	}
 
 	// Wait for interrupt signal
@@ -866,6 +916,7 @@ func main() {
 	logger.Info("📌 Tip: Use Ctrl+C to stop the system")
 
 	<-quit
+	ownerpush.MarkCleanShutdown() // m442: the next boot push says "stopped cleanly", not "died"
 	logger.Info("📴 Shutdown signal received, closing system...")
 
 	if err := server.Shutdown(); err != nil {
@@ -972,6 +1023,16 @@ func friendHardGuarantees(cfg *config.Config, ntConnectKey string) string {
 // live config / env, never a literal (boot lines are READ, class 45).
 func friendBootLine(name, webHost string, webPort int, ntAddr string) string {
 	return fmt.Sprintf("👥 friend instance %s · web %s:%d · nt %s", name, webHost, webPort, ntAddr)
+}
+
+// friendsPageWord renders the m386 boot-line word ("on"/"off") for the
+// VL_FRIENDS_PAGE flag — one place, so the boot line and any future reader
+// agree on the wording.
+func friendsPageWord(enabled bool) string {
+	if enabled {
+		return "on"
+	}
+	return "off"
 }
 
 // totalUnrecomputable sums the three-state backfill's reason buckets. It is a

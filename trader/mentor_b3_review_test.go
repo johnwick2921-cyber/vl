@@ -14,8 +14,9 @@ import (
 // P0: with an ACTIVE AI plan + one planner row + one mentor row, only the mentor
 //     row is placed (the planner row stays unplaced, fail-closed).
 // N4: EOD flat keeps a SWING4H mentor arm (and position) — only intraday rows die.
-// N5: a mentor arm waives ONLY the lunch / first-5m bands — red-news, the breaker,
-//     the cap, force-flat, outside-session all still refuse.
+// N5: a mentor arm waives the day-plan session LIST (lunch / first-5m / the
+//     outside-session + sessions_enabled / registry / override + trade cap
+//     family, per m235); red-news, the breaker and force-flat still refuse.
 // N6: a mentor arm is exempt from the per-session last-entry cutoff; the only hard
 //     cutoff is the CME daily halt at 15:45 CT.
 // N15: EOD flat still runs with mentor mode ON and the day plan OFF.
@@ -76,19 +77,29 @@ func TestB3MentorPassRefusesPlannerRow(t *testing.T) {
 	}
 }
 
-// ── N5: mentorWaivesSessionBand — ONLY lunch / first-5m. ──────────────────────
-func TestB3MentorWaivesOnlyBandReasons(t *testing.T) {
+// ── N5 + m235: mentorWaivesSessionBand — the day-plan session LIST family. ──
+//
+// m235 (owner #45): the waiver grew from lunch / first-5m to the WHOLE session
+// LIST (outside-session, sessions_enabled / registry / override, trade cap) —
+// the mentor's own window + news gates govern at authoring. KEPT as mentor
+// safeties: the red-news T1 blackout, the consecutive-loss breaker and the
+// force-flat windows.
+func TestMentorWaivesSessionBandReasons(t *testing.T) {
 	cases := []struct {
 		name  string
 		risk  sessionRiskVerdict
 		waive bool
 	}{
-		{"lunch", sessionRiskVerdict{Refuse: true, Class: "no_trade_band", Reason: "lunch no-trade window (12:00-13:30)"}, true},
-		{"first5m", sessionRiskVerdict{Refuse: true, Class: "no_trade_band", Reason: "TEST first-5m no-trade window"}, true},
-		{"red_news", sessionRiskVerdict{Refuse: true, Class: "no_trade_band", Reason: "🔴 red-news blackout: FOMC"}, false},
-		{"consecutive_loss", sessionRiskVerdict{Refuse: true, Class: "consecutive_loss", Reason: "consecutive losses"}, false},
-		{"force_flat", sessionRiskVerdict{Refuse: true, Class: "force_flat_window", Reason: "force-flat window"}, false},
-		{"outside_session", sessionRiskVerdict{Refuse: true, Class: "no_trade_band", Reason: "outside all session windows"}, false},
+		{"lunch", sessionRiskVerdict{Refuse: true, Class: "no_trade_band", Reason: "no_trade_band: lunch no-trade window (12:00-13:30 CT)"}, true},
+		{"first5m", sessionRiskVerdict{Refuse: true, Class: "no_trade_band", Reason: "no_trade_band: TEST first-5m no-trade window"}, true},
+		{"outside_session", sessionRiskVerdict{Refuse: true, Class: "no_trade_band", Reason: "no_trade_band: outside all session windows (overnight/interim)"}, true},
+		{"sessions_disabled", sessionRiskVerdict{Refuse: true, Class: "no_trade_band", Reason: "no_trade_band: LONDON not in this strategy's sessions_enabled"}, true},
+		{"registry_off", sessionRiskVerdict{Refuse: true, Class: "no_trade_band", Reason: "no_trade_band: LONDON not enabled in the session registry"}, true},
+		{"strategy_off", sessionRiskVerdict{Refuse: true, Class: "no_trade_band", Reason: "no_trade_band: LONDON switched off for this strategy"}, true},
+		{"trade_cap", sessionRiskVerdict{Refuse: true, Class: "no_trade_band", Reason: "no_trade_band: NY trade cap reached (3/3 this session)"}, true},
+		{"red_news", sessionRiskVerdict{Refuse: true, Class: "no_trade_band", Reason: "no_trade_band: 🔴 red-news blackout: FOMC"}, false},
+		{"consecutive_loss", sessionRiskVerdict{Refuse: true, Class: "consecutive_loss", Reason: "consecutive_loss_halt: 3 consecutive losses"}, false},
+		{"force_flat", sessionRiskVerdict{Refuse: true, Class: "force_flat_window", Reason: "force_flat_window: T1 force-flat window"}, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

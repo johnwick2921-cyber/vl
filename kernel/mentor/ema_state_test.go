@@ -10,7 +10,7 @@ import (
 // never stick). After a full recorded day, the state must hold at most two
 // EMA touch keys and at most two EMA ISB-only keys.
 func TestEMAStateKeysStayStable(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	e := New(cfg)
 	bars := loadFixture(t, "mnq_1m_2026-09-15_rth", "1m")

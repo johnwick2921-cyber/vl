@@ -47,6 +47,9 @@ func wireFuturesBarsProvider(server *ntwire.TCPServer) {
 		return server.BarCache().LastLiveReceipt(symbol, timeframe)
 	}
 	kernel.StartClockStepSampler()
+	// m445: from here the bot reads LIVE NT8 bars, so the data-integrity gate
+	// applies (bar_integrity.go). Last, after the provider is installed.
+	integrityArmed.Store(true)
 }
 
 // barsFromCache is the production path, extracted from the closure above so a

@@ -5,8 +5,10 @@ import (
 	"time"
 
 	"strings"
+	"vl/internal/ownerpush"
 	"vl/kernel"
 	"vl/market"
+	"vl/store"
 	"vl/telemetry"
 )
 
@@ -36,6 +38,25 @@ func intradeFeedAlertAfter() time.Duration {
 	return time.Duration(kernel.LoadFeedPolicy().InPositionAlertMs) * time.Millisecond
 }
 
+// FeedDownAfter is the exported flat-state feed threshold (B6: /api/health
+// feed_stale reuses the SAME constant the FEED DOWN alert uses).
+func FeedDownAfter() time.Duration { return feedDownAfter() }
+
+// ClampFeedGap (m420b/B5) returns the feed-gap start and age: the later of the
+// newest bar's stamp and the start of the current CME open span, so time while
+// the market was closed is never counted. Closed at now: age 0.
+func ClampFeedGap(now time.Time, newestStamp time.Time) (gapStart time.Time, age time.Duration) {
+	gapStart = newestStamp
+	if span := kernel.CMEOpenSpanStart(now); span.After(gapStart) {
+		gapStart = span
+	}
+	age = now.Sub(gapStart)
+	if age < 0 {
+		age = 0
+	}
+	return gapStart, age
+}
+
 // holdingOpenPosition reports whether this trader has any OPEN position row.
 // Deliberately NOT gated on day_plan (unlike skipWhileOpen): the tightened
 // in-position feed alert protects every held futures trade.
@@ -61,13 +82,93 @@ func (at *AutoTrader) feedNewestBarAge(now time.Time) (time.Duration, bool) {
 	return time.Duration(now.UnixMilli()-newestStamp) * time.Millisecond, true
 }
 
+// ── FEED-LAG ALARM (m134 DS-108 (c)) ────────────────────────────────────────
+//
+// The hard FEED DOWN (checkFeedDown) fires at feedDownAfter() — the ONE feed
+// policy's flat threshold, default 600 s. The soft alarm band is the 100 s
+// window JUST UNDER that hard line (m169: derived, was hard-coded 500–700 s
+// and overlapped FEED DOWN above 600 s, firing a duplicate). A lag in that
+// band that PERSISTS for 3 minutes is the soft, loud early warning: one WARN
+// per episode plus a dashboard line naming the fix. It sits on the 60 s
+// monitor beat (monitorTick), independent of the decision cycle, so a
+// late-but-not-dead feed is announced instead of silently chugging on stale
+// bars (the ~10-min lag that used to be silent). While a position is open the
+// hard FEED DOWN tightens to INTRADE_FEED_ALERT_S (120 s), far below this band,
+// so the soft alarm is a FLAT-state warning by construction.
+
+const feedLagSustain = 3 * time.Minute
+
+// feedLagBandLow / feedLagBandHigh bound the soft alarm BELOW the hard FEED
+// DOWN, read from the ONE feed policy so a threshold change moves the band
+// with it (m169 DS-108 item 3).
+func feedLagBandLow() time.Duration  { return feedDownAfter() - 100*time.Second }
+func feedLagBandHigh() time.Duration { return feedDownAfter() }
+
+// feedLagAlarmTick advances the feed-lag alarm episode (one beat).
+func (at *AutoTrader) feedLagAlarmTick(now time.Time) {
+	if at.config.Exchange != "ninjatrader" || !kernel.IsCMEOpen(now) {
+		at.feedLagMu.Lock()
+		at.feedLagEnteredAt, at.feedLagSaid, at.feedLagActive = time.Time{}, false, false
+		at.feedLagMu.Unlock()
+		return
+	}
+	age, haveBars := at.feedNewestBarAge(now)
+	at.feedLagMu.Lock()
+	inBand := haveBars && age >= feedLagBandLow() && age <= feedLagBandHigh()
+	if !inBand {
+		if at.feedLagActive || at.feedLagSaid {
+			// recovered (below the band) or crossed into the hard
+			// FEED DOWN (age > feedDownAfter()): the episode is
+			// over; a NEW one re-arms.
+			at.feedLagEnteredAt, at.feedLagSaid, at.feedLagActive = time.Time{}, false, false
+		}
+		at.feedLagMu.Unlock()
+		return
+	}
+	if at.feedLagEnteredAt.IsZero() {
+		at.feedLagEnteredAt = now
+	}
+	at.feedLagActive = true
+	fire := !at.feedLagSaid && now.Sub(at.feedLagEnteredAt) >= feedLagSustain
+	if fire {
+		at.feedLagSaid = true
+	}
+	ageRounded := age.Round(time.Second)
+	at.feedLagMu.Unlock()
+	if fire {
+		at.logWarnf("📉 NinjaTrader bars ~10 min late — restart NinjaTrader (newest bar age %s, held > %s)",
+			ageRounded, feedLagSustain.Round(time.Second))
+	}
+}
+
+// feedLagActiveForDesk reports whether the soft lag band (just under FEED DOWN)
+// is active right now, so the FEED dashboard line names the fix.
+func (at *AutoTrader) feedLagActiveForDesk() bool {
+	at.feedLagMu.Lock()
+	defer at.feedLagMu.Unlock()
+	return at.feedLagActive
+}
+
 // checkFeedDown (3.1) fires a P0 alert + CRITICAL log when no bar has arrived
 // for >10 min while the CME session is open. P0 renders as the persistent
 // dashboard banner (in-app only — the owner's no-external-push rule). Deduped
 // per gap: the event id carries the gap's start bucket, so one outage = one
 // alert, and a NEW outage alerts again.
 func (at *AutoTrader) checkFeedDown(now time.Time) {
-	if at.config.Exchange != "ninjatrader" || !kernel.IsCMEOpen(now) {
+	if at.config.Exchange != "ninjatrader" {
+		return
+	}
+	if !kernel.IsCMEOpen(now) {
+		// The market closed under the episode: not a recovery, so no "feed back"
+		// message — a reopen with a still-dead feed is a NEW episode (its own id).
+		// m467: the spell's START is kept (feedDownSince) and the closed episode
+		// remembered, so the BACK after the reopen says how long the bot was blind.
+		at.feedEpisodeMu.Lock()
+		if at.feedDownEpisode != "" {
+			at.feedDownLastEpisode = at.feedDownEpisode
+		}
+		at.feedEpisodeMu.Unlock()
+		at.setFeedDownEpisode("")
 		return
 	}
 	// IN-POSITION CONTRACT: liveness gets STRICTER while holding — the normal
@@ -78,12 +179,22 @@ func (at *AutoTrader) checkFeedDown(now time.Time) {
 		threshold = intradeFeedAlertAfter()
 	}
 	age, haveBars := at.feedNewestBarAge(now)
-	if haveBars && age <= threshold {
-		return
+	var gapStart time.Time
+	if haveBars {
+		// m420b/B5: clamp to the start of the current CME open span.
+		gapStart, age = ClampFeedGap(now, now.Add(-age))
+		if age <= threshold {
+			// m432: a bar younger than the TIGHTEST threshold ends an episode
+			// (a position closing mid-outage raises the threshold to 10 min;
+			// that must not read as the feed coming back).
+			if age <= feedBackBelow() {
+				at.noteFeedBackAt(age, now)
+			}
+			return
+		}
 	}
-	gapStart := now.Add(-age)
 	if !haveBars {
-		gapStart = at.startTime // never had a bar this process — gap since boot
+		gapStart, _ = ClampFeedGap(now, at.startTime) // never had a bar this process — gap since boot
 		if now.Sub(gapStart) <= threshold {
 			return // give a fresh boot the same grace as a gap
 		}
@@ -107,8 +218,8 @@ func (at *AutoTrader) checkFeedDown(now time.Time) {
 		return
 	}
 	title := "NT8 bar feed DOWN"
-	body := fmt.Sprintf("No bar frames for %s while the market is open. Nothing can trade and the planner will refuse to run until bars return. Start/check NinjaTrader on Windows.",
-		now.Sub(gapStart).Round(time.Minute))
+	body := fmt.Sprintf("No bar frames since %s (%s) while CME is open. Nothing can trade and the planner will refuse to run until bars return. In NinjaTrader on Windows, connect NinjaTrader's data connection (Connections menu -> your Tradovate connection) and check it shows Connected.",
+		kernel.ClockCT(gapStart), now.Sub(gapStart).Round(time.Minute))
 	if holding {
 		title = "⚠ NO DATA WHILE POSITION OPEN — check NT8"
 		body = fmt.Sprintf("A position is OPEN and no bar frame has arrived for %s (in-position threshold %s). The NT8-side OCO bracket still protects the trade, but the bot is price-blind: check NinjaTrader on Windows now.",
@@ -116,9 +227,113 @@ func (at *AutoTrader) checkFeedDown(now time.Time) {
 	}
 	at.logErrorf("🚨 FEED DOWN: no NT8 bar for %s while CME is OPEN (newest-bar stamp age; threshold %s; holding=%v). Charts, detectors and the planner are all blind. Check NT8 on the Windows side — the AddOn reconnects on its own.",
 		now.Sub(gapStart).Round(time.Second), threshold, holding)
-	at.emitAlert("P0", "feed-down",
-		fmt.Sprintf("feeddown:%s", gapStart.UTC().Format("2006-01-02T15:04")),
-		title, body)
+	episode := fmt.Sprintf("feeddown:%s:%s", kernel.CMESessionDayKey(gapStart), kernel.ClockCT(gapStart))
+	at.feedEpisodeMu.Lock()
+	firstSight := at.feedDownEpisode != episode
+	at.feedDownEpisode = episode
+	at.feedEpisodeMu.Unlock()
+	at.emitAlert("P0", "feed-down", episode, title, body)
+	if firstSight {
+		// m471 L3-3: the episode id is the gap's start, so a restart in the
+		// middle of an outage computes the SAME id; its alert row already
+		// exists (the store dedupes it, so emitAlert pushes nothing), and the
+		// previous process's held FEED DOWN was withdrawn at boot as superseded
+		// (ownerpush.RestoreAtBoot). Offer the push once per episode per process:
+		// if the owner was already told (the key is in the restored seen set)
+		// the channel dedupes it; if he was not, the outage that is still on
+		// reaches him now.
+		at.maybeOwnerPush(&store.AlertDB{TraderID: at.id, Level: "P0", Kind: "feed-down", EventID: episode, Title: title, Body: body}, ownerPushClock())
+	}
+	at.feedStillDownReminder(gapStart, now)
+}
+
+// feedStillDownEvery (m467) is the STILL DOWN reminder cadence while a FEED DOWN
+// lasts. One reminder an hour sits inside its own owner-push kind's 3/hour
+// budget ("feed-still-down"), so it can never crowd out FEED DOWN / BACK.
+const feedStillDownEvery = time.Hour
+
+// feedStillDownReminder (m467) pushes ONE "STILL DOWN" per full hour of a blind
+// spell, measured from its first missing minute (kept across a CME close). Each
+// reminder withdraws the previous one if that is still held (an outage that
+// also took the network: only the newest reminder is news). Keyed on the
+// spell's start, so N traders on the box tell the owner once.
+func (at *AutoTrader) feedStillDownReminder(gapStart, now time.Time) {
+	at.feedEpisodeMu.Lock()
+	if at.feedDownSince.IsZero() || gapStart.Before(at.feedDownSince) {
+		at.feedDownSince = gapStart
+	}
+	since := at.feedDownSince
+	n := int(now.Sub(since) / feedStillDownEvery)
+	if n < 1 || n <= at.feedDownReminded {
+		at.feedEpisodeMu.Unlock()
+		return
+	}
+	prev := at.feedDownReminderKey
+	at.feedDownReminded = n
+	key := fmt.Sprintf("feed-still-down|%d|%d", since.Unix(), n)
+	at.feedDownReminderKey = key
+	at.feedEpisodeMu.Unlock()
+	telemetry.IncFeedStillDownReminder()
+	at.logErrorf("🚨 FEED STILL DOWN: no NT8 bar since %s CT (%s) — reminder #%d to the owner; entries stay refused until bars return", kernel.TableTimeCT(since), spanHM(now.Sub(since)), n)
+	if prev != "" {
+		ownerpush.Cancel(prev)
+	}
+	ownerpush.Push(key, fmt.Sprintf("🚨 vl — NT8 bar feed STILL DOWN since %s CT (%s). The bot is blind: no new entry can be placed and the planner does not run. In NinjaTrader on Windows check the Tradovate data connection shows Connected.",
+		kernel.TableTimeCT(since), spanHM(now.Sub(since))))
+}
+
+// spanHM renders a duration as "15h02m" / "42m" for owner messages.
+func spanHM(d time.Duration) string {
+	d = d.Round(time.Minute)
+	h := int(d / time.Hour)
+	m := int((d % time.Hour) / time.Minute)
+	if h == 0 {
+		return fmt.Sprintf("%dm", m)
+	}
+	return fmt.Sprintf("%dh%02dm", h, m)
+}
+
+// feedBackBelow is the newest-bar age under which the feed counts as BACK:
+// the tightest of the two feed-down thresholds.
+func feedBackBelow() time.Duration {
+	a, b := feedDownAfter(), intradeFeedAlertAfter()
+	if b < a {
+		return b
+	}
+	return a
+}
+
+func (at *AutoTrader) setFeedDownEpisode(id string) {
+	at.feedEpisodeMu.Lock()
+	at.feedDownEpisode = id
+	at.feedEpisodeMu.Unlock()
+}
+
+// noteFeedBackAt ends the open FEED DOWN episode (if this trader raised one) with
+// ONE owner message. The push dedupes on the episode id, so N traders on one
+// box tell the owner once.
+func (at *AutoTrader) noteFeedBackAt(age time.Duration, now time.Time) {
+	at.feedEpisodeMu.Lock()
+	id := at.feedDownEpisode
+	if id == "" {
+		id = at.feedDownLastEpisode // m467: the spell a CME close ended, still blind at the reopen
+	}
+	since, remindKey := at.feedDownSince, at.feedDownReminderKey
+	at.feedDownEpisode, at.feedDownLastEpisode = "", ""
+	at.feedDownSince, at.feedDownReminded, at.feedDownReminderKey = time.Time{}, 0, ""
+	at.feedEpisodeMu.Unlock()
+	if id == "" {
+		return
+	}
+	if remindKey != "" {
+		ownerpush.Cancel(remindKey) // a held reminder is no longer news
+	}
+	if since.IsZero() {
+		at.logInfof("✅ feed: bars are flowing again (newest bar %s old) — FEED DOWN episode %s over", age.Round(time.Second), id)
+	} else {
+		at.logInfof("✅ feed: bars are flowing again (newest bar %s old) — FEED DOWN episode %s over; down since %s CT (%s)", age.Round(time.Second), id, kernel.TableTimeCT(since), spanHM(now.Sub(since)))
+	}
+	ownerPushFeedBack(id, age, since, now)
 }
 
 // feedReconnectGraceWindow — how long after a link-up (or the trader's start)

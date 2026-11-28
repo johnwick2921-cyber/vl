@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"time"
 )
 
@@ -19,8 +19,12 @@ type Position struct {
 // The real implementation queries the friend bot; tests use a fake.
 type positionsProvider func(ctx context.Context) (float64, error)
 
+// errNotFlat is returned when the flat wait times out — the caller must DEFER
+// the update (never show it as an error) and continue.
+var errNotFlat = errors.New("not flat before the deadline — update deferred")
+
 // waitUntilFlat polls p every interval until it reports 0 (flat) or the context
-// deadline passes. It returns nil once flat, and an error if the deadline
+// deadline passes. It returns nil once flat, and errNotFlat if the deadline
 // passes with an open position (the caller leaves the current version alone).
 func waitUntilFlat(ctx context.Context, p positionsProvider, interval time.Duration) error {
 	t := time.NewTicker(interval)
@@ -32,7 +36,7 @@ func waitUntilFlat(ctx context.Context, p positionsProvider, interval time.Durat
 		}
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("not flat before the deadline — update deferred: %w", ctx.Err())
+			return errNotFlat
 		case <-t.C:
 		}
 	}

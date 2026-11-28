@@ -13,4 +13,7 @@ import (
 	"vl/internal/testhome"
 )
 
-func TestMain(m *testing.M) { os.Exit(testhome.Guard(m)) }
+func TestMain(m *testing.M) {
+	flatNearScale = 0 // m428: see flatNearScale — R2 pins opt in with withFlatNear
+	os.Exit(testhome.Guard(m))
+}

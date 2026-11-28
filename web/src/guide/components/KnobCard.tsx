@@ -22,7 +22,7 @@ export function KnobCard({ knob }: { knob: KnobSpec }) {
   return (
     <article
       data-testid="guide-knob"
-      className="rounded-xl p-3 flex flex-col gap-1.5"
+      className="rounded-xl p-3 flex flex-col gap-1.5 min-w-0 break-words"
       style={{
         background: 'var(--vl-card)',
         border: '1px solid var(--vl-hair)',

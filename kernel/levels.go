@@ -45,7 +45,7 @@ const (
 	KindVAH    LevelKind = "VAH"    // prior-day value-area high (70%)
 	KindVAL    LevelKind = "VAL"    // prior-day value-area low (70%)
 	KindPDVWAP LevelKind = "pdVWAP" // prior-day session VWAP
-	KindSETT   LevelKind = "SETT"   // prior settlement (16:00 CT close)
+	KindSETT   LevelKind = "SETT"   // prior settlement (native 1d close, ~15:00 CT — m239)
 	KindMIDO   LevelKind = "MID-O"  // overnight range midpoint
 	KindEQH    LevelKind = "EQH"    // equal highs (liquidity)
 	KindEQL    LevelKind = "EQL"    // equal lows (liquidity)

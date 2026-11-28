@@ -17,11 +17,12 @@ import (
 // Mutant: disable the trend gate → the uptrend case no longer refuses
 // box_against_5m_trend → RED.
 func TestBoxReturnGatedAgainst5mTrend(t *testing.T) {
-	if DefaultConfig().D43TrendSource != D43TrendStructure {
+	if preOctCfg().D43TrendSource != D43TrendStructure {
 		t.Fatalf("d43_trend_source default must be structure (course-defaults-30)")
 	}
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
+	cfg.Exec2mAfter30m = false // m410: this fixture pins the 1m box geometry (boxes now draw on the traded 2m frame after 09:00)
 	cfg.KeyLevelTFMinutes = 1
 	cfg.EMAPeriod34 = 0
 	cfg.EMAPeriod9 = 0

@@ -1,0 +1,10 @@
+diff --git a/trader/gate_test.go b/trader/gate_test.go
+--- a/trader/gate_test.go
++++ b/trader/gate_test.go
+@@ -10,3 +10,7 @@ package trader
+ func TestFixtureGuardTurnsRed(t *testing.T) {
++	t.Log("touched the hunk around it only")
+ }
+ 
++func TestFixtureUnknownReadRefuses(t *testing.T) {
++}

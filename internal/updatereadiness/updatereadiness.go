@@ -1,7 +1,8 @@
 // Package updatereadiness answers, BEFORE the owner presses Update, whether
 // this box can do the one-click walk-away update hands-free (W-ADDON-ONE-CLICK,
 // owner order 2026-10-17: "click Update, then nothing else"). Check returns one
-// row per precondition with ok and a plain-words fix the Update page can show.
+// row per precondition with ok and a plain-words fix that a caller of
+// GET /api/updates/readiness can show (no page calls it).
 //
 // Every probe is read-only. The tests use fake directories only; nothing here
 // ever touches the real NinjaTrader install or a live process.
@@ -39,8 +40,9 @@ type Config struct {
 	// DocsDir is the NinjaTrader 8 Documents folder (the WSL path, e.g.
 	// /mnt/c/Users/<u>/Documents/NinjaTrader 8). Empty → Detect is used.
 	DocsDir string
-	// Detect finds the single NT8 Documents folder. nil → the default scan of
-	// /mnt/c/Users/*/Documents/NinjaTrader 8 (addonbuild.Detect once it lands).
+	// Detect finds the single NT8 Documents folder. nil → DefaultDetect, the scan
+	// of /mnt/c/Users/*/Documents/NinjaTrader 8 only (not OneDrive, not
+	// VL_NT8_DOCS_DIR; the updater's addonbuild.Detect also scans OneDrive).
 	Detect func() (string, error)
 	// Run executes a command; nil → the powershell probe fails closed.
 	Run Runner
@@ -172,12 +174,17 @@ func Check(ctx context.Context, c Config) []Item {
 
 func checkCompiler(ctx context.Context, c Config, docs string) Item {
 	it := Item{Item: "NT8 Roslyn compiler"}
-	// GAP 2: the "compiler" item reads true ONLY when the no-SDK ps1 path
-	// actually works — i.e. the embedded build-addon.ps1 loads Roslyn from
-	// NT8's bin, resolves its dependencies, and compiles a trivial source
-	// against the full reference set. File presence alone is not enough: a
-	// box with Roslyn present but broken (or missing its dependency DLLs)
-	// must read not-ok before the owner presses Update.
+	// GAP 2: file presence alone is not enough. THIS bot's embedded
+	// build-addon.ps1 loads Roslyn from NT8's bin, resolves its dependencies and
+	// compiles one small AddOn type (of NinjaTrader.Core): red when
+	// NinjaTrader.Core or the compiler cannot be used. It does not test the
+	// release's AddOn source, nor the updater (which builds with its own copy),
+	// and it need not look where the updater looks: no Exe is set here, so the
+	// script always gets C:\Program Files\NinjaTrader 8\bin, and DefaultDetect
+	// takes /mnt/c/Users/*/Documents only (no OneDrive). The updater honours
+	// VL_NT8_DOCS_DIR, and VL_NT8_EXE when it is written with forward slashes
+	// (addonbuild.nt8BinWindows), and also looks in OneDrive. The caller
+	// (handleUpdatesReadiness) gives each command 10 s: a slower probe is red.
 	ok, detail := addonbuild.CompilerProbe(ctx, addonbuild.Config{
 		DocsDir:       docs,
 		PowerShellExe: "powershell.exe",

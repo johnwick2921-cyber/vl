@@ -555,7 +555,7 @@ export const riskControl = {
   },
   consecutiveLossHalt: {
     zh: '连续亏损熔断 (N 笔后停止开仓) — 存在感知：留空 = 继承（默认 8，开启）；显式 0 = 关闭；不受总开关控制',
-    en: 'Consecutive-loss halt (stop after N losers) — presence-aware: blank = inherit (shipped default 8, ON); explicit 0 = OFF; NOT gated by the master switch',
+    en: 'Consecutive-loss halt (stop after N losers) — presence-aware: blank = inherit (shipped default 4 mentor-mode / 8 AI-mode, ON); explicit 0 = OFF; NOT gated by the master switch',
     es: 'Freno por pérdidas seguidas (parar tras N) — presencia: vacío = hereda (8, ON); 0 explícito = OFF; no lo controla el master',
   },
   reentryCooldown: {

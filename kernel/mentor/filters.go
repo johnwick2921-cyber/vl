@@ -1,18 +1,24 @@
 package mentor
 
 import (
+	"strings"
+	"time"
+
 	"vl/market"
 )
 
 // Filters is the direction-and-context gate set (PLAN v1 §4). Every filter is
 // pure: bars/levels in, a verdict out.
 
-// ── 5-minute trigger line [§5.1, D3.4 p1 @ 04:02–13:33] ─────────────────────
+// ── 5-minute trigger line (§5.1) [D3.4 p1 @ 04:02–13:33] ─────────────────────
 // BUY trigger = a 5m candle breaks the previous candle's HIGH; SELL = breaks
 // the previous LOW [@ 04:02, 08:04]. A line is drawn at the BROKEN extreme,
 // WICK INCLUDED [@ 04:28]. Entries only on the trigger side [@ 10:21]. The
-// line moves ONLY on a reversal, once [@ 11:48–13:33]. Between two opposing
-// lines → no trade [@ 16:38].
+// line moves ONLY on a reversal, once [@ 11:48–13:33]. There is ONE line, so
+// there is no "between two opposing lines" zone (that was a misread of @ 16:38):
+// the no-trade zone is between an FTGL and the BUY line (mirror: FTGH and the
+// SELL line) and lives in triggerBoxZoneVerdict (eval.go), where the boxes are
+// known [D3.4 p1 @ 16:38–17:19].
 
 type TriggerLine struct {
 	Dir   Side    // allowed direction ("" before the first break)
@@ -24,8 +30,9 @@ type TriggerLine struct {
 	LastBucket int64
 	LastBar    market.Kline
 
-	// MovedAt is the bucket open of the bar that last MOVED the line (the
-	// first draw or a reversal). The 1h line counts only when it moved at or
+	// MovedAt is the instant the line last MOVED (the first draw or a
+	// reversal): the open of the 1m bar that fired the break when known, else
+	// the bucket open (B3). The 1h line counts only when it moved at or
 	// after the 4h line's last move — an earlier 1h trigger is ignored, the
 	// 1h is "silent" [D4.4 p1 @18:36; p2 @03:10] (D4.4-05, item 19).
 	MovedAt int64
@@ -41,6 +48,15 @@ type TriggerLine struct {
 // hole is compared with the candle before the gap, so a Sunday-open break is
 // not missed. tfMin is kept for the callers' signature.
 func TriggerTick(prev TriggerLine, bars []market.Kline, tfMin int, cfg Config) TriggerLine {
+	return triggerTickAt(prev, bars, tfMin, cfg, 0)
+}
+
+// triggerTickAt is TriggerTick with the break instant (B3): breakAt is the open
+// time of the 1m bar being ticked. When the line moves on the FORMING (tail)
+// bucket and breakAt lies inside that bucket, MovedAt = breakAt — the minute
+// the break really happened. A completed bucket (or breakAt 0 / outside the
+// bucket) keeps the legacy stamp, the bucket open.
+func triggerTickAt(prev TriggerLine, bars []market.Kline, tfMin int, cfg Config, breakAt int64) TriggerLine {
 	if !cfg.Enabled || len(bars) == 0 {
 		return prev
 	}
@@ -49,9 +65,28 @@ func TriggerTick(prev TriggerLine, bars []market.Kline, tfMin int, cfg Config) T
 		if b.OpenTime <= next.LastBucket {
 			continue // a committed bucket
 		}
+		if cfg.TriggerFromOpen && isRTHOpenBucket(b.OpenTime, tfMin) {
+			// G4 (oct round 2, OctD4.3-R5 [Oct D4.3 @ 03:10]): the trend is read
+			// from the 08:30 CT Open, not the overnight zone. The open candle is
+			// never compared with the Globex candle before it: the line is empty
+			// and this bucket becomes the reference for the next one. While the
+			// bucket forms (the tail) the read stays what it was, so it is
+			// re-evaluated identically each tick; the watermark commits it once
+			// a newer bucket exists.
+			next.Dir, next.Price, next.MovedAt = "", 0, 0
+			if i < len(bars)-1 {
+				next.LastBar = b
+				next.LastBucket = b.OpenTime
+			}
+			continue
+		}
 		last := next.LastBar
 		if last.OpenTime > 0 && b.OpenTime > last.OpenTime {
-			next = applyBreak(next, last, b)
+			at := b.OpenTime
+			if i == len(bars)-1 && breakAt > b.OpenTime && breakAt <= b.CloseTime {
+				at = breakAt
+			}
+			next = applyBreak(next, last, b, at)
 		}
 		// Only NON-tail buckets commit. The LAST bucket is the forming one: it
 		// is re-evaluated every tick with its growing extremes, so an intrabar
@@ -97,50 +132,90 @@ func TriggerReplay1mFrozen(prev TriggerLine, bars1m []market.Kline, tfMin int, c
 	if !cfg.Enabled || len(bars1m) == 0 || tfMin <= 1 {
 		return prev
 	}
-	ms := int64(tfMin) * 60_000
-	next := prev
-	var done, cur market.Kline
-	haveDone, haveCur := false, false
-	window := make([]market.Kline, 0, 2)
+	r := newTriggerReplayer(prev, tfMin, cfg, frozen)
 	for _, b := range bars1m {
-		bucket := bucketOpen(b.OpenTime, tfMin)
-		if !haveCur || bucket != cur.OpenTime {
-			if haveCur {
-				done, haveDone = cur, true
-			}
-			// Built exactly like barsTF: the first bar's fields, re-stamped
-			// to the bucket; then High/Low/Close/Volume extended per bar.
-			cur = b
-			cur.OpenTime = bucket
-			cur.CloseTime = bucket + ms - 1
-			haveCur = true
-		} else {
-			if b.High > cur.High {
-				cur.High = b.High
-			}
-			if b.Low < cur.Low {
-				cur.Low = b.Low
-			}
-			cur.Close = b.Close
-			cur.Volume += b.Volume
-		}
-		if frozen != nil && frozen(b.OpenTime) {
-			continue // the bar builds the bucket, but fires no break
-		}
-		window = window[:0]
-		if haveDone {
-			window = append(window, done)
-		}
-		window = append(window, cur)
-		next = TriggerTick(next, window, tfMin, cfg)
+		r.step(b)
 	}
-	return next
+	return r.next
+}
+
+// triggerReplayer is TriggerReplay1mFrozen's minute-by-minute state, kept so a
+// caller that needs the line AT EVERY MINUTE of one pass (SeedHTFRangeHalt)
+// reads exactly what TriggerReplay1m returns for that prefix, in O(n) — not
+// a replay restarted mid-bucket (which compares the first full bucket against
+// a truncated one). Callers guard cfg.Enabled / tfMin > 1 as
+// TriggerReplay1mFrozen does.
+type triggerReplayer struct {
+	next              TriggerLine
+	tfMin             int
+	ms                int64
+	cfg               Config
+	frozen            func(openMs int64) bool
+	done, cur         market.Kline
+	haveDone, haveCur bool
+	window            []market.Kline
+}
+
+func newTriggerReplayer(prev TriggerLine, tfMin int, cfg Config, frozen func(openMs int64) bool) *triggerReplayer {
+	return &triggerReplayer{next: prev, tfMin: tfMin, ms: int64(tfMin) * 60_000, cfg: cfg, frozen: frozen, window: make([]market.Kline, 0, 2)}
+}
+
+// step feeds one closed 1m bar (in time order).
+func (r *triggerReplayer) step(b market.Kline) {
+	bucket := bucketOpen(b.OpenTime, r.tfMin)
+	if !r.haveCur || bucket != r.cur.OpenTime {
+		if r.haveCur {
+			r.done, r.haveDone = r.cur, true
+		}
+		// Built exactly like barsTF: the first bar's fields, re-stamped
+		// to the bucket; then High/Low/Close/Volume extended per bar.
+		r.cur = b
+		r.cur.OpenTime = bucket
+		r.cur.CloseTime = bucket + r.ms - 1
+		r.haveCur = true
+	} else {
+		if b.High > r.cur.High {
+			r.cur.High = b.High
+		}
+		if b.Low < r.cur.Low {
+			r.cur.Low = b.Low
+		}
+		r.cur.Close = b.Close
+		r.cur.Volume += b.Volume
+	}
+	if r.frozen != nil && r.frozen(b.OpenTime) {
+		return // the bar builds the bucket, but fires no break
+	}
+	r.window = r.window[:0]
+	if r.haveDone {
+		r.window = append(r.window, r.done)
+	}
+	r.window = append(r.window, r.cur)
+	// B3: the 4h/1h lines stamp the break minute (their live path passes
+	// it, HTFAdvanceAt); the 5m trigger keeps the bucket-open stamp its
+	// live path (TriggerTick) uses, so a restart reproduces both.
+	breakAt := int64(0)
+	if r.tfMin >= 60 {
+		breakAt = b.OpenTime
+	}
+	r.next = triggerTickAt(r.next, r.window, r.tfMin, r.cfg, breakAt)
+}
+
+// isRTHOpenBucket reports whether the bucket opening at openMs is the 08:30 CT
+// Open bucket of a 5m, 15m or 30m trigger line (G4, OctD4.3-R5). The 60m/240m
+// lines (the HTF read) are not re-anchored: October gives them no open read.
+func isRTHOpenBucket(openMs int64, tfMin int) bool {
+	if tfMin != 5 && tfMin != 15 && tfMin != 30 {
+		return false
+	}
+	t := time.UnixMilli(openMs).In(ctime())
+	return t.Hour() == 8 && t.Minute() == 30
 }
 
 // applyBreak runs the §5.1 break logic for one bucket against the previous
 // adjacent bucket (B3: every reversal moves the line ONCE — later breaks in
 // the SAME direction never move it; the NEXT reversal moves it again).
-func applyBreak(next TriggerLine, before, cur market.Kline) TriggerLine {
+func applyBreak(next TriggerLine, before, cur market.Kline, movedAt int64) TriggerLine {
 	brokeHigh := cur.High > before.High
 	brokeLow := cur.Low < before.Low
 	if brokeHigh && brokeLow {
@@ -177,9 +252,12 @@ func applyBreak(next TriggerLine, before, cur market.Kline) TriggerLine {
 		moved = true
 	}
 	if moved {
-		// MovedAt = the bucket that fired the move (item 19: the 1h line
-		// resets when the 4h moves again) [D4.4 p1 @18:36; p2 @03:10].
-		next.MovedAt = cur.OpenTime
+		// MovedAt = the instant of the move (item 19: the 1h line resets
+		// when the 4h moves again) [D4.4 p1 @18:36; p2 @03:10]. B3: the
+		// break MINUTE when the caller knows it (the forming bucket), else
+		// the bucket open — "it triggered the 1h EARLIER" is a question of
+		// real time, not of which bucket opened first.
+		next.MovedAt = movedAt
 	}
 	// same-direction breaks (including repeats) never move the line
 	return next
@@ -203,7 +281,33 @@ func TriggerVerdict(t TriggerLine, price float64) (ok bool, side Side, reason st
 	return true, t.Dir, ""
 }
 
-// ── 15m/5m ISB conflict [§5.3, D4.2 p1 @ 13:59; §12] ────────────────────────
+// X8TrapDodge reports the X8 trap-dodge EXIT [X8 "Cách né trap & Setup gồng lời"
+// part1 @07:31–08:07]: the 2m candle closed THROUGH the EMA34 against the 5m
+// trigger trend while the 5m trigger swept against the position — the breakout
+// is a FAKE and the position must exit, not sit ("thì out lại tại đó chứ đừng
+// ngồi hô").
+//
+//	long:  the 5m trigger is on the SELL side (a candle swept the prior low) AND
+//	       the 2m candle closed ABOVE the EMA34 → exit the long.
+//	short: the 5m trigger is on the BUY side (a candle swept the prior high) AND
+//	       the 2m candle closed BELOW the EMA34 → exit the short.
+//
+// A 2m close through the EMA34 ALONE never fires — the transcript: a close
+// under the EMA34 does not by itself allow a short [X8 @08:17–08:48]; the 5m
+// sweep is the trigger. ema34/close2m <= 0 or an empty trigger = no read, no
+// exit (fail-closed).
+func X8TrapDodge(side string, triggerDir Side, ema34, close2m float64) bool {
+	if ema34 <= 0 || close2m <= 0 || triggerDir == "" {
+		return false
+	}
+	if strings.EqualFold(side, "short") {
+		return triggerDir == SideLong && close2m < ema34
+	}
+	return triggerDir == SideShort && close2m > ema34
+}
+
+// ── 15m/5m ISB conflict (§5.3, §12) [D4.2 p1 @ 13:59] ───────────────────────
+
 // 2–3 adjacent 5m candles churning and going nowhere = a 15m inside bar
 // [@ 00:00]. Same direction → trade; OPPOSITE directions → DO NOT TRADE AT ALL
 // [@ 14:35].
@@ -222,13 +326,13 @@ func ISBConflictVerdict(bars5m, bars15m []market.Kline) bool {
 	}
 	p5, c5 := bars5m[len(bars5m)-2], bars5m[len(bars5m)-1]
 	p15, c15 := bars15m[len(bars15m)-2], bars15m[len(bars15m)-1]
-	if !IsISB(p5, c5) || !IsISB(p15, c15) {
+	if !isISBFirstRTHAware(p5, c5) || !IsISB(p15, c15) { // m473 B4: no phantom 08:30 5m ISB
 		return false
 	}
 	return ISBDirection(p5) != ISBDirection(p15)
 }
 
-// ── mid-range [§12, D3.2 p2 @ 08:34; D3.4 p3 @ 01:44] ───────────────────────
+// ── mid-range (§12) [D3.2 p2 @ 08:34; D3.4 p3 @ 01:44] ───────────────────────
 // The middle of any range: between two levels → PHL/PLH banned, ISB only.
 
 // MidRange reports price sitting between two levels, each within
@@ -242,7 +346,10 @@ func MidRange(levels []Level, price float64, cfg Config) bool {
 		// REL-5 audit #1: target-only levels (4h trigger, wick microscalp) and
 		// trendlines are never range boundaries — they are locations or target
 		// ladders, not the key levels a mid-range sits between.
-		if l.Kind == KindHTFTrigger || l.Kind == KindWickMicroscalp || l.Kind == KindTrendline || l.Kind == KindTrendlineTarget {
+		// m465 P5 (D4.3-R13): neither is the D4.3 wick zone edge — the mentor
+		// trades the zone "cho dù là khung 5 phút nó đang ranging" [D4.3
+		// @04:44–04:55], so its edge never makes a mid-range around itself.
+		if l.Kind == KindHTFTrigger || l.Kind == KindWickMicroscalp || l.Kind == KindTrendline || l.Kind == KindTrendlineTarget || l.Kind == KindWickZone {
 			continue
 		}
 		d := l.Price - price
@@ -257,7 +364,8 @@ func MidRange(levels []Level, price float64, cfg Config) bool {
 }
 
 // SetupPermittedVerdict gates a setup kind by the mid-range filter: in the
-// middle of a range only the ISB survives [D3.2 p2 @ 08:34].
+// middle of a range only the ISB survives [D3.2 p2 @ 08:34; D2.2 p3 @14:03–16:03
+// "Ở giữa rank không được đánh potential high low, chỉ được đánh insaba"].
 func SetupPermittedVerdict(kind string, levels []Level, price float64, cfg Config) (ok bool, reason string) {
 	if !MidRange(levels, price, cfg) {
 		return true, ""

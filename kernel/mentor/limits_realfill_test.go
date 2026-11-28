@@ -143,6 +143,45 @@ func TestLimitsRecordFillFromRow(t *testing.T) {
 	}
 }
 
+// TestLimitsBoxRealFillKeepsBoxPlace — bug-hunt #18: a BOX intent had no ArmID,
+// so a real fill never matched its pend and fell to the row fallback, which
+// rebuilt the trade with place="" and box=false (the G2 box identity lost). The
+// evaluator now mints a stable ArmID for BOX intents, so the pend matches.
+// Mutant (blank the ArmID) → record_fill_from_row=1 and the place is not boxed.
+func TestLimitsBoxRealFillKeepsBoxPlace(t *testing.T) {
+	cfg := limitsCfg()
+	cfg.RealFillOnly = true
+	var l Limits
+	prev := limitsK(94, 96, 94, 95, 0)
+	exp := limitsNow(60) + 86400_000
+	in := Intent{
+		Action: PlaceStopEntry, Side: SideLong, Setup: "BOX",
+		Price: 96.5, Stop: 95, Target: 99, ExpiryMs: exp,
+		AnchorKey: "ftgl:98.00:95.00", Anchor: 96.5,
+		ArmID: "box-ftgl:98.00:95.00-123",
+	}
+	if out := applyAtCfg(&l, []Intent{in}, prev, limitsK(93, 94, 92, 93, 1), 1, cfg); len(out) != 1 {
+		t.Fatalf("placement: want 1, got %d", len(out))
+	}
+	l.RecordFill("sig-box", "box-ftgl:98.00:95.00-123", 96.5, 97, nil, nil)
+	if l.Counters["record_fill_from_row"] != 0 {
+		t.Fatalf("a BOX fill with an ArmID must match its pend, not the row fallback; counters=%v", l.Counters)
+	}
+	if l.Long == nil || l.Long.Entries != 1 {
+		t.Fatalf("a BOX fill must register the leg, got %+v", l.Long)
+	}
+	// A stop-out candle (low 94 <= stop 95) → one loss at the BOX place.
+	applyAtCfg(&l, nil, limitsK(96, 97, 95.5, 96, 2), limitsK(95, 96, 94, 95, 3), 3, cfg)
+	if len(l.Places) != 1 {
+		t.Fatalf("the BOX stop-out must box the place once, got %d", len(l.Places))
+	}
+	for _, p := range l.Places {
+		if !p.Box {
+			t.Fatalf("the BOX loss must stay boxed (G2 identity kept), got %+v", p)
+		}
+	}
+}
+
 // TestLimitsRecordFillFromRowDefersWithoutLevels is the FU-1 R1 pin: a
 // row-fallback receipt with EMPTY levels (before the first post-restart Tick)
 // defers instead of early-returning the leg; once the levels arrive, the same

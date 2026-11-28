@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -25,6 +26,18 @@ func validateStrategyConfig(config *store.StrategyConfig) []string {
 	}
 
 	return warnings
+}
+
+// respondModeConflict answers the strategy store's write guard (pep together
+// with mentor mode or the day plan) as a 400 naming the conflict. It reports
+// whether it answered.
+func respondModeConflict(c *gin.Context, err error) bool {
+	var mc *store.ModeConflictError
+	if errors.As(err, &mc) {
+		SafeBadRequestWithDetails(c, mc.Message, mc.Code, nil)
+		return true
+	}
+	return false
 }
 
 func attachPublishConfig(config *store.StrategyConfig, strategy *store.Strategy) {
@@ -202,6 +215,12 @@ func (s *Server) handleCreateStrategy(c *gin.Context) {
 		SafeBadRequest(c, err.Error())
 		return
 	}
+	// PEP — a trader is exactly one of {AI/planner, mentor, pep}: refuse a save
+	// that turns pep ON together with mentor mode or the day plan, by name.
+	if e := req.Config.TradingModeConflict(); e != nil {
+		SafeBadRequestWithDetails(c, e.Message, e.Code, nil)
+		return
+	}
 	hadPublishConfig := req.Config.PublishConfig != nil
 	isPublic := req.IsPublic
 	configVisible := req.ConfigVisible
@@ -238,6 +257,9 @@ func (s *Server) handleCreateStrategy(c *gin.Context) {
 	// holds as an explicit 0 (so the load-time conversion check knows the 0 is
 	// the owner's) are ONE transaction: no row is created without its record.
 	if err := s.store.Strategy().CreateWithExplicitZeros(strategy, req.Config); err != nil {
+		if respondModeConflict(c, err) {
+			return
+		}
 		SafeInternalError(c, "Failed to create strategy", err)
 		return
 	}
@@ -245,6 +267,7 @@ func (s *Server) handleCreateStrategy(c *gin.Context) {
 	// Validate configuration and collect warnings
 	warnings := validateStrategyConfig(req.Config)
 	warnings = append(warnings, store.StrategyClampWarnings(beforeClamp, *req.Config, req.Config.Language)...)
+	warnings = append(warnings, store.LogPepClamps("studio_create "+strategy.ID, req.Config)...)
 
 	response := gin.H{
 		"id":      strategy.ID,
@@ -334,6 +357,11 @@ func (s *Server) handleUpdateStrategy(c *gin.Context) {
 		SafeBadRequest(c, err.Error())
 		return
 	}
+	// PEP — refuse pep ON together with mentor mode or the day plan, by name.
+	if e := mergedConfig.TradingModeConflict(); e != nil {
+		SafeBadRequestWithDetails(c, e.Message, e.Code, nil)
+		return
+	}
 
 	// Preserve existing name/description when not supplied
 	name := req.Name
@@ -367,6 +395,9 @@ func (s *Server) handleUpdateStrategy(c *gin.Context) {
 	// the owner's. If the record cannot be written the row is rolled back and
 	// the save answers an error — the stored config is unchanged.
 	if err := s.store.Strategy().UpdateWithExplicitZeros(strategy, &mergedConfig); err != nil {
+		if respondModeConflict(c, err) {
+			return
+		}
 		SafeInternalError(c, "Failed to update strategy", err)
 		return
 	}
@@ -400,6 +431,8 @@ func (s *Server) handleUpdateStrategy(c *gin.Context) {
 	// Validate merged configuration and collect warnings
 	warnings := validateStrategyConfig(&mergedConfig)
 	warnings = append(warnings, store.StrategyClampWarnings(beforeClamp, mergedConfig, mergedConfig.Language)...)
+	// PEP — a clamped pep number is never silent: logged here, returned as a warning.
+	warnings = append(warnings, store.LogPepClamps("studio_save "+strategyID, &mergedConfig)...)
 
 	// Reload the running trader(s) bound to this strategy so the saved config
 	// takes effect on the NEXT decision cycle WITHOUT a manual restart — the same

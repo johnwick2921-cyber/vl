@@ -89,6 +89,10 @@ const (
 	fdrSwingTargetPts       = 130.0
 )
 
+// fdrActiveFixturePath is the fixture newFdrWorld loads. The multi-day replay
+// swaps it for its own tape; the default is the full-day fixture.
+var fdrActiveFixturePath = fdrFixturePath
+
 // fdrLiveArm is one row the LIVE bot authored for trader hoang between the
 // 00:59:15 seed and 05:00 CT 10-13 (data.db armed_orders, created_at is UTC).
 type fdrLiveArm struct {
@@ -165,13 +169,59 @@ var fdrR23Dropped = map[int64]string{
 
 // fdrExpectedArms is the live set plus the deliberate r22 divergences, minus
 // the deliberate r23 drops, in bar-close order.
+// fdrM423Arms — arms the release #50 (m423) build authors on purpose that the
+// live release #21 bot did not. OWNER RULING 2026-10-25: a trendline is broken
+// only by a 5m candle WHOLLY beyond it (X9 @06:28–06:45), not by a close beyond
+// the line alone, so a line the old close-only test discarded stays a live
+// location: the 02:43 CT PLH short 30683.00 / stop 30695.75 (level lvl-2) is the
+// one extra arm on this 10-13 night (every other row realigns unchanged). Its
+// prices are the release #59 fix-round D2.2-R10 rays (entry 0.50 and stop 0.50
+// beyond the candle; at m423 it was 30682.50 / 30695.25, the old 1.00 / 0 pair).
+var fdrM423Arms = []fdrLiveArm{
+	{0, "02:43", "m423: a trendline the close-only break discarded stays live (whole-candle 5m break)", "short", 30683.0, 30695.75, 0},
+}
+
+// fdrM428Dropped / fdrM428Arms — owner ruling R2 (2026-10-25, Q2): two same-role
+// swing wicks at (nearly) the same price are a flat SUPPORT / RESISTANCE with the
+// trading semantics of an old low / old high of their role (the nearer one of the
+// role replaces the pivot-picked old extreme). On this 10-13 night that moves the
+// nearest old high: a flat resistance (30770.25 at 03:46) sits within a few pts
+// above the 03:46-04:33 ISB longs, so those are no longer authored, and the 03:28
+// long / 02:09 short change with the reshuffled old extremes; the 03:31 and 03:39 longs the N7 pick had dropped are
+// authored again (the flat resistance replaces the 30769.50 pivot high they
+// bumped into). Probed on the 10-13 fixture: with the flat levels OFF all nine
+// rows MATCH unchanged (R1/R3/R5 do not touch this night). Keyed by bar-close minute.
+var fdrM428Dropped = map[string]string{
+	"02:09": "R2: the flat support/resistance reshuffles the old extremes — the r22 02:09 ISB short is not authored",
+	"03:28": "R2: flat levels replace the nearest old high/low — 03:28 long not authored",
+	"03:46": "R2: the flat resistance 30770.25 is the nearest old high — not authored",
+	"03:48": "R2: the flat resistance is the nearest old high — not authored",
+	"03:50": "R2: the flat resistance is the nearest old high — not authored",
+	"04:31": "R2: flat resistance — not authored",
+	"04:33": "R2: flat resistance — not authored",
+}
+
+var fdrM428Arms = []fdrLiveArm{
+	{0, "03:31", "m428: flat resistance replaces the 30769.50 pivot high the N7 pick had hit", "long", 30766.25, 30753.75, 0},
+	{0, "03:39", "m428: flat resistance replaces the 30769.50 pivot high the N7 pick had hit", "long", 30764.75, 30753.25, 0},
+}
+
 func fdrExpectedArms() []fdrLiveArm {
 	out := append([]fdrLiveArm{}, fdrR22Arms...)
+	out = append(out, fdrM423Arms...)
+	out = append(out, fdrM428Arms...)
 	for _, a := range fdrLiveArms {
 		if _, dropped := fdrR23Dropped[a.id]; !dropped {
 			out = append(out, a)
 		}
 	}
+	kept := out[:0]
+	for _, a := range out {
+		if _, drop := fdrM428Dropped[a.barCT]; !drop || a.id == 0 && a.barCT != "02:09" {
+			kept = append(kept, a)
+		}
+	}
+	out = kept
 	sort.SliceStable(out, func(i, j int) bool { return out[i].barCT < out[j].barCT })
 	return out
 }
@@ -190,7 +240,7 @@ type fixtureBar struct {
 // the seed's roll-gap measurement — the live store's native 1h retention).
 func loadFullDayFixture(t *testing.T) ([]fixtureBar, []fixtureBar) {
 	t.Helper()
-	raw, err := os.ReadFile(fdrFixturePath)
+	raw, err := os.ReadFile(fdrActiveFixturePath)
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
@@ -1034,11 +1084,45 @@ func TestFullDayReplayFidelity(t *testing.T) {
 	cfg := loadReplayStrategy(t)
 	fdrPinPre25CourseEntries(cfg) // release #25: the live day ran the pre-#25 course-entry knobs
 	fdrPinPre30Defaults(cfg)      // course-defaults-30: the live day predates #30 — pin the live defaults
+	pinPreOctA1(&cfg.RiskControl) // OCT-EXACT A1: the live day ran the Sept HTF/day/ORB/news/leg-budget/loss-box gates — pin them
+	// m465 (release #60, D5.1-R18): the live 10-13 night ran the 300 spent line.
+	// Its overnight run sits between 265 and 300, so at the new 265 default the
+	// night is SPENT and the m423 02:43 PLH short (30683.00 / 30695.75) is no
+	// longer authored. Pin the live 300 so this test keeps pinning the live day.
+	if cfg.RiskControl.MentorTuning == nil {
+		cfg.RiskControl.MentorTuning = &store.MentorTuning{}
+	}
+	cfg.RiskControl.MentorTuning.DayGateSpentPts = 300
+	// levels audit LL-1: the live 10-13 day deleted a key level once a 1H body
+	// closed through it (the deck rule); October keeps it (the new default).
+	// Pin the live deletion so this test keeps pinning the live day.
+	cfg.RiskControl.MentorTuning.KeyLevelDeleteOn1HClose = mentor.KeyLevelDeleteOn1HCloseOn
+	// oct round 2 D2-G2 / D2-G6: the live 10-13 day asked the September 2R room of a
+	// PHL/PLH and carried a ladder through a close beyond its left extreme;
+	// October's defaults (1R, cancel on the close) author one more PLH at 02:09.
+	// Pin the live values so this test keeps pinning the live day.
+	room2, leftOff := 2.0, false
+	cfg.RiskControl.MentorTuning.PHLRoomMultiple = &room2
+	cfg.RiskControl.MentorTuning.RollingLeftBreakCancel = &leftOff
+	// oct round 2 D2-G3 / G4: the live 10-13 day required a level target for every
+	// ISB and read the 5m trigger over the whole history; October's defaults (the
+	// fill-candle-close first target, the trigger read from the 08:30 open) change
+	// the arm set. Pin the live values.
+	fillOff, openOff := false, false
+	cfg.RiskControl.MentorTuning.ISBTargetFillClose = &fillOff
+	cfg.RiskControl.MentorTuning.TriggerFromOpen = &openOff
+	// oct-exact close r1: the live 10-13 day refused a reverse ISB with no level beyond; pin that.
+	revFillOff := false
+	cfg.RiskControl.MentorTuning.MentorISBRevFillClose = &revFillOff
 	w.setNow(fdrLiveSeedMs)
 	w.cur.Store(int64(w.barIndexAtOrAfter(fdrLiveSeedMs) - 1))
 	ft := &fdrTrader{id: "fdr-hoang", account: acct, levelPx: map[string]float64{}}
 	w.traders = []*fdrTrader{ft}
 	w.newFdrTrader(ft, cfg)
+	// m472 A3: the live 10-13 day ran the Sept PHL offsets (entry +0.50 / stop -0.50,
+	// D2.2-R10); the October default is 1.00 / 1.00 [Oct D2.3 @ 46:20-47:20]. Pin the
+	// live offsets so this test keeps reproducing the recorded arms.
+	ft.at.mentorEval.Cfg.PHLEntryBufferPts, ft.at.mentorEval.Cfg.PHLStopBufferPts = 0.5, 0.5
 	l := &fdrLedger{rows: map[int64]*fdrRowLife{}}
 	start := w.barIndexAtOrAfter(fdrLiveSeedMs) // the first bar to CLOSE after the seed
 	stop := w.barIndexAtOrAfter(fdrFidelityStopMs)
@@ -1080,7 +1164,7 @@ func TestFullDayReplayFidelity(t *testing.T) {
 		t.Logf("  %-5s live %-50s | harness %s", mark, lv, hv)
 	}
 	if mismatch != 0 {
-		t.Fatalf("FIDELITY: %d of %d rows differ from the live 11 + %d r22 arms − %d r23 drops (see the table)", mismatch, n, len(fdrR22Arms), len(fdrR23Dropped))
+		t.Fatalf("FIDELITY: %d of %d rows differ from the live 11 + %d r22 arms + %d m423 arms − %d r23 drops (see the table)", mismatch, n, len(fdrR22Arms), len(fdrM423Arms), len(fdrR23Dropped))
 	}
 }
 
@@ -1131,7 +1215,7 @@ func (w *fdrWorld) injectSwingFill(ft *fdrTrader, i int) fdrSwing {
 		stop: entry - fdrSwingRiskPts, target: entry + fdrSwingTargetPts, risk: fdrSwingRiskPts, fillBar: i,
 		armID: "swing-" + strconv.FormatInt(b.OpenTime-b.OpenTime%300_000, 10), signalID: "fdr-injected-swing-" + ft.id}
 	sw.entryBucket = kernel.FourHBucketStart(b.OpenTime-b.OpenTime%300_000, kernel.CTLocation())
-	sw.holdMs = sw.entryBucket + int64(ft.at.mentorEval.Cfg.Swing.Hold4hBars)*4*3_600_000
+	sw.holdMs = mentor.SwingHoldDeadline(sw.entryBucket, ft.at.mentorEval.Cfg.Swing.Hold4hBars)
 	ledger := w.st.ArmedOrders()
 	row := &store.ArmedOrderDB{
 		TraderID: ft.id, PlanID: mentorPlanID(ft.id), Version: 1, Session: "MENTOR",

@@ -58,6 +58,19 @@ func friendMode404(c *gin.Context) bool {
 	return true
 }
 
+// friendsPage404 aborts with 404 when the Friends page is OFF (m386: the owner
+// box opts in with VL_FRIENDS_PAGE=1). Same mechanism as friend-mode: the owner
+// friends API does not exist unless the page is enabled. Returns true when
+// aborted.
+func friendsPage404(c *gin.Context) bool {
+	if config.FriendsPageEnabled() {
+		return false
+	}
+	c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+	c.Abort()
+	return true
+}
+
 // ---- B2 registry ----------------------------------------------------------
 
 const (
@@ -400,7 +413,7 @@ var friendLastSeen sync.Map
 // handleOwnerFriendsList — GET /api/owner/friends (B2). Owner JWT only; 404 in
 // friend mode.
 func (s *Server) handleOwnerFriendsList(c *gin.Context) {
-	if friendMode404(c) {
+	if friendMode404(c) || friendsPage404(c) {
 		return
 	}
 	if !s.requireOwner(c) {
@@ -433,7 +446,7 @@ func (s *Server) handleOwnerFriendsList(c *gin.Context) {
 // provision.sh via a FIXED argv (no shell string building). The install code
 // is returned once and is never logged or stored by this handler.
 func (s *Server) handleOwnerFriendsAdd(c *gin.Context) {
-	if friendMode404(c) {
+	if friendMode404(c) || friendsPage404(c) {
 		return
 	}
 	if !s.requireOwner(c) {
@@ -501,7 +514,7 @@ func (s *Server) handleOwnerFriendsAdd(c *gin.Context) {
 // handleOwnerFriendAction — POST /api/owner/friends/:name/:action (B2).
 // action ∈ {pause, resume, revoke, rotate}.
 func (s *Server) handleOwnerFriendAction(c *gin.Context) {
-	if friendMode404(c) {
+	if friendMode404(c) || friendsPage404(c) {
 		return
 	}
 	if !s.requireOwner(c) {
@@ -928,6 +941,9 @@ func (s *Server) ensureFriendMonitor() {
 	}
 	if config.FriendInstanceEnabled() {
 		return // owner bot only — a friend has no Friends page and no owner Telegram
+	}
+	if !config.FriendsPageEnabled() {
+		return // m386: the friend monitor/alerts are OFF unless the page is enabled
 	}
 	friendAlertOnce.Do(func() {
 		s.hydrateFriendAlertDedup()

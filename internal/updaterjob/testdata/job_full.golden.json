@@ -355,6 +355,7 @@
     "migration_pending": true,
     "backup_dir": "/mnt/c/Users/hoang/Documents/NinjaTrader 8/bin/Custom/AddOns/.vl-backups/VL.AddOn.dll.bak",
     "restarted": true,
+    "stopped_nt8": true,
     "old_accept_seq": 7
   },
   "drain_path": "nt8_absent",

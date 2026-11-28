@@ -56,7 +56,7 @@ func seedTriggerHTFBars(t *testing.T) []market.Kline {
 }
 
 func enabledCfg() Config {
-	c := DefaultConfig()
+	c := preOctCfg()
 	c.Enabled = true
 	return c
 }

@@ -22,6 +22,9 @@ import (
 // the restart stays cleared. Before 08:30, or when the latch is already frozen
 // (a re-seed must not re-decide), nothing changes.
 func SeedDayLatch(e *Evaluator, bars1m []market.Kline, now int64) {
+	// answers-1112 Q1 extra rule: the HTF-opposed range halt is restored with
+	// the day latch, by every caller (knob 0 → nothing; it guards itself).
+	defer SeedHTFRangeHalt(e, bars1m, now)
 	if e == nil || e.State.Day.Key != "" {
 		return // already latched, or nothing to restore
 	}
@@ -32,25 +35,25 @@ func SeedDayLatch(e *Evaluator, bars1m []market.Kline, now int64) {
 	}
 	four, one := openHTFLines(e, bars1m, open)
 	m := GlobexMeasure(bars1m, open, ctime())
-	dg := DayGate{SpentPts: e.Cfg.DayGateSpentPts, TargetCapPts: e.Cfg.DayGateTargetCapPts}
+	dg := DayGate{SpentPts: e.Cfg.DayGateSpentPts, TargetCapPts: e.Cfg.DayGateTargetCapPts, Off: !e.Cfg.DayGateEnabled}
 	conflict := HTFConflict(HTF{FourH: four, OneH: one})
 	v, _ := DayGateVerdict(m.Run, m.OK, conflict, dg)
 	e.State.Day = DayLatch{Key: key, Verdict: v}
 	e.State.DayGateReport = DayGateReport{
-		Key:       key,
-		Verdict:   v,
-		RunPts:    m.Run,
-		HaveRun:   m.OK,
-		HiPx:      m.Hi,
-		HiAt:      m.HiAt,
-		LoPx:      m.Lo,
-		LoAt:      m.LoAt,
-		FourHDir:  four.Dir,
-		OneHDir:   one.Dir,
-		Conflict:  conflict,
-		SpentPts:  dg.SpentPts,
-		ReadAt:    open,
-		Restored:  true,
+		Key:      key,
+		Verdict:  v,
+		RunPts:   m.Run,
+		HaveRun:  m.OK,
+		HiPx:     m.Hi,
+		HiAt:     m.HiAt,
+		LoPx:     m.Lo,
+		LoAt:     m.LoAt,
+		FourHDir: four.Dir,
+		OneHDir:  one.Dir,
+		Conflict: conflict,
+		SpentPts: dg.SpentPts,
+		ReadAt:   open,
+		Restored: true,
 	}
 	// Replay the one-way DayOff recheck over the 1h closes since 08:30: a clear
 	// that happened before the restart stays cleared.
@@ -141,7 +144,8 @@ func SeedTrendlines(e *Evaluator, bars1m []market.Kline, now int64) {
 	if e == nil {
 		return
 	}
-	lines, crossed := trendlinesBuild(closedOnly(bars1m, now), time.UnixMilli(now))
+	closed := closedOnly(bars1m, now)
+	lines, crossed := trendlinesBuildExecOpts(closed, time.UnixMilli(now), e.Cfg.Exec2mAfter30m && exec2mReads2m(now), e.tlOpts())
 	day := tradingDayKey(time.UnixMilli(now).In(ctime()))
 	e.tlDay = day
 	e.tlCrossed = map[string]bool{}
@@ -149,9 +153,43 @@ func SeedTrendlines(e *Evaluator, bars1m []market.Kline, now int64) {
 		e.tlCrossed[k] = true
 	}
 	e.tlValid = map[string]bool{}
+	e.tlTF = map[string]int{}
 	for _, tl := range lines {
 		if tl.ValidAt > 0 && !tl.Dead {
 			e.tlValid[tl.key()] = true
+			e.tlTF[tl.key()] = tl.TFMin
+		}
+	}
+	// Persistent HTF lines: seed from the FULL history — the live tick's
+	// 25-hour window cannot rebuild anchors older than that [D2.3 p1
+	// @04:23–05:41]. The store's stitched series reaches ≥102 closed 4h
+	// candles, so 1h/4h anchors survive the restart.
+	e.tlHTF = map[string]Trendline{}
+	e.tlFlip = nil
+	for _, tf := range []int{60, 240} {
+		for _, tl := range trendlinesBuildTF(closed, tf, time.UnixMilli(now)) {
+			if tl.Dead {
+				// D3-G12: a broken persistent HTF line is kept with its role
+				// flipped, not dropped [Oct D3.2 @ 08:27, 14:18-14:47].
+				if e.Cfg.HTFTrendlineFlip {
+					if at := trendlineHTFBrokenAt(tl, barsTF(closed, 5), time.UnixMilli(now), 0); at > 0 {
+						fl := flipHTFTrendline(tl)
+						if _, held := e.tlHTF[fl.key()]; !held {
+							if e.tlFlip == nil {
+								e.tlFlip = map[string]int64{}
+							}
+							e.tlFlip[fl.key()] = at
+							e.tlHTF[fl.key()] = fl
+						}
+					}
+				}
+				continue
+			}
+			e.tlHTF[tl.key()] = tl
+			if tl.ValidAt > 0 {
+				e.tlValid[tl.key()] = true
+				e.tlTF[tl.key()] = tl.TFMin
+			}
 		}
 	}
 }

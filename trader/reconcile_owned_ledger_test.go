@@ -61,18 +61,27 @@ func (w *reconcileWire) refusedNotFlattened(t *testing.T, want string) {
 	t.Helper()
 	done := make(chan error, 1)
 	go func() { done <- w.at.reconcileBeforeOpenNT("MNQ", "long") }()
-	if w.closeSent(3 * time.Second) {
+	// A refusal returns at once; a flatten waits for its fill (35 s). Once it has
+	// returned nothing more can be sent, so the wire is read then.
+	var err error
+	returned := true
+	select {
+	case err = <-done:
+	case <-time.After(10 * time.Second):
+		returned = false
+	}
+	if w.closeSent(300 * time.Millisecond) {
 		w.s.SeedPositionsForTest("Sim101", nil)
-		<-done
+		if !returned {
+			<-done
+		}
 		t.Fatal("the held position was FLATTENED")
 	}
-	select {
-	case err := <-done:
-		if !errors.Is(err, errPositionOwned) || !strings.Contains(err.Error(), want) {
-			t.Fatalf("the held position must be explained (%q): %v", want, err)
-		}
-	case <-time.After(10 * time.Second):
+	if !returned {
 		t.Fatal("reconcile never returned")
+	}
+	if !errors.Is(err, errPositionOwned) || !strings.Contains(err.Error(), want) {
+		t.Fatalf("the held position must be explained (%q): %v", want, err)
 	}
 }
 

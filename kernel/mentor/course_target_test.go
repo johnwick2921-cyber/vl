@@ -59,7 +59,7 @@ func TestIsEMAPartialKind(t *testing.T) {
 // became the target and the ISB was refused. Mutant: drop the EMA skip in
 // nextLevelBeyondRoom → RED (isb_target_below_floor).
 func TestISBEMALineDoesNotKillTheTrade(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.EMAPeriod34 = 0
 	cfg.EMAPeriod9 = 0

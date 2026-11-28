@@ -1,6 +1,8 @@
 package mentor
 
 import (
+	"fmt"
+	"strconv"
 	"strings"
 
 	"vl/market"
@@ -8,6 +10,10 @@ import (
 
 // Box trade evaluation — BOX REUSE (R1) and CONFLUENCE (R2), CTO rulings
 // 2026-10-03 verified in the sources [A].
+//
+// At an FTGL box (support) you do NOT need a PHL under the second bottom, and
+// you do NOT wait for a close above the EMA 34 before buying — the box path has
+// no EMA or PHL precondition [D3.3 p1 @02:42–03:38, @04:18–04:22].
 
 // BoxReturn is one post-formation return visit [D3.2 p2 @ 06:25: "minh se
 // dung box nay hoai ne" — we use this box again and again]. A visit =
@@ -119,10 +125,12 @@ func boxEffectiveKind(b Box) BoxKind {
 
 // pingPongVerdict — PING PONG (CTO 13:24:53Z): when the entry sits between
 // an FTGL floor and an FTGH ceiling, the edge trade is allowed only when the
-// gap between the floor TOP and the ceiling BOTTOM is >= 50 pts
-// ("danh ping pong — KHONG DUOC DANH GIUA", D3.2 p2 @07:50-09:14; D4.2 p2
-// @05:17). Below 50 pts it is refused: ping_pong_range_too_small. With fewer
-// than two boxes around the price there is no ping-pong context.
+// gap between the floor TOP and the ceiling BOTTOM is >= 50 pts — the NUMBER
+// comes from D4.2 p2 @05:13–06:37 ("ping-pong needs a big range: range >= 100
+// or above 50 pts; candles 'mười mấy điểm'"). D3.2 p2 @07:50–09:14 stays for
+// the mid-range concept only ("không được đánh giữa" — don't trade the middle).
+// Below 50 pts it is refused: ping_pong_range_too_small. With fewer than two
+// boxes around the price there is no ping-pong context.
 // largestCandlePts — B21: the largest 1m range (High−Low) over the last
 // `lookback` closed bars; 0 when lookback <= 0 or the slice is empty.
 func largestCandlePts(bars []market.Kline, lookback int) float64 {
@@ -177,6 +185,28 @@ func pingPongVerdict(boxes []Box, bars []market.Kline, price float64, cfg Config
 	return true, ""
 }
 
+// boxFrameMin returns the frame the box was DRAWN on as minutes: 1 (the base
+// 1m), 2 (a "2m" box or a base-2m config), 5 (a 5mha box). The X8 trap-dodge
+// and the runner trail read the ENTRY's frame, and the entry's frame is the
+// box's drawn frame [D4.1 "trade khung nào vẽ khung đó" @22:57–23:21] — m417.
+func boxFrameMin(b Box, cfg Config) int {
+	if b.TF == "2m" {
+		return 2
+	}
+	if b.TF == "5mha" {
+		return 5
+	}
+	// b.TF == "" → the configured base frame (DefaultBoxCfg: "1m").
+	switch cfg.Box.TF {
+	case "2m":
+		return 2
+	case "5mha":
+		return 5
+	default:
+		return 1
+	}
+}
+
 // boxEntryIntent is the CALL SITE of the box trade: one return visit's
 // reference candle becomes a stop order [D3.4 p3 @ 07:02 — "stop order away
 // from the box, with the REJECTING candle as the reference"] when the
@@ -185,8 +215,16 @@ func pingPongVerdict(boxes []Box, bars []market.Kline, price float64, cfg Config
 // the box, the stop ceiling, the §6 target ladder and the room rule. The R2
 // confluence flag [00-METHOD Risk-reward, D3.4 p3 @ 07:38] rides the intent.
 func boxEntryIntent(ref market.Kline, b Box, boxes []Box, levels []Level, trig TriggerLine, bars []market.Kline, cfg Config) []Intent {
+	out, _ := boxEntryIntentWhy(ref, b, boxes, levels, trig, bars, cfg)
+	return out
+}
+
+// boxEntryIntentWhy is boxEntryIntent plus the NAMED refusal (m425b S4b): every
+// path that drops the box return returns a stable reason ("" when an intent is
+// emitted), so the evaluator can count it instead of losing it silently.
+func boxEntryIntentWhy(ref market.Kline, b Box, boxes []Box, levels []Level, trig TriggerLine, bars []market.Kline, cfg Config) ([]Intent, string) {
 	if !BoxReturnReject(b, ref) {
-		return nil // close inside the box = cancel
+		return nil, "box_close_inside" // close inside the box = cancel
 	}
 	// D14 "Uno Reverse": the entry side is the box's CURRENT role — a flipped
 	// FTGH (broken ceiling → support) enters LONG, a flipped FTGL enters SHORT.
@@ -199,32 +237,54 @@ func boxEntryIntent(ref market.Kline, b Box, boxes []Box, levels []Level, trig T
 		side, price, stop = SideShort, ref.Low, ref.High
 	}
 	if cfg.LocTriggerFilter && cfg.TriggerSchool != 1 {
-		if ok, ts, _ := TriggerVerdict(trig, price); !ok || ts != "" && ts != side {
-			return nil
+		if ok, ts, _ := TriggerVerdict(trig, price); (!ok || ts != "" && ts != side) && !(cfg.BoxCounter5mScalp && cfg.Counter5mReduceSize != Counter5mReduceOff && ok) { // P3-missesA: opposite trigger = counter-5m scalp
+			return nil, "box_trigger_side"
 		}
 	}
 	// PING PONG (CTO 13:24:53Z): between two boxes the edge trade is legal
 	// only when the gap is >= 50 pts — below that, refused (the MIDDLE is for
 	// ping pong, not the edges, and a narrow range cannot support the bounce).
-	if ok, _ := pingPongVerdict(boxes, bars, price, cfg); !ok {
-		return nil
+	if ok, _ := pingPongVerdict(boxes, bars, price, cfg); cfg.BoxPingPongGate && !ok { // OCT-EXACT A2 row 11: box_ping_pong OFF
+		return nil, "box_ping_pong"
 	}
 	if InsideAnyBox(boxes, price) {
-		return nil
+		return nil, "box_inside_box"
 	}
 	risk := abs(price - stop)
-	if risk > cfg.StopCeilingPts {
-		return nil
+	// Stop-size ladder (owner order 2026-11-10): ON lets a box stop through
+	// to the trader's size table, which sizes it down [OctD2.2-R73 @01:12:32,
+	// OctD2.3-R47 @48:12] — with no size cap by default (mentor_wide_stop_max_pts
+	// 0, owner order 2026-11-15); a stored mentor_wide_stop_max_pts caps
+	// (revert 40). OFF = the D3.3 25 exactly.
+	if risk > StopLadderCeiling(cfg, cfg.StopCeilingPts) {
+		return nil, "box_stop_ceiling"
 	}
-	target := nextLevelBeyondRoom(levels, price, stop, side, cfg.RoomMultiple)
+	boxRoom := cfg.boxRoomMultiple()
+	target := nextLevelBeyondRoom(levels, price, stop, side, boxRoom)
 	if target == 0 {
-		return nil // no level beyond → no setup [D4.1 p1 @ 01:45]
+		return nil, "box_no_target" // no level beyond → no setup [D4.1 p1 @ 01:45]
+	}
+	// answers-1112 Q12 (knob box_trendline_partial_not_room, default OFF since
+	// the 2026-11-12 review; ON is the owner's opt-in): a
+	// trendline in the path is a place to sell part, not the room cap — the
+	// target and the room read the next real level beyond it [Sept D3.3 p1
+	// @05:15-07:46; Sept D3.2 p2 @11:06-11:39]. The line then rides as the
+	// runner's first partial (runnerPartialLine, stamped in Tick) when it sits
+	// past the 1:1 leg-1 exit [Oct D1.2 @11:00-11:40].
+	tlLine := 0.0
+	if cfg.BoxTrendlinePartialNotRoom {
+		if past, line := boxTargetPastTrendline(levels, price, stop, side, boxRoom, target); past != 0 {
+			target, tlLine = past, line
+		}
 	}
 	// Confluence is computed BEFORE the room check: a confluence box's leg 1 is
 	// 2R, so its room is RoomMultiple × 2R (4R).
-	fl := ConfluenceVerdict(b, side, trig)
-	if abs(target-price) < cfg.RoomMultiple*risk*Leg1RiskMultiple(fl.On) {
-		return nil
+	fl := ConfluenceVerdict(b, side, trig, price)
+	if !cfg.ConfluenceHold2R {
+		fl = ConfluenceFlag{} // OCT-EXACT A2 row 17: confluence C OFF
+	}
+	if abs(target-price) < targetRoomMultiple(levels, target, boxRoom)*risk*Leg1RiskMultiple(fl.On) { // m465 D4.3-R17: 1R for a 5m-wick target
+		return nil, "box_room"
 	}
 	// G2 place (CTO R-b / 13:20:08Z): a box is ONE place — the key WITHOUT the
 	// ":top"/":bottom" suffix, the anchor is the box MIDPOINT (the replay's).
@@ -232,6 +292,7 @@ func boxEntryIntent(ref market.Kline, b Box, boxes []Box, levels []Level, trig T
 	return []Intent{{
 		AnchorKey:  base,
 		Anchor:     (b.Top + b.Bottom) / 2,
+		ArmID:      "box-" + base + "-" + strconv.FormatInt(ref.CloseTime, 10),
 		Action:     PlaceStopEntry,
 		Setup:      "BOX",
 		Side:       side,
@@ -239,9 +300,56 @@ func boxEntryIntent(ref market.Kline, b Box, boxes []Box, levels []Level, trig T
 		Stop:       stop,
 		Target:     target,
 		RefBarMs:   ref.CloseTime,
+		ExecTFMin:  boxFrameMin(b, cfg),
 		Confluence: fl.On,
-		Reason:     "box edge return: reject close outside → stop order with the rejecting candle as the reference [D3.2 p1 @ 21:04–21:33; D3.4 p3 @ 07:02]",
-	}}
+		Reason:     "box edge return: reject close outside → stop order with the rejecting candle as the reference [D3.2 p1 @ 21:04–21:33; D3.4 p3 @ 07:02]" + boxTrendlineNote(tlLine),
+	}}, ""
+}
+
+// boxTrendlineNote names, on the intent, the trendline the box target passed
+// (answers-1112 Q12); "" when none was passed — today's reason exactly.
+func boxTrendlineNote(line float64) string {
+	if line == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" · trendline %.2f in the path is a partial, not the room cap [answers-1112 Q12; Sept D3.3 p1 @05:15-07:46; Sept D3.2 p2 @11:06-11:39]", line)
+}
+
+// boxTargetPastTrendline is the box target under answers-1112 Q12: when the
+// target nextLevelBeyondRoom chose is a trendline (KindTrendlineTarget) and a
+// REAL level stands beyond it, the target becomes that level — every
+// trendline in the path is skipped the way release #30 skips an EMA. It
+// returns (0, 0) when nothing changes: the target is not a trendline, a real
+// level shares its price, or only EMA lines / nothing stand beyond (the
+// trendline then stays the target, as today). line is the trendline passed.
+func boxTargetPastTrendline(levels []Level, entry, stop float64, side Side, roomMultiple, target float64) (past, line float64) {
+	isTL, isReal := false, false
+	rest := make([]Level, 0, len(levels))
+	for _, l := range levels {
+		if l.Kind == KindTrendlineTarget {
+			if l.Price == target {
+				isTL = true
+			}
+			continue
+		}
+		if l.Price == target && l.Kind != KindTrendline && !isEMAPartialKind(l.Kind) && oldExtremeRoleFits(l, side) {
+			isReal = true
+		}
+		rest = append(rest, l)
+	}
+	if !isTL || isReal {
+		return 0, 0
+	}
+	next := nextLevelBeyondRoom(rest, entry, stop, side, roomMultiple)
+	if next == 0 {
+		return 0, 0
+	}
+	for _, l := range rest {
+		if l.Price == next && l.Kind != KindTrendline && !isEMAPartialKind(l.Kind) {
+			return next, target
+		}
+	}
+	return 0, 0 // only an EMA beyond: the trendline stays the target (today)
 }
 
 // ConfluenceFlag is the R2 output for DS-102's exit-C / size-10 branch.
@@ -254,18 +362,26 @@ type ConfluenceFlag struct {
 
 // ConfluenceVerdict evaluates the R2 confluence test [00-METHOD Risk-reward,
 // D3.4 p3 @ 07:38] for one box trade setup. side is the trade side; trig is the
-// 5m trigger line. Fail-closed: no trigger line (empty direction) can never
+// 5m trigger line; entry is the trade's REAL entry price (the rejecting
+// candle's high for a long, low for a short — the stop order's price, box_trade
+// boxEntryIntentWhy). Fail-closed: no trigger line (empty direction) can never
 // agree, so confluence stays off.
+//
 // ConfluenceVerdict is B3 (10-03 ruling, D3.4 p3 @07:38–08:22): confluence
 // = an FTGL/FTGH entry + the 5m trigger agrees — NO key-level condition. LONG
 // = FTGL (support); SHORT = FTGH. Feeds DS-102's exit-C / size-10.
-func ConfluenceVerdict(b Box, side Side, trig TriggerLine) ConfluenceFlag {
+//
+// C52 W1 A1 [D3.4 p3 @07:49–08:01 "vô lệnh ngay failure to go lower… mà nó
+// còn có trigger buy setup nữa thì tự tin, mạnh mẽ, hold… risk reward 1-2";
+// frame part3_07-50: the buy line sits ABOVE the box top]: the trigger is
+// judged at the price the trade ACTUALLY enters at, never at the box edge.
+// The edge (b.Top / b.Bottom) lies on the far side of a trigger line that sits
+// between the edge and the entry, so the old edge read refused confluence for
+// exactly the entries triggerBoxZoneVerdict lets through (a long can only be
+// emitted at or above the buy line).
+func ConfluenceVerdict(b Box, side Side, trig TriggerLine, entry float64) ConfluenceFlag {
 	if side != SideLong && side != SideShort {
 		return ConfluenceFlag{}
-	}
-	entry := b.Top
-	if side == SideShort {
-		entry = b.Bottom
 	}
 	if ok, trigSide, _ := TriggerVerdict(trig, entry); !ok || trigSide == "" || trigSide != side {
 		return ConfluenceFlag{}
@@ -284,4 +400,14 @@ func ConfluenceVerdict(b Box, side Side, trig TriggerLine) ConfluenceFlag {
 		}
 	}
 	return ConfluenceFlag{On: true, Side: side}
+}
+
+// boxRoomMultiple is the room multiple a box trade asks (A2 row 11: October
+// 1:1 [Oct D2.3-R48 @49:38]); an unset (<= 0) field keeps the shared
+// RoomMultiple, so a hand-built Config is unchanged.
+func (c Config) boxRoomMultiple() float64 {
+	if c.BoxRoomMultiple > 0 {
+		return c.BoxRoomMultiple
+	}
+	return c.RoomMultiple
 }

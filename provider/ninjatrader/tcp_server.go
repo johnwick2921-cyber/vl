@@ -27,6 +27,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"vl/kernel"
 	"vl/telemetry"
 )
 
@@ -104,7 +105,16 @@ type TCPServer struct {
 	// acceptClock is a test-only seam for the accept instant (DEADMAN-ACCEPT-NS:
 	// a test states its own so a snapshot received in the SAME millisecond but
 	// BEFORE the accept is deterministic). nil = time.Now in production.
-	acceptClock func() time.Time
+	// atomic (m456-mainack): the test installs it while the accept goroutine is
+	// already running, so a plain field is a data race (-race).
+	acceptClock atomic.Pointer[func() time.Time]
+
+	// receiptClock is a test-only seam for the RECEIVE instant of the frames the
+	// protection evidence is ordered by (order_snapshot, positions, entry
+	// receipts) — spec look-twice 2026-11-24 "use an injectable clock". nil =
+	// time.Now in production. See ReceiptNow. atomic: installed while the read
+	// loop is already running.
+	receiptClock atomic.Pointer[func() time.Time]
 
 	// E7 capability handshake (2026-08-30): the far-side AddOn's build id,
 	// reported on every heartbeat. Empty until the first heartbeat carries it.
@@ -128,6 +138,10 @@ type TCPServer struct {
 	// can vouch for SIM accounts after a restart with NT8 closed). Optional for
 	// the same reason as orderSnapCB.
 	accountsCB func([]AccountInfo)
+	// positionsCB (m433) is the optional persistence hook for the positions
+	// frame: the account and how many NON-FLAT positions it carried. nil = no
+	// store wired (tests). It never gates the in-memory cache.
+	positionsCB func(account string, openCount int)
 
 	// FIX-DOUBLE-ENTRY (CTO ruling, 2026-09-26) — reconnect-relative broker
 	// truth for attempted entry frames (see attempted_guard.go). Never cleared
@@ -191,6 +205,7 @@ type TCPServer struct {
 	// socket read (which would block heartbeats → spurious reconnect).
 	barCache      *BarCache
 	barIngestCh   chan barIngestMsg
+	ingestEnqMu   sync.Mutex           // m416: serialises live enqueue + final-preserving eviction
 	barsSubscribe BarsSubscribePayload // sent on each (re)connect after flushPending
 	barsSubMu     sync.RWMutex         // protects barsSubscribe + extraBarsSymbols
 	// P5.1 — EXTRA symbol roots auto-subscribed alongside the primary on each
@@ -249,6 +264,19 @@ type TCPServer struct {
 	// (symbol, account). Lives on the SERVER so adapter replacement (trader
 	// reload) cannot forget which flat snapshots predate an entry.
 	entryReceipts map[string]*entryReceiptState
+	// exitReceipts (look-twice A) — the exit twin: the receive instant of the
+	// newest EXIT fill per (symbol, account). Evidence only; GetPositions does
+	// not read it. See exit_receipt.go.
+	exitReceipts map[string]*exitReceiptState
+	// positionLevels (look-twice) — account -> symbol|side: a positions frame
+	// written late is told by the smaller one before it. late_frame.go. acctMu.
+	positionLevels map[string]map[string]positionLevel
+	// closeSent / stopSent (look-twice B rule 3) — when WE last sent a
+	// close_position / place_protective_stop per (symbol, account). acctMu.
+	closeSent map[string]time.Time
+	stopSent  map[string]time.Time
+	// ownCloses (look-twice C) — the closes we sent, see own_close_log.go. acctMu.
+	ownCloses map[string][]OwnClose
 
 	// Plan 4 Stage 4 — available accounts discovered by the C# AddOn
 	// (accounts_list frame). Emitted on connect and on account change.
@@ -279,7 +307,8 @@ type TCPServer struct {
 	conn          net.Conn
 	pendingConn   net.Conn // connect-key mode only: the unauthenticated dial
 	lastAckTime   time.Time
-	staleOverride time.Duration // test hook: 0 means use TCPStaleSignalAge
+	hbLink        *heartbeatLink // look-twice B: heartbeat/ack accounting of the PUBLISHED conn (link_probe.go)
+	staleOverride time.Duration  // test hook: 0 means use TCPStaleSignalAge
 
 	// U21 — rate-limit the "connect_key refused" warn to once per peer per
 	// minute (a wrong-key AddOn reconnecting every 5 s must not flood the
@@ -825,6 +854,7 @@ func NewTCPServer(logger *slog.Logger) *TCPServer {
 		acctBalances:          make(map[string]AccountBalancePayload),
 		acctPositionsReceived: make(map[string]time.Time),
 		entryReceipts:         make(map[string]*entryReceiptState),
+		exitReceipts:          make(map[string]*exitReceiptState),
 		acctPositions:         make(map[string][]OpenPosition),
 		barsSubscribe: BarsSubscribePayload{
 			Symbol:     defaultAutoBarsSymbol,
@@ -945,6 +975,11 @@ func (s *TCPServer) SetAccountsList(accounts []AccountInfo, current string) {
 // wiring time; nil disables persistence (a store failure must never cost the
 // wire its account list).
 func (s *TCPServer) SetAccountsSink(fn func([]AccountInfo)) { s.accountsCB = fn }
+
+// SetPositionsSink installs the positions persistence hook (m433). Called once
+// at wiring time; nil disables persistence. A store failure must never cost the
+// wire its positions cache.
+func (s *TCPServer) SetPositionsSink(fn func(account string, openCount int)) { s.positionsCB = fn }
 
 // SetBarsSubscribe overrides the auto-subscribe parameters sent on each
 // (re)connect. Stage 3 will call this with the active strategy's
@@ -1415,16 +1450,7 @@ func (s *TCPServer) SendSignal(payload SignalPayload) error {
 // Unlike SendSignal it is NOT queued — a close is an immediate command; if no
 // client is connected it errors so the caller can report it.
 func (s *TCPServer) SendClosePosition(payload ClosePositionPayload) error {
-	c := s.connectedAuthed()
-	if c == nil {
-		return fmt.Errorf("ninjatrader/tcp: no NT client connected")
-	}
-	payload.Seq = s.assignSeqRegister(payload.TraderID, payload.Account, payload.SignalID) // A2 (G1)
-	s.writeMu.Lock()
-	_ = c.SetWriteDeadline(time.Now().Add(5 * time.Second))
-	err := WriteFrame(c, FrameClosePosition, payload)
-	s.writeMu.Unlock()
-	return err
+	return s.SendClosePositionIf(payload, nil)
 }
 
 // SendMoveStop asks the AddOn to move a resting stop to a new price without
@@ -1447,16 +1473,7 @@ func (s *TCPServer) SendMoveStop(payload MoveStopPayload) error {
 // resting limit entry and/or its bracket legs. Immediate command.
 // SendPlaceProtectiveStop puts a standalone protective stop on the wire (D5).
 func (s *TCPServer) SendPlaceProtectiveStop(payload PlaceProtectiveStopPayload) error {
-	c := s.connectedAuthed()
-	if c == nil {
-		return fmt.Errorf("ninjatrader/tcp: no NT client connected")
-	}
-	payload.Seq = s.assignSeqRegister(payload.TraderID, payload.Account, payload.SignalID)
-	s.writeMu.Lock()
-	_ = c.SetWriteDeadline(time.Now().Add(5 * time.Second))
-	err := WriteFrame(c, FramePlaceProtectiveStop, payload)
-	s.writeMu.Unlock()
-	return err
+	return s.SendPlaceProtectiveStopIf(payload, nil)
 }
 
 func (s *TCPServer) SendCancelOrder(payload CancelOrderPayload) error {
@@ -1636,6 +1653,7 @@ func (s *TCPServer) SeedPositionsForTestAt(account string, ps []OpenPosition, re
 	if s.acctPositionsReceived == nil {
 		s.acctPositionsReceived = make(map[string]time.Time)
 	}
+	s.notePositionLevelsLocked(account, ps, receivedAt)
 	s.acctPositions[account] = ps
 	s.acctPositionsReceived[account] = receivedAt
 	s.acctMu.Unlock()
@@ -1720,6 +1738,10 @@ func (s *TCPServer) acceptLoop(ctx context.Context) {
 		}
 
 		// No key (owner box): publish at accept, byte-identical to today.
+		// m456-mainack: the accept instant is read BEFORE connMu (the test seam may
+		// block) and the connection record is begun INSIDE the same critical section
+		// that publishes s.conn, so "connected" and "its record" appear together.
+		acceptAt := s.acceptNow()
 		s.connMu.Lock()
 		if s.conn != nil {
 			s.logger.Warn("tcp_server: rejecting concurrent client", "addr", c.RemoteAddr())
@@ -1728,12 +1750,13 @@ func (s *TCPServer) acceptLoop(ctx context.Context) {
 			continue
 		}
 		s.conn = c
+		s.hbLink = newHeartbeatLink()
 		s.lastAckTime = time.Now()
 		s.lastFrameUnixMs.Store(time.Now().UnixMilli()) // B11: a fresh conn restarts the read-idle clock
+		s.beginConnectionRecord(c, acceptAt)            // W-ONE-BUTTON M2 site 7 (lock order connMu → maint.mu)
 		s.connMu.Unlock()
-		s.beginConnectionRecord(c, s.acceptNow()) // W-ONE-BUTTON M2 site 7
-		s.attempted.noteReconnect(time.Now())     // FIX-DOUBLE-ENTRY: reconnect instant for fresh-truth checks
-		s.barCache.NoteReconnect(time.Now())      // WAVE 26: arm the stale-print guard for the AddOn's reloaded-series re-emit
+		s.attempted.noteReconnect(time.Now()) // FIX-DOUBLE-ENTRY: reconnect instant for fresh-truth checks
+		s.barCache.NoteReconnect(time.Now())  // WAVE 26: arm the stale-print guard for the AddOn's reloaded-series re-emit
 
 		s.logger.Info("tcp_server: client connected", "addr", c.RemoteAddr())
 		s.wg.Add(2)
@@ -1936,8 +1959,10 @@ func (s *TCPServer) drainBarIngest(ctx context.Context) {
 		case msg := <-s.barIngestCh:
 			if msg.historical {
 				s.barCache.SeedHistorical(msg.symbol, msg.timeframe, msg.bars)
+				histContracts.note(msg.symbol, msg.contract, msg.bars) // m446: the seed's contract
 			} else {
 				s.barCache.Upsert(msg.symbol, msg.timeframe, msg.bars)
+				liveContracts.note(msg.symbol, msg.contract, msg.bars) // m446: contract-roll guard
 				// LIVE-only fan-out to deterministic evaluators (two-picture
 				// mode). Historical replays must NOT mint opportunities.
 				//
@@ -1996,12 +2021,25 @@ var (
 // sampleIngestDepth updates the peak-depth high-water mark and resets it at
 // the CME 17:00 CT session roll (per-session peak, FORENSICS HYGIENE).
 func sampleIngestDepth(depth int) {
-	now := time.Now()
-	day := int64(now.Year()*10000 + int(now.Month())*100 + now.Day())
-	if now.Hour() == 17 {
-		if ingestPeakDay.CompareAndSwap(ingestPeakDay.Load(), day) && ingestPeakDay.Load() == day {
-			ingestPeakDepth.Store(0)
-		}
+	sampleIngestDepthAt(depth, time.Now())
+}
+
+// sampleIngestDepthAt is sampleIngestDepth with an explicit `now` seam so a
+// pin can drive the 17:00 roll deterministically (#36, m220).
+func sampleIngestDepthAt(depth int, now time.Time) {
+	// The session day is the 17:00 CT roll date, NOT the host-local calendar
+	// day — the old code read host-local now.Hour() and would also mis-reset
+	// on a box whose TZ is not America/Chicago.
+	sd := kernel.CMESessionDayStart(now)
+	day := int64(sd.Year()*10000 + int(sd.Month())*100 + sd.Day())
+	// Reset ONCE per session roll: CAS against the PREVIOUSLY stored day. The
+	// old pattern CompareAndSwap(ingestPeakDay.Load(), day) fed its own fresh
+	// Load back as the "old" value, so it succeeded on EVERY call for the whole
+	// 17:00 hour and zeroed the peak exactly during the reopen burst — when the
+	// high-water mark is most valuable.
+	prev := ingestPeakDay.Load()
+	if prev != day && ingestPeakDay.CompareAndSwap(prev, day) {
+		ingestPeakDepth.Store(0)
 	}
 	for {
 		cur := ingestPeakDepth.Load()
@@ -2016,6 +2054,10 @@ func (s *TCPServer) enqueueBarUpdate(symbol, timeframe, contract string, bars []
 	// stale edge-triggered feed_status). Cheap atomic store on the hot path.
 	s.lastBarNano.Store(time.Now().UnixNano())
 	msg := barIngestMsg{historical: false, symbol: symbol, timeframe: timeframe, contract: contract, bars: bars}
+	// m416: every live producer serialises here so the full-queue eviction below
+	// can pop and re-push without another producer interleaving.
+	s.ingestEnqMu.Lock()
+	defer s.ingestEnqMu.Unlock()
 	select {
 	case s.barIngestCh <- msg:
 		sampleIngestDepth(len(s.barIngestCh))
@@ -2026,20 +2068,96 @@ func (s *TCPServer) enqueueBarUpdate(symbol, timeframe, contract string, bars []
 		return
 	default:
 	}
-	// Channel full — drop oldest (counted, summarized 1-line/min), retry.
+	// Channel full — evict (counted, summarized 1-line/min), retry.
 	sampleIngestDepth(len(s.barIngestCh))
-	select {
-	case <-s.barIngestCh:
-		ingestDropOld.Add(1)
-		ingestDropSummary()
-	default:
+	s.evictForIngest(msg)
+}
+
+// barsCarryFinal reports whether any bar in the frame is the AddOn's one-shot
+// close (final=true). Losing such a frame loses the only proof the minute
+// closed (m416: M415 root cause).
+func barsCarryFinal(bars []Bar) bool {
+	for i := range bars {
+		if bars[i].Final {
+			return true
+		}
 	}
-	select {
-	case s.barIngestCh <- msg:
-	default:
+	return false
+}
+
+// evictForIngest makes room for msg on a FULL ingest channel without ever
+// discarding a frame that carries a final bar while a non-final frame is
+// queued (m416 B). It pops from the head: the first non-final frame is the
+// victim (dropped, counted as the usual drop-oldest); final-carrying frames
+// popped on the way are re-queued behind the survivors (final_kept). Overload
+// may therefore deliver a kept final slightly later than its neighbours — the
+// cache accepts a final for a bar it already holds at any later point, which is
+// the whole reason a late final is still worth delivering. If the queue holds
+// ONLY finals, an incoming non-final frame is the one dropped; an incoming
+// final then displaces the oldest final (final_dropped, the unavoidable loss,
+// counted separately and loud in the summary). The cap is unchanged.
+// Caller holds ingestEnqMu.
+func (s *TCPServer) evictForIngest(msg barIngestMsg) {
+	var kept []barIngestMsg
+	dropped := false
+	for n := len(s.barIngestCh); n > 0 && !dropped; n-- {
+		select {
+		case head := <-s.barIngestCh:
+			if barsCarryFinal(head.bars) {
+				kept = append(kept, head)
+				continue
+			}
+			ingestDropOld.Add(1)
+			noteIngestLoss(head) // m446: a historical batch or a plain forming frame
+			dropped = true
+		default:
+			n = 0
+		}
+	}
+	requeue := func(m barIngestMsg) bool {
+		select {
+		case s.barIngestCh <- m:
+			return true
+		default:
+			return false
+		}
+	}
+	if !dropped && len(kept) > 0 {
+		// Only finals were queued.
+		if barsCarryFinal(msg.bars) {
+			ingestFinalDropped.Add(1) // oldest final displaced by a newer final
+			noteIngestLoss(kept[0])   // m446: DATA LOSS - ledgered until verified
+			kept = kept[1:]
+			dropped = true
+		} else {
+			ingestDropCur.Add(1) // incoming forming frame is the one lost
+			noteIngestLoss(msg)
+			for _, k := range kept {
+				if !requeue(k) {
+					ingestFinalDropped.Add(1)
+					noteIngestLoss(k)
+				}
+			}
+			ingestFinalKept.Add(int64(len(kept)))
+			ingestDropSummary()
+			return
+		}
+	}
+	for _, k := range kept {
+		if !requeue(k) {
+			ingestFinalDropped.Add(1)
+			noteIngestLoss(k)
+		}
+	}
+	ingestFinalKept.Add(int64(len(kept)))
+	if !requeue(msg) {
+		if barsCarryFinal(msg.bars) {
+			ingestFinalDropped.Add(1)
+		}
 		ingestDropCur.Add(1)
-		ingestDropSummary()
+		noteIngestLoss(msg)
 	}
+	ingestDropSummary()
 }
 
 // enqueueBarHistorical posts a bars_historical message to the ingest
@@ -2050,13 +2168,23 @@ func (s *TCPServer) enqueueBarUpdate(symbol, timeframe, contract string, bars []
 // longer than 2s, log + drop (better to lose this batch than deadlock
 // the read loop forever).
 func (s *TCPServer) enqueueBarHistorical(symbol, timeframe string, bars []Bar) {
+	s.enqueueBarHistoricalContract(symbol, timeframe, "", bars)
+}
+
+// enqueueBarHistoricalContract is enqueueBarHistorical carrying the front month
+// the batch named (BarsHistoricalPayload.Contract, parsed since 2026-09-11 and
+// until m446 dropped here): the data-truth contract guard compares it with the
+// live contract, so a ring seeded on an old month under new-month live frames is
+// seen. "" = unknown, never a match.
+func (s *TCPServer) enqueueBarHistoricalContract(symbol, timeframe, contract string, bars []Bar) {
 	s.histAtSub.note(symbol, timeframe, len(bars)) // 101 E1: what arrived, per tf
-	msg := barIngestMsg{historical: true, symbol: symbol, timeframe: timeframe, bars: bars}
+	msg := barIngestMsg{historical: true, symbol: symbol, timeframe: timeframe, contract: contract, bars: bars}
 	select {
 	case s.barIngestCh <- msg:
 		return
 	case <-time.After(2 * time.Second):
 		ingestDropHist.Add(1)
+		noteIngestLoss(msg) // m446: a dropped historical batch is DATA LOSS
 		ingestDropSummary()
 	}
 }
@@ -2106,19 +2234,23 @@ func (s *TCPServer) authenticateKeyHello(ctx context.Context, c net.Conn, env En
 
 	// Publish only if this conn is still the pending one (a preempting dial must
 	// not be clobbered by a stale readLoop) and no authed incumbent appeared.
+	// m456-mainack: the accept instant is read before connMu, and the record is
+	// begun in the same critical section that publishes s.conn.
+	acceptAt := s.acceptNow()
 	s.connMu.Lock()
 	if s.pendingConn != c || s.conn != nil {
 		s.connMu.Unlock()
 		return false
 	}
 	s.conn = c
+	s.hbLink = newHeartbeatLink()
 	s.pendingConn = nil
 	s.lastAckTime = time.Now()
 	s.lastFrameUnixMs.Store(time.Now().UnixMilli()) // the alive clock starts at auth
+	s.beginConnectionRecord(c, acceptAt)            // lock order connMu → maint.mu
 	s.connMu.Unlock()
 
-	// The accept-time bookkeeping, now at the moment of auth (GATE 3).
-	s.beginConnectionRecord(c, s.acceptNow())
+	// The rest of the accept-time bookkeeping, now at the moment of auth (GATE 3).
 	s.attempted.noteReconnect(time.Now())
 	s.barCache.NoteReconnect(time.Now())
 
@@ -2372,6 +2504,11 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn, pending bool) {
 			if oup.CancelReport && !CancelReportRegimeOn() {
 				continue
 			}
+			// look-twice A — the exit fence, before anything downstream can
+			// act on this frame. The AddOn writes order_update, then the
+			// order_snapshot without the filled leg, so the fence is up before
+			// the stop-less book can be read.
+			s.noteExitOrderUpdate(oup)
 			// W117 F2 — enqueue to the owner's worker (stamped with the
 			// snapshot watermark for the post-change book gate, R4).
 			if s.enqueueOrdered(subKey(oup.Symbol, oup.Account), orderedItem{kind: orderedOrder, order: oup, snapAt: s.snapSeqFor(oup.Account)}) {
@@ -2401,7 +2538,7 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn, pending bool) {
 				continue
 			}
 			if s.orderSnaps != nil {
-				s.orderSnaps.PutAt(p, time.Now())
+				s.orderSnaps.putFrom(p, s.ReceiptNow(), c)
 			}
 			// W117 F2 — R4 watermark: every order_snapshot advances the
 			// counter the ordered workers wait on before applying the
@@ -2428,6 +2565,8 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn, pending bool) {
 			var ack AckPayload
 			if err := json.Unmarshal(env.Payload, &ack); err == nil && ack.Seq != 0 {
 				_ = s.verifyInbound("ack", ack.Seq, ack.TraderID, ack.Account, ack.SignalID, "")
+			} else if err == nil && ack.Acks == "heartbeat" {
+				s.noteHeartbeatAck(c) // look-twice B rule 4
 			}
 
 		case FrameHeartbeat:
@@ -2508,7 +2647,7 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn, pending bool) {
 					"symbol", p.Symbol, "timeframe", p.Timeframe, "bars", len(p.Bars))
 				continue
 			}
-			s.enqueueBarHistorical(p.Symbol, p.Timeframe, p.Bars)
+			s.enqueueBarHistoricalContract(p.Symbol, p.Timeframe, p.Contract, p.Bars)
 
 		case FrameBarsHistoryData:
 			// HISTORY IMPORT (wave 101) — fan one chunk out to the importer
@@ -2654,6 +2793,9 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn, pending bool) {
 				s.logger.Warn("tcp_server: bad position_close payload", "err", err)
 				continue
 			}
+			// look-twice A — the exit fence BEFORE the identity check: a close we
+			// refuse to record is still a fill the broker made.
+			s.noteExitClose(p)
 			// A2 (G1) — verify the echoed identity; a mismatch freezes the trader and
 			// the close is NOT recorded (never record a close for the wrong originator).
 			if !s.verifyInbound("position_close", p.Seq, p.TraderID, p.Account, p.SignalID, "") {
@@ -2689,13 +2831,28 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn, pending bool) {
 			if s.acctPositionsReceived == nil {
 				s.acctPositionsReceived = make(map[string]time.Time)
 			}
+			receivedAt := s.ReceiptNow()
+			s.notePositionLevelsLocked(p.Account, p.Positions, receivedAt) // look-twice: before the stamp below moves
 			s.acctPositions[p.Account] = p.Positions
 			// W117 F-1 (CTO P0) — stamp the receipt clock HERE, on the
 			// production receive path. Only the test seeder stamped it, so
 			// in production the clock stayed 0001-01-01 forever and every
 			// snapshot after the first entry receipt was refused as stale.
-			s.acctPositionsReceived[p.Account] = time.Now()
+			s.acctPositionsReceived[p.Account] = receivedAt
 			s.acctMu.Unlock()
+			s.notePositionsOnLink(c, p.Account) // look-twice B
+			// m433 — persist the last frame (nil hook = no store wired). Outside
+			// the lock: the hook does a DB write. p.Positions is local to this
+			// readLoop iteration.
+			if cb := s.positionsCB; cb != nil {
+				open := 0
+				for _, pos := range p.Positions {
+					if pos.Quantity != 0 {
+						open++
+					}
+				}
+				cb(p.Account, open)
+			}
 			s.logger.Info("tcp_server: positions snapshot", "account", p.Account, "count", len(p.Positions))
 
 		case FramePositionCloseRejected:
@@ -2784,17 +2941,14 @@ func (s *TCPServer) heartbeatLoop(ctx context.Context, c net.Conn) {
 				return
 			}
 			since := time.Since(s.lastAckTime)
+			link := s.hbLink
 			s.connMu.Unlock()
 			if since > TCPHeartbeatAckTimeout {
 				s.logger.Warn("tcp_server: heartbeat ack timeout, closing", "since", since)
 				s.closeConn()
 				return
 			}
-			s.writeMu.Lock()
-			_ = c.SetWriteDeadline(time.Now().Add(5 * time.Second))
-			err := WriteFrame(c, FrameHeartbeat, HeartbeatPayload{})
-			s.writeMu.Unlock()
-			if err != nil {
+			if _, err := s.writeHeartbeat(c, link); err != nil {
 				s.logger.Warn("tcp_server: write heartbeat", "err", err)
 				s.closeConn()
 				return
@@ -3010,6 +3164,20 @@ func (s *TCPServer) PendingAttemptedCount() int {
 func (s *TCPServer) closeConn() {
 	s.connMu.Lock()
 	defer s.connMu.Unlock()
+	s.closeConnLocked()
+}
+
+// closeConnIf closes c only while it is still the published connection.
+func (s *TCPServer) closeConnIf(c net.Conn) {
+	s.connMu.Lock()
+	defer s.connMu.Unlock()
+	if c != nil && s.conn == c {
+		s.closeConnLocked()
+	}
+}
+
+// closeConnLocked: connMu held.
+func (s *TCPServer) closeConnLocked() {
 	if s.conn != nil {
 		_ = s.conn.Close()
 		s.conn = nil

@@ -33,7 +33,7 @@ func cx1SwingTape(t *testing.T) ([]market.Kline, int64) {
 
 func cx1Tick(t *testing.T, firstTarget bool) ([]Intent, *Evaluator) {
 	t.Helper()
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.CourseExits.SwingEMA34IsFirstTarget = firstTarget
 	bars, now := cx1SwingTape(t)
@@ -50,7 +50,7 @@ func cx1Tick(t *testing.T, firstTarget bool) ([]Intent, *Evaluator) {
 // its target AT the 5m EMA 34 (further than 1R). Mutant: swingRoomFilterRefuses
 // ignores the knob → the ON leg goes RED.
 func TestCX1SwingEMA34IsTheFirstTargetNotAnObstacle(t *testing.T) {
-	if !DefaultConfig().CourseExits.SwingEMA34IsFirstTarget {
+	if !preOctCfg().CourseExits.SwingEMA34IsFirstTarget {
 		t.Fatal("CX-1 default must be ON (case a)")
 	}
 	off, eOff := cx1Tick(t, false)
@@ -84,7 +84,7 @@ func TestCX1SwingEMA34IsTheFirstTargetNotAnObstacle(t *testing.T) {
 // still emits. MUTANT: add an HTFVerdict gate to runSwing → the swing is
 // refused under this conflict → RED.
 func TestSWING4HExemptFromHTFGate(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.HTFGateNewsOnly = false // the all-day gate (owner decision A 2026-10-21)
 	bars, now := cx1SwingTape(t)
@@ -109,7 +109,7 @@ func TestSWING4HExemptFromHTFGate(t *testing.T) {
 // the reverse ISB PHL (long) and KEEPS the ISB location size flags (P2-2); OFF
 // keeps "ISB". Mutant: the retag call removed from eval.go → ON RED.
 func TestCX6ReverseISBTaggedPHLWhenOn(t *testing.T) {
-	if !DefaultConfig().CourseExits.ReverseISBAsPHL {
+	if !preOctCfg().CourseExits.ReverseISBAsPHL {
 		t.Fatal("CX-6 default must be ON (course-defaults-30)")
 	}
 	for _, on := range []bool{false, true} {
@@ -141,7 +141,7 @@ func TestCX6ReverseISBTaggedPHLWhenOn(t *testing.T) {
 // ISB inside a range or at an old extreme still sizes 3, never base 5. Mutant:
 // `in.Flag = ""` in reverseISBRetag → RED.
 func TestCX6ReverseISBRetagKeepsLocationFlags(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	both := FlagISBAtOldExtreme + "|" + FlagISBInRange
 	for _, side := range []Side{SideLong, SideShort} {
 		in := Intent{Setup: "ISB", Side: side, Flag: both, Reason: "reverse ISB"}
@@ -163,7 +163,7 @@ func TestCX6ReverseISBRetagKeepsLocationFlags(t *testing.T) {
 // line (Kind ema9) under the given mode.
 func cx8EMA9Visits(t *testing.T, mode string) *Evaluator {
 	t.Helper()
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.EMAPeriod34 = 0
 	cfg.EMAPeriod9 = 0
@@ -204,7 +204,7 @@ func cx8EMA9Visits(t *testing.T, mode string) *Evaluator {
 // EMA 9 (like EMA 34); per_level keys each EMA 9 price as its own door.
 // Mutant: visitCapAppliesFor ignores exempt → the exempt leg RED.
 func TestCX8EMA9VisitCapModes(t *testing.T) {
-	if DefaultConfig().CourseExits.EMA9VisitCap != EMA9VisitShared {
+	if preOctCfg().CourseExits.EMA9VisitCap != EMA9VisitShared {
 		t.Fatal("CX-8 default must be shared (case b, the course states no EMA 9 visit rule)")
 	}
 	shared := cx8EMA9Visits(t, EMA9VisitShared)
@@ -233,19 +233,20 @@ func TestCX8EMA9VisitCapModes(t *testing.T) {
 // never folded into "isb_stop_twenties". Mutant: drop the isbOverMaxStop check
 // in ISBStopVerdict → RED.
 func TestCX9ISBMaxStopRefusedAndNamed(t *testing.T) {
-	if DefaultConfig().CourseExits.ISBMaxStopPts != 30 {
-		t.Fatal("CX-9 default must be 30 (course-defaults-30)")
+	if preOctCfg().CourseExits.ISBMaxStopPts != 20 {
+		t.Fatal("CX-9 default must be 20 (m466 G23 D4.1-R12: \"hai mươi mấy điểm… đừng vô\")")
 	}
 	ins, e := scopeISBTick(fullDepth)
 	if entriesOf(ins, "ISB") != 1 {
-		t.Fatalf("control: the ISB must emit with the default 30 (its stop 5 < 30); %+v %v", ins, e.State.Refusals)
+		t.Fatalf("control: the ISB must emit with the default 20 (its stop 5 < 20); %+v %v", ins, e.State.Refusals)
 	}
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.EMAPeriod34 = 0
 	cfg.EMAPeriod9 = 0
 	cfg.EMALocationTFMinutes = 0
 	cfg.CourseExits.ISBMaxStopPts = 1
+	cfg.CourseExits.StopSizeLadder = false // pins the ladder-OFF (pre-2026-11-10) ceiling; the ladder-ON path is stop_size_ladder_test.go
 	e2 := newISBEval(cfg)
 	bars := isbFixture()
 	now := bars[len(bars)-1].CloseTime + 1
@@ -263,7 +264,7 @@ func TestCX9ISBMaxStopRefusedAndNamed(t *testing.T) {
 // tape that trades at ratio 1 (today) sits out once the ratio scales the
 // candle past the level gap. Mutant: drop the ratio factor → RED.
 func TestCX10KeypairRatio(t *testing.T) {
-	if DefaultConfig().CourseExits.KeypairCandleRatio != 1 {
+	if preOctCfg().CourseExits.KeypairCandleRatio != 1 {
 		t.Fatal("CX-10 default must be 1 (today)")
 	}
 	e, bars, now := b21PairFixture(false)
@@ -299,8 +300,9 @@ func cx11FTGH(mk func(i int, o, h, l, c float64) market.Kline, base int, off flo
 // Mutant: buildBoxes skips filterTallBoxes → RED.
 func TestCX11BoxMaxHeight(t *testing.T) {
 	for _, maxH := range []float64{0, 1.5} {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.Enabled = true
+		cfg.Exec2mAfter30m = false // m410: this fixture pins the 1m box geometry (boxes now draw on the traded 2m frame after 09:00)
 		cfg.KeyLevelTFMinutes = 1
 		cfg.EMAPeriod34 = 0
 		cfg.EMAPeriod9 = 0
@@ -324,8 +326,9 @@ func TestCX11BoxMaxHeight(t *testing.T) {
 // drawn from RTH candles only. Mutant: boxLatchDayKey ignores the knob → RED.
 func TestCX11FreshRTHPair(t *testing.T) {
 	for _, on := range []bool{false, true} {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.Enabled = true
+		cfg.Exec2mAfter30m = false // m410: this fixture pins the 1m box geometry (boxes now draw on the traded 2m frame after 09:00)
 		cfg.KeyLevelTFMinutes = 1
 		cfg.EMAPeriod34 = 0
 		cfg.EMAPeriod9 = 0

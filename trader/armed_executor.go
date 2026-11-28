@@ -2864,6 +2864,9 @@ func (at *AutoTrader) materializeArmedEntry(r store.ArmedOrderDB, u ntwire.Order
 	if side == "" {
 		return
 	}
+	// m447 (7): NOT judged here. The AddOn sends a fill frame for this same fill
+	// (handleFillInbound judges it, with the fill's own time); judging this
+	// order_update too counted one fill twice under a second id.
 	// N2/N3 (2026-10-04, CTO ruling): the AddOn's fill frame quantity is
 	// CUMULATIVE (e.Filled) and its price the running AVERAGE
 	// (e.AverageFillPrice). The DELTA is measured against the arm row's LAST
@@ -3161,6 +3164,104 @@ func (at *AutoTrader) armedPassDormant() bool {
 	return !at.dayPlanEnabled() && !at.mentorEnabled()
 }
 
+// sweepDueExpiriesAtReopen (m244) cancels every resting order whose authored
+// expiry fell inside the just-ended CME closed period, BEFORE any new work
+// (authoring or placement) runs on the first open cycle.
+//
+// Expiry is Go-side (ledger ExpiryMs, swept in runArmedPlacementAtFiltered only
+// during an OPEN cycle), and the whole cycle is CME-open-gated
+// (cmeSessionClosedSkip) with a 3-minute closed backoff. An expiry inside the
+// 16:00–17:00 daily break (or any closed window) is therefore never swept at
+// its due time — the resting NT8 stop-limit survives the break and can fill on
+// the reopen before the first open cycle sweeps it (row 410: expiry
+// 16:59:59.999, filled 17:00:40). This runs at the closed→open EDGE only, so
+// the cancel reaches the broker on the earliest open cycle, before placement.
+func (at *AutoTrader) sweepDueExpiriesAtReopen(now time.Time) {
+	at.sweepDueExpiries(now, "reopen")
+}
+
+// sweepDueExpiriesWhileClosed (m463, D5.2-R27 [p3 @12:16–13:18]) runs the SAME
+// sweep on every CLOSED cycle: an order whose expiry is due while the market is
+// shut is cancelled during the break, never left resting into the reopen. The
+// swing order of a 4h candle the CME closes inside (the 13:00 CT candle at the
+// 16:00 halt, a Friday, an early close) expires AT the close (kernel
+// swingExpiry), so the first closed cycle cancels it — an hour before the
+// 17:00 reopen that filled trade 678 (row 410, 17:00:40) while the m244 reopen
+// sweep was still inside the 3-minute closed backoff. Idempotent: only
+// non-terminal, due, not-yet-cancel_pending rows qualify (armExpired).
+func (at *AutoTrader) sweepDueExpiriesWhileClosed(now time.Time) {
+	at.sweepDueExpiries(now, "closed-market")
+}
+
+// sweepDueExpiries is the one due-expiry sweep both edges run; where names the
+// caller in the log lines.
+func (at *AutoTrader) sweepDueExpiries(now time.Time, where string) {
+	nt := at.armedTrader()
+	if nt == nil || at.store == nil {
+		return
+	}
+	ledger := at.store.ArmedOrders()
+	if ledger == nil {
+		return
+	}
+	rows, err := ledger.ListNonTerminal(at.id)
+	if err != nil {
+		return
+	}
+	n := 0
+	for _, r := range rows {
+		if r.TraderID != at.id || !armExpired(r, now.UnixMilli()) {
+			continue
+		}
+		if store.IsUnplacedArm(r.State, r.SignalID) {
+			// Never reached the broker: nothing rests to fill — retire the
+			// authorization in the ledger (the same shape the inline expiry
+			// sweep uses).
+			at.armLifecycleWrite("set_state(expired)", r,
+				ledger.SetState(r.ID, "expired", "stop-limit expiry elapsed — never placed ("+where+" sweep)"))
+			n++
+			continue
+		}
+		if r.State == store.StateWorking && r.FillQuantity > 0 {
+			// Partially filled: the inline pass cancels only the REMAINDER and
+			// hands the filled part to the exit drive. Never touched here.
+			continue
+		}
+		if strings.TrimSpace(r.SignalID) != "" {
+			// m330 B2: this sweep runs once, at the closed->open edge. A cancel
+			// refused for a TRANSIENT reason (no fresh broker book, send failed)
+			// must not be dropped — fall through to RequestCancel so the row goes
+			// cancel_pending and the settlement pass re-requests it (the same
+			// safety-gated retry the inline sweep uses). A SAFETY refusal
+			// (filled / entry gone with children) stays final.
+			if v := at.cancelSafetyFor(r, now); !v.Allow {
+				if v.Why != armCancelNoBookWhy {
+					// m463: the closed-market sweep runs every closed cycle, so a
+					// FINAL refusal is logged once per row, not every 3 minutes
+					// all weekend.
+					if at.expirySweepFinalLogged == nil {
+						at.expirySweepFinalLogged = map[int64]bool{}
+					}
+					if where == "reopen" || !at.expirySweepFinalLogged[r.ID] {
+						at.expirySweepFinalLogged[r.ID] = true
+						at.logWarnf("🛟 %s expiry sweep: cancel REFUSED (final, giving up) arm=%d %s %s signal=%s — %s", where, r.ID, r.Session, r.Scenario, shortID(r.SignalID), v.Why)
+					}
+					continue
+				}
+				at.logWarnf("🛟 %s expiry sweep: cancel REFUSED (transient, queued for retry) arm=%d %s %s signal=%s — %s", where, r.ID, r.Session, r.Scenario, shortID(r.SignalID), v.Why)
+			} else if cerr := nt.CancelOrder(r.SignalID); cerr != nil {
+				at.logWarnf("✕ %s expiry sweep: cancel SEND failed (queued for retry) arm=%d %s %s: %v", where, r.ID, r.Session, r.Scenario, cerr)
+			}
+		}
+		at.armLifecycleWrite("request_cancel(expiry_elapsed)", r,
+			ledger.RequestCancel(r.ID, "stop-limit expiry elapsed ("+where+" sweep)", now.UnixMilli()))
+		n++
+	}
+	if n > 0 {
+		at.logWarnf("🧹 %s expiry sweep: %d due arm(s) cancelled/expired (D5.2-R27: no order outlives its 4h candle)", where, n)
+	}
+}
+
 // mentorOnlyPlacementPass is the B3 (release #3b) mentor-only placement path.
 // It runs the SAME placement engine as the planner pass — admission chain,
 // maintenance hold, one-contract guard, the account/SIM gate, the slot guard,
@@ -3173,23 +3274,46 @@ func (at *AutoTrader) mentorOnlyPlacementPass(now time.Time, scope *armedPassSco
 	// while the live 1m feed is stale (B4's formula). Rows stay armed and retry
 	// when the feed is fresh — nothing is cancelled by this (resting broker
 	// orders are untouched; that is a separate decision).
-	if at.mentorStaleDataBlocked(now) {
-		scope.note(scope.scenarioOrEmpty(), "refused: stale_data")
+	// m445: ONE verdict — stale feed (as before) OR missing bars in the intraday
+	// window / detector unknown. The per-row admission (armAdmitted) ALSO asks,
+	// with the SWING4H row's deeper window.
+	if dv := at.dataIntegrityVerdictAt(ntTrader.IntegrityIntradayOpenMin, now, true); dv.Blocked {
+		if !dv.isData() {
+			if armRefusalChanged(&at.armRefusalLast, at.id+":mentor_stale_data", "stale_data") {
+				at.logWarnf("🛑 mentor placement REFUSED (stale_data): the live 1m feed is stale — mentor arms stay armed and retry when fresh")
+			}
+			telemetry.IncGateBlock(at.id, "stale_data")
+			scope.note(scope.scenarioOrEmpty(), "refused: stale_data")
+			return
+		}
+		if armRefusalChanged(&at.armRefusalLast, at.id+":mentor_data_integrity", dv.Class) {
+			at.logWarnf("🛑 mentor placement REFUSED (%s): %s — mentor arms stay armed and retry when the bars are measured filled", dv.Class, dv.Reason)
+		}
+		telemetry.IncGateBlock(at.id, dv.Class)
+		scope.note(scope.scenarioOrEmpty(), "refused: "+dv.Class)
 		return
 	}
 	var bars []market.Kline
 	if market.FuturesBarsProvider != nil {
 		bars = market.FuturesBarsProvider(at.futuresSymbol(), kernel.AISVPBarInterval, kernel.AISVPBarCount)
 	}
-	// B3 Q1 + N5 — the mentor ignores ONLY the lunch and first-N windows. The
-	// consecutive-loss breaker, the red-news T1 blackout, the per-session trade
-	// cap, the force-flat windows and outside-session/session-off all still
-	// refuse (session_risk.go labels them one class; mentorWaivesSessionBand
-	// splits the lunch/first-N sub-windows).
-	if risk := at.sessionRiskGateAt(now); risk.Refuse && !mentorWaivesSessionBand(risk) {
-		if armRefusalChanged(&at.armRefusalLast, at.id+":mentor_session_risk", risk.Class) {
+	// B3 Q1 + N5, expanded m235 — the mentor ignores the day-plan session LIST
+	// (outside-session, session-off, sessions_enabled, trade cap, lunch, first-N):
+	// the mentor's own window/news gates govern at authoring. The consecutive-loss
+	// breaker, the red-news T1 blackout and the force-flat windows still refuse.
+	// Every refusal logs once per (class, reason) change and ticks the gate-block
+	// counter (bug-hunt #40 — never silent).
+	//
+	// m314 — the in-session EOD-flat window is the ONE force-flat refusal a
+	// SWING4H arm waives (the course holds the swing by the 4h), so this
+	// PASS-level refusal lets the EOD flat through and the per-row admission
+	// check decides per intent: SWING4H places, intraday (ISB) stays refused.
+	// The T1 blackout and the T1 force-flat lead still refuse the whole pass.
+	if risk := at.sessionRiskGateAt(now); risk.Refuse && !mentorWaivesSessionBand(risk) && !isEODFlatWindowRisk(risk) {
+		if armRefusalChanged(&at.armRefusalLast, at.id+":mentor_session_risk", risk.Class+":"+risk.Reason) {
 			at.logWarnf("🛑 mentor placement REFUSED (%s): %s", risk.Class, risk.Reason)
 		}
+		telemetry.IncGateBlock(at.id, risk.Class)
 		scope.note(scope.scenarioOrEmpty(), "refused: "+risk.Class+": "+risk.Reason)
 		return
 	}
@@ -3592,6 +3716,9 @@ func (at *AutoTrader) TestArmPlace(side string, entry, stop, target float64) (st
 	if reason := at.armedSeamDenied(); reason != "" {
 		return out, fmt.Errorf("test-arm denied: %s", reason)
 	}
+	if reason := at.dataIntegrityTestSeamRefusal(time.Now()); reason != "" { // m445: a SIM test order is still an entry
+		return out, fmt.Errorf("test-arm denied: %s", reason)
+	}
 	nt := at.armedTrader()
 	if nt == nil {
 		return out, fmt.Errorf("no TCPTrader bound")
@@ -3648,6 +3775,9 @@ func (at *AutoTrader) TestArmPlace(side string, entry, stop, target float64) (st
 func (at *AutoTrader) TestArmPlaceStop(side string, trigger, stop, target float64) (store.ArmedOrderDB, error) {
 	var out store.ArmedOrderDB
 	if reason := at.armedSeamDenied(); reason != "" {
+		return out, fmt.Errorf("test-arm denied: %s", reason)
+	}
+	if reason := at.dataIntegrityTestSeamRefusal(time.Now()); reason != "" { // m445: a SIM test order is still an entry
 		return out, fmt.Errorf("test-arm denied: %s", reason)
 	}
 	nt := at.armedTrader()

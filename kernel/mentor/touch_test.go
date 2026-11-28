@@ -15,7 +15,7 @@ import (
 // TestTouchRejectAtResistanceCloseBelow — source [D5.2 p3 @ 21:30]:
 // "ĐỤNG, ĐÓNG DƯỚI — ĐẶT LỆNH SELL STOP… đang đụng RESISTANCE".
 func TestTouchRejectAtResistanceCloseBelow(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	lvl := Level{Key: "k1", Kind: KindKeyLevel, Price: 100}
 	tr := &Touch{LevelKey: "k1"}
@@ -39,7 +39,7 @@ func TestTouchRejectAtResistanceCloseBelow(t *testing.T) {
 // TestTouchWrongWayAtResistanceCloseAbove — source [D5.2 p3 @ 21:30]:
 // "ĐỤNG, ĐÓNG LÊN TRÊN — CANCEL LỆNH…" — a close THROUGH the resistance.
 func TestTouchWrongWayAtResistanceCloseAbove(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	lvl := Level{Key: "k1", Kind: KindKeyLevel, Price: 100}
 	tr := &Touch{LevelKey: "k1"}
@@ -58,7 +58,7 @@ func TestTouchWrongWayAtResistanceCloseAbove(t *testing.T) {
 // TestTouchRejectAtSupportCloseAbove — the mirror of the source quote at a
 // support: close ABOVE → buy stop over the candle.
 func TestTouchRejectAtSupportCloseAbove(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	lvl := Level{Key: "k1", Kind: KindKeyLevel, Price: 100}
 	tr := &Touch{LevelKey: "k1"}
@@ -79,7 +79,7 @@ func TestTouchRejectAtSupportCloseAbove(t *testing.T) {
 // TestTouchWrongWayAtSupportCloseBelow — a close THROUGH the support → the
 // level is INVALID, only ISBs may trade there after [D5.2 p1 @ 19:51].
 func TestTouchWrongWayAtSupportCloseBelow(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	lvl := Level{Key: "k1", Kind: KindKeyLevel, Price: 100}
 	tr := &Touch{LevelKey: "k1"}
@@ -96,7 +96,7 @@ func TestTouchWrongWayAtSupportCloseBelow(t *testing.T) {
 // @ 20:40]: the FIRST touching candle is the reference, "never the second".
 // A later candle never reclassifies.
 func TestTouchOnlyFirstCandleCounts(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	lvl := Level{Key: "k1", Kind: KindKeyLevel, Price: 100}
 	tr := &Touch{LevelKey: "k1"}
@@ -117,7 +117,7 @@ func TestTouchOnlyFirstCandleCounts(t *testing.T) {
 // TestTouchNoNearTouch — §3 step 1: wait for the LITERAL touch (the candle's
 // range must reach the level). A candle that stops short emits nothing.
 func TestTouchNoNearTouch(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	lvl := Level{Key: "k1", Kind: KindKeyLevel, Price: 100}
 	tr := &Touch{LevelKey: "k1"}
@@ -141,7 +141,7 @@ func TestTouchNoNearTouch(t *testing.T) {
 // levels; every level that gets touched is classified exactly once and the
 // outcome never flips.
 func TestTouchOnRecordedTapeClassifiesOncePerLevel(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.KeyLevelTFMinutes = 1 // rich 1m level set — this test is about touch classification, not the 1H source
 	bars := loadFixture(t, "mnq_1m_2026-09-15_rth", "1m")
@@ -195,7 +195,7 @@ func TestTouchOnRecordedTapeClassifiesOncePerLevel(t *testing.T) {
 // exactly ON the level is a tie — no approach side yet. The touch waits for a
 // bar that closes off the level; nothing classifies on the tie bar.
 func TestTouchTiePreviousCloseNoApproach(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	lvl := Level{Key: "k1", Kind: KindKeyLevel, Price: 100}
 	tr := &Touch{LevelKey: "k1"}

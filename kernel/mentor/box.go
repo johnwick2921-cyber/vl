@@ -1,9 +1,10 @@
 package mentor
 
 import (
-	"fmt"
+	"math"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"vl/kernel"
@@ -35,8 +36,9 @@ import (
 //     [D3.2 p2 @ 06:21]. Valid by construction — no 3rd-touch TEST for the
 //     box [@ 03:45]; the 3rd-touch rule belongs to the TRADE [@ 04:29],
 //     exposed as Box.Touches.
-//   - Deleted only on escape (a BODY closes outside) [D3.2 p1 @ 19:05;
-//     D3.4 p2 @ 12:11] or at the end of the day [D4.1 p2 @ 02:39–03:31].
+//   - Deleted at the end of the day [D4.1 p2 @ 02:39–03:09 (end of day only)].
+//     (An escaped BODY does NOT delete the box — see B4; the earlier "escape
+//     deletes" gloss was stale.)
 //   - "NEVER trade inside the box" [D3.2 p1 @ 06:59] → InsideAnyBox.
 //   - "Draw TWO zones, never a third." [D3.2 p2 @ 09:14] → one floor +
 //     one ceiling.
@@ -90,17 +92,38 @@ type Box struct {
 	// the NEW side with the same reject rule and the same gates (HTF, ORB,
 	// ping-pong). The edges do not move; only the role flips.
 	Flipped bool
+	// TF is the frame this box was DRAWN on when it differs from the
+	// configured base frame — "2m" for a box drawn while the exec-frame
+	// schedule trades the 2m (m410, Exec2mAfter30m). "" = the base frame
+	// (Config.Box.TF): every box before m410, and every box while the knob is
+	// OFF, so a knob-OFF run carries no new state. A "2m" box keeps FormedAt
+	// as a 1m-window index (the walk and the D14 escape read the 1m), and its
+	// touches count on closed 2m candles.
+	TF string
 }
 
 // BoxCfg holds the §4.1 knobs.
 type BoxCfg struct {
 	// TF is the box timeframe: "1m" (default, the course frame), "2m"
-	// (2025 extra), "5mha" (5m Heikin Ashi, 2025 extra). Default off for
+	// (2025 extra), "5mha" (the same FTGH/FTGL two-swing algorithm run on 5m
+	// Heikin Ashi candles — it is NEITHER the 2025 X10 one-colour-change
+	// supply/demand zone NOR the 2026 box; see the guide card). Default off for
 	// the non-course options.
 	TF string
 	// TouchBandPts: a wick within this of an edge counts as a touch;
 	// default 0.25.
 	TouchBandPts float64
+	// OneRoleSwings (D3-G2): true = the September swing switch that records a
+	// candle that is both a 3-bar swing high and low as a LOW only. The zero
+	// value (false) is October: both roles. Set from Config.BoxSwingBothRoles.
+	OneRoleSwings bool
+	// FlipPermanent (D3-G7): true = the September D14 flip that never restores
+	// (one body escape flips the role for the box's life). The zero value is
+	// October: the flip is reversible. Set from Config.BoxFlipReversible.
+	FlipPermanent bool
+	// FTGLBodyEdgePartner (oct-exact D3): FTGL levelness is judged on the lower
+	// BODY edges first [OctD3.3-R54 @43:14]. Set from Config.FTGLBodyEdgePartner.
+	FTGLBodyEdgePartner bool
 }
 
 // DefaultBoxCfg returns the ruling defaults: 1m regular.
@@ -154,12 +177,81 @@ func HeikinAshi(bars []market.Kline) []market.Kline {
 func barsForTF(bars []market.Kline, tf string) []market.Kline {
 	switch tf {
 	case "2m":
-		return barsTF(bars, 2)
+		return dropFormingTail(bars, barsTF(bars, 2), 2)
 	case "5mha":
 		return HeikinAshi(barsTF(bars, 5))
 	default:
 		return bars
 	}
+}
+
+// dropFormingTail drops the last aggregate bucket when the 1m series ends
+// before that bucket's close — a half-formed candle must never be a swing, a
+// confirming bar or a partner (m410: boxes read CLOSED 2m candles only).
+func dropFormingTail(src, agg []market.Kline, tfMin int) []market.Kline {
+	if len(src) == 0 || len(agg) == 0 {
+		return agg
+	}
+	if src[len(src)-1].OpenTime+60_000 < agg[len(agg)-1].CloseTime+1 {
+		return agg[:len(agg)-1]
+	}
+	return agg
+}
+
+// refreshBox re-resolves a latched box's window index, touch count and D14
+// flip from its stable time anchor. A base-frame box (TF "") reads
+// barsForTF(bars, cfg.TF) exactly as before m410. A "2m" box (m410) counts
+// touches on closed 2m candles, but its FormedAt is the 1m index of the
+// formation bucket's LAST minute and the D14 escape reads the 1m body close
+// ("box escape = 1m body close" [D4.1 p1 @20:38–20:45]). Absent anchor → fail
+// closed: the last known values stand.
+func refreshBox(bars []market.Kline, b *Box, cfg BoxCfg) {
+	if b.TF != "2m" {
+		tfBars := barsForTF(bars, cfg.TF)
+		if idx, ok := resolveBarIndex(tfBars, b.FormedAtMs); ok {
+			b.Touches = countBoxTouches(tfBars, *b, idx, cfg)
+			b.Flipped = boxFlipped(tfBars, *b, idx, cfg)
+			b.FormedAt = idx
+		}
+		return
+	}
+	tf2 := barsForTF(bars, "2m")
+	i2, ok2 := resolveBarIndex(tf2, b.FormedAtMs)
+	i1, ok1 := resolveBarIndex(bars, b.FormedAtMs)
+	if !ok2 || !ok1 || i1+1 >= len(bars) {
+		return
+	}
+	b.Touches = countBoxTouches(tf2, *b, i2, cfg)
+	b.FormedAt = i1 + 1
+	b.Flipped = boxFlipped(bars, *b, b.FormedAt, cfg)
+}
+
+// boxEscapeOpenMs returns the OpenTime of the first closed candle after
+// formation whose whole BODY closed outside the box — read on the box's own
+// frame for a base-frame box and on the 1m for a "2m" box (the escape stays a
+// 1m body close). ok=false when absent or not escaped.
+func boxEscapeOpenMs(bars []market.Kline, old Box, baseCfg BoxCfg) (int64, bool) {
+	if old.TF == "2m" {
+		i1, ok := resolveBarIndex(bars, old.FormedAtMs)
+		if !ok || i1+1 >= len(bars) {
+			return 0, false
+		}
+		esc, ok := boxEscapeIndex(bars, old, i1+1)
+		if !ok {
+			return 0, false
+		}
+		return bars[esc].OpenTime, true
+	}
+	tfBars := barsForTF(bars, baseCfg.TF)
+	idx, ok := resolveBarIndex(tfBars, old.FormedAtMs)
+	if !ok {
+		return 0, false
+	}
+	esc, ok := boxEscapeIndex(tfBars, old, idx)
+	if !ok {
+		return 0, false
+	}
+	return tfBars[esc].OpenTime, true
 }
 
 // swings3 is the role detector [B]: a rolling 3-candle extreme — candle i is
@@ -168,6 +260,14 @@ func barsForTF(bars []market.Kline, tf string) []market.Kline {
 // pairing swing keeps no right-side confirmation (B10 T1 ruling 21:00Z);
 // only the EXTREME is confirmed, by swingConfirmed, at the pairing site.
 func swings3(bars []market.Kline) []swingPairAt {
+	return swings3Opt(bars, false)
+}
+
+// swings3Opt is swings3 with D3-G2's both-roles option: a candle that is both a
+// 3-bar swing low and a 3-bar swing high is recorded as the low AND the high
+// (low first) when both is true; with both false it is the one-role switch (low
+// wins) swings3 has always been.
+func swings3Opt(bars []market.Kline, both bool) []swingPairAt {
 	var seq []swingPairAt
 	for i := 2; i < len(bars); i++ {
 		if bars[i].CloseTime == 0 {
@@ -182,10 +282,12 @@ func swings3(bars []market.Kline) []swingPairAt {
 				hi = bars[j].High
 			}
 		}
-		switch {
-		case bars[i].Low == lo && bars[i].Low < bars[i-1].Low && bars[i].Low < bars[i-2].Low:
+		isLow := bars[i].Low == lo && bars[i].Low < bars[i-1].Low && bars[i].Low < bars[i-2].Low
+		isHigh := bars[i].High == hi && bars[i].High > bars[i-1].High && bars[i].High > bars[i-2].High
+		if isLow {
 			seq = append(seq, swingPairAt{kind: kernel.KindSWGL, price: bars[i].Low, idx: i})
-		case bars[i].High == hi && bars[i].High > bars[i-1].High && bars[i].High > bars[i-2].High:
+		}
+		if isHigh && (!isLow || both) {
 			seq = append(seq, swingPairAt{kind: kernel.KindSWGH, price: bars[i].High, idx: i})
 		}
 	}
@@ -208,9 +310,198 @@ func swingConfirmed(bars []market.Kline, s swingPairAt) bool {
 	return bars[s.idx+1].High < s.price
 }
 
-// BoxesBuild is the pure, deterministic box scan: role extremes pair with
-// the NEAREST same-role extreme (in time, on the non-broken side) with NO
-// tolerance; escaped boxes are dropped; only boxes of the current trading
+// pickBoxPair chooses the box's two same-role swings (indices into seq), or
+// -1,-1. m473 B2: PEAK 1 IS THE STANDARD — two confirmed swings pair when LEVEL
+// (|p1-p2| <= flatNearPts, the horizontal-line test), in EITHER order, and the
+// box anchors on the EARLIER one even when the later wick is higher: "Nếu đỉnh
+// 2 có râu cao hơn ... mình sẽ bay theo đỉnh 1 ... chuyện bắt buộc" [Oct D3.3 @
+// 19:31] (OctD3.3-R30); "đặt được một cái đường ... biết là nó có ngang không"
+// [Oct D3.3 @ 14:20] (R23); FTGL is the mirror [Oct D3.3 @ 43:14] (R54). The
+// partner is the confirmed level swing nearest in time to the day's EXTREME
+// swing (either side; the body-edge partner rule waits for the mentor), and the
+// extreme is tried first so an early trivial level pair never beats the
+// prominent peaks (round-2: the video does not say "first swing in time").
+// Supersedes the September "highest swing
+// of the day + next swing that does not exceed it" [D3.2 p1 @ 01:21-04:25].
+// When flatNearPts is 0 (levelness disabled: the legacy synthetic-tape premise,
+// flatNearScale 0) the legacy extreme/nearest selection is kept.
+// boxPeak1Level switches the m473 B2 level-pair / peak-1 anchor construction.
+// Always true in production; the frozen pre-m462 / pre-#61 identity pins set it
+// false to reproduce the September construction they were recorded under.
+var boxPeak1Level = true
+
+// boxPairPrePHL2Seam restores the pre-PHL-2 box pairing for the frozen
+// tick-identity goldens recorded before the phl audit: the level partner
+// NEAREST IN TIME to the extreme (not the first level peak), and the
+// post-escape box built with the September extreme + nearest-non-exceeding
+// rule (no levelness test, no peak-1 anchor). Never set in production.
+var boxPairPrePHL2Seam = false
+
+func pickBoxPair(tfBars []market.Kline, seq []swingPairAt, role kernel.LevelKind, bodyEdge bool) (int, int) {
+	return pickBoxPairAt(tfBars, seq, role, false, bodyEdge)
+}
+
+// lowerBodyEdge is the bottom of a candle's body.
+func lowerBodyEdge(b market.Kline) float64 {
+	return math.Min(b.Open, b.Close)
+}
+
+// bodyEdgePartner (oct-exact D3, knob mentor_ftgl_body_edge_partner) picks the FTGL
+// second bottom by the BODY edge: "mình sẽ lấy cái râu thấp nhất của cái đáy 1,
+// mình kéo lên cái thân gần nhất của cái đáy 2" [OctD3.3-R54 @43:14]. Among the
+// other confirmed swing lows, the partner is the one whose LOWER BODY EDGE is
+// level (within flatNearPts of the later swing, the same horizontal-line test the
+// wick pairing uses) with the extreme's lower body edge, the CLOSEST body edge
+// first, an earlier swing winning a tie. -1 when none is level, and the wick
+// pairing runs unchanged. 13 Sep 2026 (the D3.2 FTGL example): bottom 1 wick
+// 28,981, body edge 29,015; the second bottom's body edge is 29,015.00 (18:51) /
+// 29,014.75 (18:56) and the video draws the top at ~29,014; the wick pairing took
+// the adjacent 17:09 low (body edge 29,003.75) as the partner.
+func bodyEdgePartner(tfBars []market.Kline, seq []swingPairAt, conf []int, ei int) int {
+	ex := seq[ei]
+	exEdge := lowerBodyEdge(tfBars[ex.idx])
+	best, bestD := -1, 0.0
+	for _, ci := range conf {
+		if ci == ei {
+			continue
+		}
+		c := seq[ci]
+		later := c.idx
+		if ex.idx > later {
+			later = ex.idx
+		}
+		d := math.Abs(lowerBodyEdge(tfBars[c.idx]) - exEdge)
+		if d > flatNearPts(tfBars, later) {
+			continue
+		}
+		if best < 0 || d < bestD-1e-9 || (math.Abs(d-bestD) <= 1e-9 && c.idx < seq[best].idx) {
+			best, bestD = ci, d
+		}
+	}
+	return best
+}
+
+// pickBoxPairAt is pickBoxPair; extremeOnly (the post-escape new zone, PHL-2)
+// pairs the EXTREME swing only and never falls back to a less extreme level
+// pair: after an escape the new zone is where price "failed to go lower" —
+// "nó rớt xuống đây, nó bật ngược lên, nó tạo cái failure to go lower dưới
+// này" [D3.4 p3 recovered2 @00:00–00:21] — so a level pair above a lower low
+// (10-30: two lows ~28,669 above the 09:25 low 28,614.75) is no new FTGL.
+func pickBoxPairAt(tfBars []market.Kline, seq []swingPairAt, role kernel.LevelKind, extremeOnly bool, bodyEdge bool) (int, int) {
+	var conf []int
+	for i, s := range seq {
+		if s.kind == role && swingConfirmed(tfBars, s) {
+			conf = append(conf, i)
+		}
+	}
+	if len(conf) == 0 {
+		return -1, -1
+	}
+	if boxPeak1Level && flatNearScale > 0 && len(tfBars) > 0 {
+		// round-2 (video lens): the video never says "the first-in-time swing
+		// with a level partner". The anchor is the day's EXTREME confirmed swing
+		// as before m473 (highest high / lowest low); it pairs with the nearest-
+		// in-time confirmed swing that is LEVEL with it, in EITHER order, and the
+		// box anchors on the EARLIER of the two (peak 1 is the standard [Oct D3.3
+		// @ 19:31], R30). If the extreme has no level partner, the next most
+		// extreme is tried, so an early trivial level pair can never beat the
+		// prominent peaks.
+		order := append([]int(nil), conf...)
+		sort.SliceStable(order, func(x, y int) bool {
+			if role == kernel.KindSWGL {
+				return seq[order[x]].price < seq[order[y]].price
+			}
+			return seq[order[x]].price > seq[order[y]].price
+		})
+		for _, ei := range order {
+			ex := seq[ei]
+			best := -1
+			if bodyEdge && role == kernel.KindSWGL && !boxPairPrePHL2Seam {
+				best = bodyEdgePartner(tfBars, seq, conf, ei) // oct-exact D3 [OctD3.3-R54 @43:14]
+			}
+			for _, ci := range conf {
+				if best >= 0 {
+					break // the body-edge partner stands
+				}
+				if ci == ei {
+					continue
+				}
+				c := seq[ci]
+				later := c.idx
+				if ex.idx > later {
+					later = ex.idx
+				}
+				if math.Abs(c.price-ex.price) > flatNearPts(tfBars, later) {
+					continue
+				}
+				if !boxPairPrePHL2Seam {
+					// PHL-2 (phl audit): the FIRST level peak of the formation is
+					// the standard — "Tui lấy cái râu đỉnh 1 làm chuẩn ... chuyện
+					// bắt buộc" [OctD3.3-R30 @ 19:31]; "First Touch is the best"
+					// [R31 @ 20:33]. The earliest confirmed swing level with the
+					// extreme pairs with it (10-30 E10: the 09:25 bottom 28,614.75
+					// with the 10:42 one, not a later partner nearest in time).
+					if best < 0 || c.idx < seq[best].idx {
+						best = ci
+					}
+					continue
+				}
+				if best < 0 || absInt(c.idx-ex.idx) < absInt(seq[best].idx-ex.idx) ||
+					(absInt(c.idx-ex.idx) == absInt(seq[best].idx-ex.idx) && c.idx < seq[best].idx) {
+					best = ci
+				}
+			}
+			if best < 0 {
+				if extremeOnly {
+					return -1, -1
+				}
+				continue
+			}
+			if seq[best].idx < ex.idx {
+				return best, ei // peak 1 = the earlier swing
+			}
+			return ei, best
+		}
+		return -1, -1
+	}
+	extreme := conf[0]
+	for _, i := range conf[1:] {
+		if role == kernel.KindSWGL && seq[i].price < seq[extreme].price {
+			extreme = i
+		}
+		if role == kernel.KindSWGH && seq[i].price > seq[extreme].price {
+			extreme = i
+		}
+	}
+	nearest := -1
+	for _, i := range conf {
+		s := seq[i]
+		if i == extreme || s.idx <= seq[extreme].idx {
+			continue
+		}
+		if role == kernel.KindSWGL && s.price < seq[extreme].price {
+			continue
+		}
+		if role == kernel.KindSWGH && s.price > seq[extreme].price {
+			continue
+		}
+		if nearest < 0 {
+			nearest = i
+			continue
+		}
+		if s.idx-seq[extreme].idx < seq[nearest].idx-seq[extreme].idx {
+			nearest = i
+		}
+	}
+	return extreme, nearest
+}
+
+// BoxesBuild is the pure, deterministic box scan: two confirmed same-role
+// swings pair when LEVEL (|p1-p2| <= flatNearPts, either order) and the box
+// anchors on the EARLIER one — see pickBoxPair (m473 B2, [Oct D3.3 @ 19:31]).
+// The legacy extreme + nearest-non-exceeding construction (no tolerance) runs
+// only when flatNearScale is 0 or boxPeak1Level is off (frozen goldens);
+// escaped boxes are dropped; only boxes of the current trading
 // day survive. The same history always rebuilds the same set — a drawn box
 // is never redrawn. At most one floor and one ceiling ("two zones").
 func BoxesBuild(bars []market.Kline, cfg BoxCfg, now time.Time) []Box {
@@ -218,7 +509,7 @@ func BoxesBuild(bars []market.Kline, cfg BoxCfg, now time.Time) []Box {
 		cfg = DefaultBoxCfg()
 	}
 	tfBars := barsForTF(bars, cfg.TF)
-	seq := swings3(tfBars)
+	seq := swings3Opt(tfBars, !cfg.OneRoleSwings)
 	today := tradingDayKey(now.In(ctime()))
 	// B10 T2 (CTO 2026-10-03): pick the extreme among TODAY's swings only.
 	// The slice is 1500 1m bars since A9; pairing against a yesterday extreme
@@ -233,73 +524,8 @@ func BoxesBuild(bars []market.Kline, cfg BoxCfg, now time.Time) []Box {
 	seq = seqToday
 	var out []Box
 	for _, role := range []kernel.LevelKind{kernel.KindSWGL, kernel.KindSWGH} {
-		extreme := -1
-		for i, s := range seq {
-			if s.kind != role {
-				continue
-			}
-			// B10 T1 (CTO ruling 21:00Z): only a CONFIRMED swing can be the
-			// extreme — the next closed bar failed to break it. A one-way
-			// tape has no confirmed swing, so no extreme and no box.
-			if !swingConfirmed(tfBars, s) {
-				continue
-			}
-			if extreme < 0 {
-				extreme = i
-				continue
-			}
-			if role == kernel.KindSWGL && s.price < seq[extreme].price {
-				extreme = i
-			}
-			if role == kernel.KindSWGH && s.price > seq[extreme].price {
-				extreme = i
-			}
-		}
-		if extreme < 0 {
-			continue
-		}
-		nearest := -1
-		for i, s := range seq {
-			// item 12 (CTO ruling 23:06Z, DAY-3 row 12): "the FAILURE
-			// defines the box" — bottom/high 2 comes AFTER the extreme and
-			// FAILS to exceed it, and the trade is the 3rd touch ("lần thứ
-			// 3 mới vô lệnh"). The partner is the next CONFIRMED two-sided
-			// swing AFTER the extreme that does not break it — a higher low
-			// / lower high. An EARLIER adjacent decline bar is NEVER the
-			// partner.
-			if i == extreme || s.kind != role {
-				continue
-			}
-			if s.idx <= seq[extreme].idx {
-				continue // bottom/high 2 is LATER, never the previous bar
-			}
-			if !swingConfirmed(tfBars, s) {
-				continue
-			}
-			// the nearest did not break the extreme
-			if role == kernel.KindSWGL && s.price < seq[extreme].price {
-				continue
-			}
-			if role == kernel.KindSWGH && s.price > seq[extreme].price {
-				continue
-			}
-			if nearest < 0 {
-				nearest = i
-				continue
-			}
-			di := seq[i].idx - seq[extreme].idx
-			if di < 0 {
-				di = -di
-			}
-			dn := seq[nearest].idx - seq[extreme].idx
-			if dn < 0 {
-				dn = -dn
-			}
-			if di < dn {
-				nearest = i
-			}
-		}
-		if nearest < 0 {
+		extreme, nearest := pickBoxPair(tfBars, seq, role, cfg.FTGLBodyEdgePartner)
+		if extreme < 0 || nearest < 0 {
 			continue
 		}
 		b := boxFromPair(tfBars, seq[extreme], seq[nearest])
@@ -327,7 +553,7 @@ func BoxesBuild(bars []market.Kline, cfg BoxCfg, now time.Time) []Box {
 		// the role — a broken FTGH becomes support, a broken FTGL becomes
 		// resistance. The box is NOT deleted (B4); it stays and trades the
 		// new side with the same reject rule and gates.
-		b.Flipped = escaped(tfBars, *b, b.FormedAt)
+		b.Flipped = boxFlipped(tfBars, *b, b.FormedAt, cfg)
 		out = append(out, *b)
 	}
 	return out
@@ -357,13 +583,20 @@ func (e *Evaluator) latchBoxes(fresh []Box, bars []market.Kline, cfg BoxCfg) []B
 	}
 	for _, b := range fresh {
 		role := string(b.Kind)
-		if _, ok := e.State.LatchedBoxes[role]; ok {
+		if old, ok := e.State.LatchedBoxes[role]; ok {
+			// m429 (R4, owner 2026-10-25 "if there is a new box use it, if not
+			// use the old box"): a fresh RTH box of this role replaces the
+			// evening one; a role with no fresh RTH box keeps its evening box.
+			if e.freshRTHReplaces(old, b) {
+				e.State.LatchedBoxes[role] = b
+				e.State.PostEscapeBoxes = dropPreRTHPost(e.State.PostEscapeBoxes, b)
+				e.note("box %s replaced by the fresh RTH box %.2f–%.2f (formed %s CT; evening box %.2f–%.2f formed %s CT) — mentor_box_fresh_rth_pair [D4.1 p2 @02:39]", strings.ToUpper(role), b.Bottom, b.Top, kernel.TableTimeCT(time.UnixMilli(b.FormedAtMs)), old.Bottom, old.Top, kernel.TableTimeCT(time.UnixMilli(old.FormedAtMs)))
+			}
 			continue
 		}
 		e.State.LatchedBoxes[role] = b
 		e.note("box latched %s %.2f–%.2f (formed %s CT) — stands to the 17:00 CT session roll, never redrawn [D4.1 p2 @02:39]", strings.ToUpper(role), b.Bottom, b.Top, kernel.TableTimeCT(time.UnixMilli(b.FormedAtMs)))
 	}
-	tfBars := barsForTF(bars, cfg.TF)
 	// Refresh the first boxes (touch count + D14 flip + window index).
 	for _, kind := range []BoxKind{FTGL, FTGH} {
 		role := string(kind)
@@ -376,51 +609,75 @@ func (e *Evaluator) latchBoxes(fresh []Box, bars []market.Kline, cfg BoxCfg) []B
 		// the touch count AND the D14 flip. Absent anchor (the formation bar
 		// scrolled out of the window) → fail closed: keep the last known
 		// values, never recompute on a stale index.
-		if idx, ok := resolveBarIndex(tfBars, latched.FormedAtMs); ok {
-			latched.Touches = countBoxTouches(tfBars, latched, idx, cfg)
-			latched.Flipped = escaped(tfBars, latched, idx)
-			latched.FormedAt = idx
-		}
+		refreshBox(bars, &latched, cfg)
 		e.State.LatchedBoxes[role] = latched // write the refreshed copy back
 	}
 	// B52 (release #29): after a standing box escapes, latch ONE new same-role
 	// box outside the old range, per further escape. The old box keeps its
 	// flipped role (D14); the new box is that role's active box.
 	if e.Cfg.BoxNewZoneAfterEscape {
-		e.latchPostEscapeBoxes(bars, cfg)
+		e.latchPostEscapeBoxes(bars, cfg, e.boxBuildCfg(cfg))
 	}
-	// CTO ruling (fold-551): AT MOST TWO ZONES LIVE. After a new-zone latch the
-	// live set is the NEW zone + the zone it escaped from (flipped); every
-	// older zone (the old opposite box, earlier flipped boxes) retires — no
-	// ladder ("đừng vẽ vùng thứ 3… rối lắm" [D3.2 p2 @09:47–09:51]).
+	// AT MOST TWO ZONES LIVE — one floor, one ceiling (m423 T3; fold-551 kept
+	// the escaped zone and could return two floors): the newest box of each
+	// role retires every older one — no ladder ("đừng vẽ vùng thứ 3… rối lắm"
+	// [D3.2 p2 @09:47–09:51]).
 	return liveBoxes(e.State.LatchedBoxes, e.State.PostEscapeBoxes)
 }
 
-// liveBoxes is the LIVE box set under the 2-zone ruling (fold-551): before any
-// escape the first boxes (FTGL then FTGH); after a new-zone latch exactly the
-// newest zone plus the zone it escaped from (the immediately-previous same-role
-// post-escape box, else that role's first box). Every other box is retired from
-// the live reads (inside_any_box / near_box / between-boxes). The ladder is
-// still kept in State.PostEscapeBoxes for the replay and the latch counter.
+// liveBoxes is the LIVE box set: at most ONE floor and ONE ceiling — the
+// course draws one of each ("đừng vẽ vùng thứ 3… rối lắm" [D3.2 p2 @09:47–09:51];
+// one floor + one ceiling [D3.2 p2 @09:14]). Per role (FTGL floor, FTGH ceiling)
+// it is the NEWEST box of that role: the newest post-escape box, else the role's
+// first-latched box (m423 T3). The pre-m423 rule kept the newest zone plus the
+// zone it escaped from, which — when one role escaped — returned two floors and
+// NO ceiling, dropping the standing ceiling from every live read
+// (inside_any_box / near_box / between-boxes). Every other box is retired from
+// the live reads; the ladder is still kept in State.PostEscapeBoxes for the
+// replay and the latch counter. Order: floor, then ceiling.
 func liveBoxes(latched map[string]Box, post []Box) []Box {
-	if len(post) == 0 {
-		out := make([]Box, 0, len(latched))
-		for _, kind := range []BoxKind{FTGL, FTGH} {
-			if b, ok := latched[string(kind)]; ok {
+	out := make([]Box, 0, 2)
+	for _, kind := range []BoxKind{FTGL, FTGH} {
+		picked := false
+		for i := len(post) - 1; i >= 0; i-- {
+			if post[i].Kind == kind {
+				out = append(out, post[i])
+				picked = true
+				break
+			}
+		}
+		if picked {
+			continue
+		}
+		if b, ok := latched[string(kind)]; ok {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
+// carryBoxes picks the boxes carried past the 17:00 CT roll. With
+// BoxCarryFirstLatched (knob mentor_box_carry_first_latched) a role's carried
+// box is the RTH box the mentor drew that morning (the latched / fresh-RTH
+// box), not a later post-escape new zone: "cái box này hôm thứ sáu ... vẫn còn
+// valid trên chart Chủ nhật" [Oct D3.3 @ 17:00, OctD3.3-R27; E9: the Friday
+// FTGH 28,812.50-28,818.25 retested Sun 21:53]. Off = liveBoxes (newest per role).
+func carryBoxes(first bool, latched map[string]Box, post []Box) []Box {
+	if !first {
+		return liveBoxes(latched, post)
+	}
+	out := make([]Box, 0, 2)
+	live := liveBoxes(latched, post)
+	for _, kind := range []BoxKind{FTGL, FTGH} {
+		if b, ok := latched[string(kind)]; ok {
+			out = append(out, b)
+			continue
+		}
+		for _, b := range live {
+			if b.Kind == kind {
 				out = append(out, b)
 			}
 		}
-		return out
-	}
-	newest := post[len(post)-1]
-	out := []Box{newest}
-	for i := len(post) - 2; i >= 0; i-- {
-		if post[i].Kind == newest.Kind {
-			return append(out, post[i])
-		}
-	}
-	if b, ok := latched[string(newest.Kind)]; ok {
-		out = append(out, b)
 	}
 	return out
 }
@@ -430,31 +687,22 @@ func liveBoxes(latched map[string]Box, post []Box) []Box {
 // post-escape box of that role, else the first-latched box. One box per escape:
 // once latched, the new box is the active box and blocks another until IT
 // escapes. Dedup by Key so a replay of the same tick never double-latches.
-func (e *Evaluator) latchPostEscapeBoxes(bars []market.Kline, cfg BoxCfg) {
-	tfBars := barsForTF(bars, cfg.TF)
+func (e *Evaluator) latchPostEscapeBoxes(bars []market.Kline, cfg, buildCfg BoxCfg) {
 	// Refresh the post-escape boxes first (touches + D14 flip + window index).
 	for i := range e.State.PostEscapeBoxes {
-		b := &e.State.PostEscapeBoxes[i]
-		if idx, ok := resolveBarIndex(tfBars, b.FormedAtMs); ok {
-			b.Touches = countBoxTouches(tfBars, *b, idx, cfg)
-			b.Flipped = escaped(tfBars, *b, idx)
-			b.FormedAt = idx
-		}
+		refreshBox(bars, &e.State.PostEscapeBoxes[i], cfg)
 	}
 	for _, kind := range []BoxKind{FTGL, FTGH} {
 		active, ok := e.activeBoxOf(kind)
 		if !ok {
 			continue
 		}
-		idx, ok := resolveBarIndex(tfBars, active.FormedAtMs)
-		if !ok {
-			continue // F551-1(c): the seed skips here — the tick must too (never escape-check on a stale FormedAt)
-		}
-		active.FormedAt = idx
-		if _, escapedYet := boxEscapeIndex(tfBars, active, active.FormedAt); !escapedYet {
+		// F551-1(c): the seed skips an absent anchor — the tick must too (never
+		// escape-check on a stale FormedAt).
+		if _, escapedYet := boxEscapeOpenMs(bars, active, cfg); !escapedYet {
 			continue
 		}
-		nb := boxAfterEscapeBuild(bars, cfg, active)
+		nb := boxAfterEscapeBuildFrame(bars, buildCfg, cfg, active)
 		if nb == nil {
 			continue
 		}
@@ -585,6 +833,43 @@ func escaped(bars []market.Kline, b Box, formedAt int) bool {
 	return false
 }
 
+// boxFlipped is the box's CURRENT D14 flip state after formation. FlipPermanent
+// (the September rule): one body escape flips the role for the box's life
+// (escaped). Otherwise (October, D3-G7) the flip is REVERSIBLE: a later candle
+// whose whole body is back on the original side of the box — below an FTGH's
+// bottom, above an FTGL's top — restores the role, so the retest from the
+// original side is the resistance/support it was: "đợi nó quay về nó bắt test, nó
+// đóng ngược lại level, thì level này lại tiếp tục là Resistance" [Oct D3.3 @
+// 37:40] (OctD3.3-R46 way 2); "let it drop, retest the box from below, sell" [@
+// 39:20] (R48). [B: the restore reads the mirror of the escape's whole-body test;
+// the course gives no number.]
+func boxFlipped(bars []market.Kline, b Box, formedAt int, cfg BoxCfg) bool {
+	if cfg.FlipPermanent {
+		return escaped(bars, b, formedAt)
+	}
+	flipped := false
+	for _, c := range bars[formedAt+1:] {
+		if c.CloseTime == 0 {
+			continue
+		}
+		switch b.Kind {
+		case FTGH:
+			if c.Open > b.Top && c.Close > b.Top {
+				flipped = true
+			} else if flipped && c.Open < b.Bottom && c.Close < b.Bottom {
+				flipped = false
+			}
+		case FTGL:
+			if c.Open < b.Bottom && c.Close < b.Bottom {
+				flipped = true
+			} else if flipped && c.Open > b.Top && c.Close > b.Top {
+				flipped = false
+			}
+		}
+	}
+	return flipped
+}
+
 // boxEscapeIndex returns the index of the FIRST closed candle after formation
 // whose whole BODY closed outside the box on the far side (the escape that
 // triggers B52). ok=false when the box has not escaped yet.
@@ -619,16 +904,88 @@ func boxEscapeIndex(bars []market.Kline, b Box, formedAt int) (int, bool) {
 // same-role swings, the second fails to break the first; wick of the first to
 // the nearest body of the second). Returns nil when no such box exists yet.
 func boxAfterEscapeBuild(bars []market.Kline, cfg BoxCfg, old Box) *Box {
+	return boxAfterEscapeBuildFrame(bars, cfg, cfg, old)
+}
+
+// boxAfterEscapeBuildFrame is boxAfterEscapeBuild with the two frames named:
+// buildCfg is the frame the NEW box is drawn on (m410: the 2m while the exec
+// schedule trades it), baseCfg the configured base frame the OLD box was read
+// on when it carries no TF. With buildCfg == baseCfg it is byte-identical to
+// the pre-m410 build.
+func boxAfterEscapeBuildFrame(bars []market.Kline, buildCfg, baseCfg BoxCfg, old Box) *Box {
+	cfg := buildCfg
 	tfBars := barsForTF(bars, cfg.TF)
-	esc, ok := boxEscapeIndex(tfBars, old, old.FormedAt)
+	escMs, ok := boxEscapeOpenMs(bars, old, baseCfg)
 	if !ok {
 		return nil
+	}
+	esc, ok := resolveBarIndex(tfBars, escMs)
+	if !ok {
+		// the escaping 1m bar sits inside a 2m bucket: the swing must open
+		// strictly AFTER it — the first bucket opening after escMs.
+		esc = sort.Search(len(tfBars), func(i int) bool { return tfBars[i].OpenTime > escMs }) - 1
 	}
 	role := kernel.KindSWGL
 	if old.Kind == FTGH {
 		role = kernel.KindSWGH
 	}
-	seq := swings3(tfBars)
+	seq := swings3Opt(tfBars, !cfg.OneRoleSwings)
+	var extreme, nearest int
+	if !boxPairPrePHL2Seam {
+		// PHL-2 (phl audit): the new zone is drawn with the SAME pairing as the
+		// latched box (pickBoxPair: two confirmed swings LEVEL within
+		// flatNearPts — the horizontal-line test [OctD3.3-R23 @ 14:20] — the
+		// box anchored on peak 1's wick [R25/R28/R30 @ 15:46–19:31], FTGL the
+		// mirror [R54 @ 43:14]), restricted to swings formed strictly after
+		// the escape. Before PHL-2 this frame paired the most extreme swing with
+		// the nearest later swing that did not exceed it, whatever the gap: 519
+		// of 917 post-escape boxes paired swings further apart than
+		// flatNearPts, e.g. the 11-10 07:52 FTGL 27,598.50–27,691.00 (a V
+		// reversal, the partner 84.25 pts higher).
+		var after []swingPairAt
+		for _, s := range seq {
+			if s.idx > esc {
+				after = append(after, s)
+			}
+		}
+		seq = after
+		extreme, nearest = pickBoxPairAt(tfBars, seq, role, true, cfg.FTGLBodyEdgePartner)
+	} else {
+		extreme, nearest = boxAfterEscapePairPrePHL2(tfBars, seq, esc, role)
+	}
+	if extreme < 0 || nearest < 0 {
+		return nil
+	}
+	b := boxFromPair(tfBars, seq[extreme], seq[nearest])
+	if b == nil {
+		return nil
+	}
+	// Outside the old range only — never a zone inside the standing range.
+	if old.Kind == FTGL && b.Top > old.Bottom {
+		return nil
+	}
+	if old.Kind == FTGH && b.Bottom < old.Top {
+		return nil
+	}
+	b.Touches = countBoxTouches(tfBars, *b, seq[extreme].idx, cfg)
+	b.Key = "ftgh:" + fnum(b.Top) + ":" + fnum(b.Bottom)
+	if b.Kind == FTGL {
+		b.Key = "ftgl:" + fnum(b.Top) + ":" + fnum(b.Bottom)
+	}
+	b.FormedAt = seq[nearest].idx + 1
+	b.FormedAtMs = tfBars[b.FormedAt].OpenTime
+	b.Flipped = boxFlipped(tfBars, *b, b.FormedAt, cfg)
+	if buildCfg.TF != baseCfg.TF && buildCfg.TF == "2m" {
+		b.TF = "2m"
+		refreshBox(bars, b, baseCfg) // FormedAt/Flipped onto the 1m window
+	}
+	return b
+}
+
+// boxAfterEscapePairPrePHL2 is the pre-PHL-2 post-escape pairing (frozen
+// goldens only, boxPairPrePHL2Seam): the most extreme confirmed swing after the
+// escape and the nearest later confirmed swing that does not exceed it.
+func boxAfterEscapePairPrePHL2(tfBars []market.Kline, seq []swingPairAt, esc int, role kernel.LevelKind) (int, int) {
 	extreme := -1
 	for i, s := range seq {
 		if s.idx <= esc || s.kind != role {
@@ -649,7 +1006,7 @@ func boxAfterEscapeBuild(bars []market.Kline, cfg BoxCfg, old Box) *Box {
 		}
 	}
 	if extreme < 0 {
-		return nil
+		return -1, -1
 	}
 	nearest := -1
 	for i, s := range seq {
@@ -684,29 +1041,7 @@ func boxAfterEscapeBuild(bars []market.Kline, cfg BoxCfg, old Box) *Box {
 			nearest = i
 		}
 	}
-	if nearest < 0 {
-		return nil
-	}
-	b := boxFromPair(tfBars, seq[extreme], seq[nearest])
-	if b == nil {
-		return nil
-	}
-	// Outside the old range only — never a zone inside the standing range.
-	if old.Kind == FTGL && b.Top > old.Bottom {
-		return nil
-	}
-	if old.Kind == FTGH && b.Bottom < old.Top {
-		return nil
-	}
-	b.Touches = countBoxTouches(tfBars, *b, seq[extreme].idx, cfg)
-	b.Key = "ftgh:" + fnum(b.Top) + ":" + fnum(b.Bottom)
-	if b.Kind == FTGL {
-		b.Key = "ftgl:" + fnum(b.Top) + ":" + fnum(b.Bottom)
-	}
-	b.FormedAt = seq[nearest].idx + 1
-	b.FormedAtMs = tfBars[b.FormedAt].OpenTime
-	b.Flipped = escaped(tfBars, *b, b.FormedAt)
-	return b
+	return extreme, nearest
 }
 
 // countBoxTouches counts closed candles after formation whose wick reached
@@ -754,8 +1089,8 @@ func BoxEdgeLocations(boxes []Box) []Level {
 	var out []Level
 	for _, b := range boxes {
 		out = append(out,
-			Level{Key: b.Key + ":top", Kind: KindFTGHEdge, Price: b.Top},
-			Level{Key: b.Key + ":bottom", Kind: KindFTGLEdge, Price: b.Bottom},
+			Level{Key: b.Key + ":top", Kind: KindFTGHEdge, Price: b.Top, FormedMs: b.FormedAtMs, TF: b.TF},
+			Level{Key: b.Key + ":bottom", Kind: KindFTGLEdge, Price: b.Bottom, FormedMs: b.FormedAtMs, TF: b.TF},
 		)
 	}
 	return out
@@ -776,12 +1111,34 @@ func InsideAnyBox(boxes []Box, price float64) bool {
 // too close to a box is refused. The nearest box edge STRICTLY in the trade
 // direction (long → the closest edge ABOVE; short → the closest edge BELOW)
 // must be at least roomMultiple × risk points away, else the setup is "sát
-// box" and skipped. Row 25 [@ 23:14–24:03]: "nằm ở GIỮA 2 box" — exempt ONLY
-// between two DIFFERENT boxes: one wholly above (Bottom > price) AND another
-// wholly below (Top < price). A price inside a single box is NOT exempt. No
-// edge in the trade direction → allowed. roomMultiple <= 0 or risk <= 0
-// disables the check.
-func nearBoxRefusal(boxes []Box, price float64, side Side, roomMultiple, risk float64) (refuse bool, why string) {
+// box" and skipped (name near_box).
+//
+// m465 (release #60, D3.2-R29/R30 — the full video read): the mentor refused
+// E6, a short ISB candle (~29,015–29,025) sitting ON the top of the FTGL box
+// 28,980.75–29,014.00 — "sát box, gần box, gần supply quá, mình không được
+// đánh" [D3.2 p1 @22:12–23:08] — although the FTGH box was drawn above it. So:
+//
+//  1. an entry INSIDE (edges included) a box whose role OPPOSES the side — an
+//     FTGL (support) for a short, an FTGH (resistance) for a long — is at
+//     distance 0 from the floor it would run into: refused
+//     near_box_inside_opposing;
+//  2. "nằm ở GIỮA 2 box" (one box wholly above AND one wholly below) is no
+//     longer a blanket exemption: the middle ISB was fine because "nó đâu có
+//     làm gì đâu" — nothing was near it [D3.2 p1 @23:14–24:41] — so it passes
+//     on its OWN room like any other setup. betweenExempt (knob
+//     mentor_near_box_between_exempt, default false) restores the pre-#60
+//     exemption.
+//
+// No edge in the trade direction → allowed. roomMultiple <= 0 or risk <= 0
+// disables the check. why is the refusal NAME ("" when allowed).
+// nearBoxInsideOpposingOff switches rule (1) below OFF. Always false in
+// production; the pre-#60 identity tests (m462_newsonly_identity_test.go)
+// switch it on to prove every OTHER m465 change is undone by its knob, tick for
+// tick. An atomic.Bool (review fix): a test-only hook read by every evaluator
+// must not be a data race if a parallel test ever toggles it.
+var nearBoxInsideOpposingOff atomic.Bool
+
+func nearBoxRefusal(boxes []Box, price float64, side Side, roomMultiple, risk float64, betweenExempt bool) (refuse bool, why string) {
 	if roomMultiple <= 0 || risk <= 0 {
 		return false, ""
 	}
@@ -818,14 +1175,25 @@ func nearBoxRefusal(boxes []Box, price float64, side Side, roomMultiple, risk fl
 			}
 		}
 	}
-	if wholeAbove && wholeBelow {
-		return false, "" // row 25: between two DIFFERENT boxes — exempt
+	// (1) inside the opposing box — distance 0 (E6). Always on in production;
+	// nearBoxInsideOpposingOff is a test hook only (the pre-#60 identity tests).
+	for _, b := range boxes {
+		if nearBoxInsideOpposingOff.Load() {
+			break
+		}
+		opposes := side == SideShort && b.Kind == FTGL || side == SideLong && b.Kind == FTGH
+		if opposes && price >= b.Bottom && price <= b.Top {
+			return true, "near_box_inside_opposing"
+		}
+	}
+	if betweenExempt && wholeAbove && wholeBelow {
+		return false, "" // pre-#60 row 25: between two DIFFERENT boxes — exempt (knob)
 	}
 	if !found {
 		return false, ""
 	}
 	if nearest < roomMultiple*risk {
-		return true, fmt.Sprintf("near box: nearest box edge %.2f pts < %.2f pts room (%gx risk)", nearest, roomMultiple*risk, roomMultiple)
+		return true, "near_box"
 	}
 	return false, ""
 }
@@ -863,4 +1231,11 @@ func structureTrend5m(closed5m []market.Kline) Side {
 		return SideShort
 	}
 	return ""
+}
+
+func absInt(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
 }

@@ -1,6 +1,7 @@
 package mentor
 
 import (
+	"strings"
 	"time"
 
 	"vl/market"
@@ -14,9 +15,11 @@ import (
 type HTF struct {
 	FourH TriggerLine
 	OneH  TriggerLine
-	// GateOff — D4.4-11: the 4h/1h DIRECTION gate is off outside the news
-	// window (the course uses the HTF read for news first, not ordinary
-	// trading yet). Transient, recomputed every tick; never persisted.
+	// GateOff — the 4h/1h DIRECTION gate does not apply at this tick. Since
+	// m462 it is false all session by default (D5.1-R9/R11); only an
+	// explicitly stored htf_gate_news_only=true sets it outside the old
+	// D4.4-11 news/open windows. Transient, recomputed every tick; never
+	// persisted.
 	GateOff bool `json:"-"`
 }
 
@@ -24,13 +27,23 @@ type HTF struct {
 // trigger lines (aggregated by the evaluator from the 1m series). Pure:
 // state in, state out.
 func HTFAdvance(h HTF, bars4h, bars1h []market.Kline, cfg Config) HTF {
-	h.FourH = TriggerTick(h.FourH, bars4h, 240, cfg)
-	h.OneH = TriggerTick(h.OneH, bars1h, 60, cfg)
+	return HTFAdvanceAt(h, bars4h, bars1h, cfg, 0)
+}
+
+// HTFAdvanceAt is HTFAdvance with the BREAK INSTANT: breakAt is the open time
+// of the 1m bar the evaluator is ticking on. A line that moves on the forming
+// (tail) bucket this tick is stamped MovedAt = breakAt, the minute it really
+// fired, not the bucket open — so oneHSilent compares real instants, not 4h
+// vs 1h bucket opens [B3; D4.4 p1 @18:36; p2 @03:10]. breakAt 0 = bucket open
+// (the legacy stamp).
+func HTFAdvanceAt(h HTF, bars4h, bars1h []market.Kline, cfg Config, breakAt int64) HTF {
+	h.FourH = triggerTickAt(h.FourH, bars4h, 240, cfg, breakAt)
+	h.OneH = triggerTickAt(h.OneH, bars1h, 60, cfg, breakAt)
 	return h
 }
 
 // HTFVerdict is the three cases verbatim from the mentor's screen
-// [D4.4 p1 @ 16:00]:
+// [D4.4 p1 @14:08–15:34 — the written list; first spoken 05:17–06:46. @16:00 only restates case 1]:
 //
 //  1. 4H trigger + 1h trigger same direction            → trade that side.
 //  2. 4H trigger, 1h "ko có gì hết" (nothing)           → follow the 4h.
@@ -45,7 +58,7 @@ func HTFAdvance(h HTF, bars4h, bars1h []market.Kline, cfg Config) HTF {
 // (fail-closed: the read always starts from the 4-hour).
 func HTFVerdict(h HTF) (ok bool, side Side, reason string) {
 	if h.GateOff {
-		return true, "", "" // D4.4-11: the HTF direction gate is off outside the news window
+		return true, "", "" // stored news-only (D4.4-11) outside its windows; never under the m462 all-day default
 	}
 	if h.FourH.Dir == "" {
 		return false, "", "no 4h trigger yet — the 4-hour is read first, before the 1-hour [D4.4 p1 @ 02:53]"
@@ -53,22 +66,148 @@ func HTFVerdict(h HTF) (ok bool, side Side, reason string) {
 	if oneHSilent(h) || h.OneH.Dir == h.FourH.Dir {
 		return true, h.FourH.Dir, ""
 	}
-	return false, "", "case 3: 1h trigger opposite the 4h — sit out until the 1h flips to the 4h [D4.4 p1 @ 16:00; §12]"
+	return false, "", "case 3: 1h trigger opposite the 4h — sit out until the 1h flips to the 4h [D4.4 p1 @ 15:09–15:33] (§12)"
 }
 
-// HTFGateActive — D4.4-11 [D4.4 p1 @13:44–14:06, @24:48]: reports whether the
-// 4h/1h direction gate APPLIES at `now`. With HTFGateNewsOnly off (the default,
-// owner decision A 2026-10-21: gate ALL DAY) the gate applies all day. With the
-// knob on (news-first, owner order 2026-10-17) it applies only inside the
-// 07:20–07:35 CT news window (the T1 print window time; the calendar-day
-// refinement is the trader's news seam — DS-102 item 18).
+// HTFRefusal names WHY the shared 4h/1h check refused an intraday entry
+// (m462). Every setup prefixes it: isb_htf_conflict, phl_htf_side_mismatch,
+// box_htf_no_4h, rolling_htf_conflict, … — one name per setup, one counter.
+type HTFRefusal string
+
+const (
+	// HTFRefuseNo4h — no 4h trigger at all: "the 4-hour is read first"
+	// [D4.4 p1 @02:53; D5.1-R8 D5.1 p1 @08:29–09:13] — nothing to follow.
+	HTFRefuseNo4h HTFRefusal = "htf_no_4h"
+	// HTFRefuseConflict — case 3: the 1h trigger (fired at/after the 4h)
+	// points opposite the 4h → sit out until the 1h flips to the 4h
+	// [D4.4 p1 @15:09–15:33; D5.1-R11 D5.1 p1 @08:29–09:52, @11:27–11:50
+	// "Trigger 4h, trigger 1h nằm ngược nhau… mình không làm được gì hết trơn"].
+	HTFRefuseConflict HTFRefusal = "htf_conflict"
+	// HTFRefuseSide — case 1/2: the entry's side is against the 4h direction
+	// (1h agreeing or silent) — "entries only with the 4h" [D4.4 p1
+	// @16:10–16:20; case 2 @17:11–18:52; D5.1-R20(a) D5.1 p1 @19:11–20:10].
+	HTFRefuseSide HTFRefusal = "htf_side_mismatch"
+)
+
+// HTFEntryCheck is the ONE shared 4h/1h check every INTRADAY mentor entry
+// path calls (m462): ISB, reverse ISB (incl. its CX-6 PHL/PLH retag), level
+// PHL/PLH, rolling PHL/PLH, FTGH/FTGL box returns — and htfEntryFilter, the
+// backstop at Tick's exit, re-runs it on every entry intent so a path that
+// forgets its own call is still gated. Trendline / wick-microscalp / flag-wall
+// are TARGET paths on those same entries, so they are covered through them.
+// side "" checks only the setup-wide verdict (no 4h / case 3).
+//
+// It returns "" (allowed) when the gate is off — HTF.GateOff, which Tick sets
+// from HTFGateActive: since m462 the DEFAULT gate is ALL SESSION (D5.1-R9 [D5.1
+// p1 @08:46–11:27] "Lúc nào khi anh chị open ra, không cần phải là news");
+// only an explicitly stored htf_gate_news_only=true keeps the old windows.
+//
+// SWING4H never calls it: the swing's direction is the 4h EMA34 — "4 giờ đụng
+// resistance thì mình đánh xuống chứ không lẽ đánh lên?" [D5.2-R7, D5.2 p3
+// @15:04–18:25] — not the 4h/1h trigger lines.
+func HTFEntryCheck(h HTF, side Side) (HTFRefusal, string) {
+	ok, dir, why := HTFVerdict(h)
+	if !ok {
+		if h.FourH.Dir == "" {
+			return HTFRefuseNo4h, why
+		}
+		return HTFRefuseConflict, why
+	}
+	if side != "" && dir != "" && side != dir {
+		return HTFRefuseSide, "entry side " + string(side) + " against the " + string(dir) + " 4h trigger — entries only with the 4h direction [D4.4 p1 @16:10–16:20; case 2 @17:11–18:52]"
+	}
+	return "", ""
+}
+
+// htfEntryFilter is the m462 backstop: the shared HTFEntryCheck over every
+// intraday entry intent that is about to leave Tick. The per-setup paths
+// already refuse by name before they emit, so on a correct build this drops
+// nothing; it exists so that NO intraday entry path (present or future) can
+// trade through a 4h/1h conflict unnamed. SWING4H is exempt (D5.2-R7).
+func htfEntryFilter(out []Intent, h HTF) (kept []Intent, refusals []string) {
+	kept = out[:0:0]
+	for _, in := range out {
+		if (in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry) && !htfExempt(in) {
+			if r, _ := HTFEntryCheck(h, in.Side); r != "" {
+				refusals = append(refusals, htfRefusalName(in.Setup, r))
+				continue
+			}
+		}
+		kept = append(kept, in)
+	}
+	return kept, refusals
+}
+
+// htfExempt — the SWING4H runs its own §8 machine on the 4h EMA34 (D5.2-R7)
+// [D5.2 p3 @15:04–18:25 "4 giờ đụng resistance thì mình đánh xuống"].
+func htfExempt(in Intent) bool {
+	return in.Setup == "SWING4H" || strings.HasPrefix(in.Reason, "swing")
+}
+
+// htfRefusalName is the per-setup refusal name: the setup prefix + the kind.
+// PLH shares the "phl" prefix (one setup family, as the level path counts it).
+func htfRefusalName(setup string, r HTFRefusal) string {
+	p := strings.ToLower(setup)
+	if p == "plh" {
+		p = "phl"
+	}
+	return p + "_" + string(r)
+}
+
+// HTFGateActive reports whether the 4h/1h direction gate APPLIES at `now`.
+//
+// m462 (release #59) DEFAULT — HTFGateNewsOnly false: ALL SESSION. The final
+// review D5.1 overrides the D4.4 "news first" caveat: "Lúc nào khi anh chị open
+// ra, không cần phải là news" [D5.1-R9, D5.1 p1 @08:46–09:13, @11:27] and a
+// 4h/1h conflict is "mình không làm được gì hết trơn" whatever the hour
+// [D5.1-R11, D5.1 p1 @08:29–09:52, @11:27–11:50; 15 Sep it held to 11–12 h].
+//
+// The OLD rule, kept only for a strategy that STORED htf_gate_news_only=true
+// (stored values are sacred) — D4.4-11 [D4.4 p1 @13:44–14:06, @24:48]: the
+// gate applies
+//
+//   - on a PRINT DAY (cfg.PrintWindows lists today's red-folder 07:30 print),
+//     from the print window's start (07:20 CT) through the 08:30 CT open — the
+//     whole news period, because the post-print news trade lives in
+//     07:35–08:30 and the course locks it to the 4h: "có news hay không có
+//     news đi nữa thì mình nhắm theo khung 4 giờ … khung 4 giờ trigger buy mà
+//     khung 1 giờ trigger sell … nghỉ trade khúc đó" [D4.4 p1 @13:18–13:33,
+//     @18:03–18:52] (A9). On a day with NO print the 07:20–07:35 window is
+//     ordinary trading, and the gate "NÊN SỬ DỤNG CHO NEWS TRƯỚC … đừng sử
+//     dụng cho thường" [@14:01–14:06] is not applied there (R7). The trader
+//     holds the 07:20–07:35 window fail-closed when the calendar is missing,
+//     so an empty list never opens that window to an entry; AND
+//   - at the 08:30 OPEN — "open nó cũng giống news thôi" [D4.4 p2 @00:35–00:46].
+//     D4.4 p2 gives no LENGTH for the open window, so the 60 minutes
+//     08:30–09:30 CT is OURS (owner-accepted INVENTED, borrowed from the
+//     mentor's 60-minute entry window [example: D1.2 p1 @23:52–24:59]; B28 —
+//     a mentor question: how long after the open does the 4h/1h read govern?).
+//
+// History: #43 shipped all-day (owner decision A m134), #45 reverted it to
+// news + open, m462 restores all-day as the DEFAULT from the D5.1 review.
 func HTFGateActive(now int64, cfg Config) bool {
+	// OCT-EXACT A1 row 1: October's only big frame is the 5m [Oct D4.3-R9
+	// @07:28], so the 4h/1h direction gate is OFF by default. Knob
+	// mentor_htf_gate_enabled=true reverts to the windows below.
+	if !cfg.HTFGateEnabled {
+		return false
+	}
 	if !cfg.HTFGateNewsOnly {
 		return true
 	}
 	t := time.UnixMilli(now).In(ctime())
 	mins := t.Hour()*60 + t.Minute()
-	return mins >= 7*60+20 && mins <= 7*60+35 // 07:20–07:35 CT
+	// The open window 08:30–09:30 CT, every day.
+	if mins >= 8*60+30 && mins <= 9*60+30 {
+		return true
+	}
+	// The news period: print-window start to the 08:30 CT open, print days only.
+	for _, w := range cfg.PrintWindows {
+		if now >= w.FromMs && now < newsPeriodEnd(w) {
+			return true
+		}
+	}
+	return false
 }
 
 // oneHSilent reports whether the 1h has nothing NEW to say after the 4h:
@@ -101,7 +240,7 @@ func HTFAgreement(h HTF) (ok bool, dir Side) {
 }
 
 // HTFAgrees reports whether the 4h AND the 1h trigger BOTH stand and point
-// the entry's side — case 1 of the mentor's screen [D4.4 p1 @16:00]. Case 2
+// the entry's side — case 1 of the mentor's screen [D4.4 p1 @16:10–16:20 (also 05:04–05:15)]. Case 2
 // (1h "ko có gì hết", follow the 4h) trades but is not agreement; case 3
 // (opposite) never reaches an entry. It gates the 20-contract size tier.
 func HTFAgrees(h HTF, side Side) bool {

@@ -88,13 +88,40 @@ func fetchFor(tf string, bars []market.Kline) func(string, int) []market.Kline {
 	}
 }
 
+// nativeDailyBarsWithTwoEqualPivotHighs builds n CLOSED native daily bars with
+// the same pivot-high shape as barsWithTwoEqualPivotHighs, but stamped the way
+// the NT8 native 1d series actually is (#15): OpenTime = (D-1) 00:00 CT,
+// CloseTime = D 00:00 CT − 1ms. The newest bar is the most recent trading date
+// whose session (which closes at D 16:00 CT) has already closed at `now`.
+func nativeDailyBarsWithTwoEqualPivotHighs(n int, base float64, now time.Time) []market.Kline {
+	out := make([]market.Kline, 0, n)
+	lastTD := time.Date(now.Year(), now.Month(), now.Day()-1, 0, 0, 0, 0, CTLocation())
+	startTD := lastTD.AddDate(0, 0, -(n - 1))
+	for i := 0; i < n; i++ {
+		td := startTD.AddDate(0, 0, i)
+		open := time.Date(td.Year(), td.Month(), td.Day()-1, 0, 0, 0, 0, CTLocation())
+		o := base
+		h := base + 2
+		l := base - 2
+		if i == 2 || i == n-3 {
+			h = base + 20
+		}
+		out = append(out, market.Kline{
+			OpenTime: open.UnixMilli(),
+			Open:     o, High: h, Low: l, Close: base, Volume: 1000,
+			CloseTime: time.Date(td.Year(), td.Month(), td.Day(), 0, 0, 0, 0, CTLocation()).UnixMilli() - 1,
+		})
+	}
+	return out
+}
+
 // ---------------------------------------------------------------- E1
 
 // TestE1_DailyTimeframeReachesTheMap — RED before this wave: isHTFDetectionTF
 // rejects "1d", so DetectHTFLevels returns nothing however good the bars are.
 func TestE1_DailyTimeframeReachesTheMap(t *testing.T) {
 	now := tfTestNow()
-	daily := barsWithTwoEqualPivotHighs(30, 29500, tfTestDayMs, now)
+	daily := nativeDailyBarsWithTwoEqualPivotHighs(30, 29500, now)
 
 	got := DetectHTFLevels(fetchFor("1d", daily), []string{"1d"}, "MNQ", now)
 	if len(got) == 0 {
@@ -184,7 +211,7 @@ func TestE3b_SameTimeframeStillDedupes(t *testing.T) {
 // observation from outside.
 func TestE4_PartialWindowEmitsNothingAndSaysSo(t *testing.T) {
 	now := tfTestNow()
-	tooFew := barsWithTwoEqualPivotHighs(3, 29500, tfTestDayMs, now)
+	tooFew := nativeDailyBarsWithTwoEqualPivotHighs(3, 29500, now)
 
 	levels, report := DetectHTFLevelsReport(fetchFor("1d", tooFew), []string{"1d"}, "MNQ", now)
 	if len(levels) != 0 {
@@ -212,7 +239,7 @@ func TestE4_PartialWindowEmitsNothingAndSaysSo(t *testing.T) {
 // detection that produced it (A11: boot lines are READ, never literal).
 func TestE4b_ReportCountsPerTimeframe(t *testing.T) {
 	now := tfTestNow()
-	daily := barsWithTwoEqualPivotHighs(30, 29500, tfTestDayMs, now)
+	daily := nativeDailyBarsWithTwoEqualPivotHighs(30, 29500, now)
 
 	levels, report := DetectHTFLevelsReport(fetchFor("1d", daily), []string{"1d"}, "MNQ", now)
 	if report.Counts["1d"] != len(levels) {
@@ -278,7 +305,7 @@ func TestC6b_KnownTiersUnmoved(t *testing.T) {
 // be.
 func TestC6c_DailyCarriesTheHTFFlag(t *testing.T) {
 	now := tfTestNow()
-	daily := barsWithTwoEqualPivotHighs(30, 29500, tfTestDayMs, now)
+	daily := nativeDailyBarsWithTwoEqualPivotHighs(30, 29500, now)
 	got := DetectHTFLevels(fetchFor("1d", daily), []string{"1d"}, "MNQ", now)
 	if len(got) == 0 {
 		t.Fatalf("no daily level produced; cannot assert the HTF flag")
@@ -356,7 +383,7 @@ func TestE2_CrossTimeframeCoincidenceIsOneCandidateWithBothNames(t *testing.T) {
 func TestD4_DetectedLevelNamesItsTimeframeAndWindow(t *testing.T) {
 	now := tfTestNow()
 	const bars = 30
-	daily := barsWithTwoEqualPivotHighs(bars, 29500, tfTestDayMs, now)
+	daily := nativeDailyBarsWithTwoEqualPivotHighs(bars, 29500, now)
 
 	got := DetectHTFLevels(fetchFor("1d", daily), []string{"1d"}, "MNQ", now)
 	if len(got) == 0 {
@@ -418,7 +445,7 @@ func TestD1_TheOwnersConfiguredTimeframesReachDetection(t *testing.T) {
 	fetch := func(tf string, _ int) []market.Kline {
 		switch tf {
 		case "1d":
-			return barsWithTwoEqualPivotHighs(30, 29500, tfTestDayMs, now)
+			return nativeDailyBarsWithTwoEqualPivotHighs(30, 29500, now)
 		case "4h", "1h", "15m":
 			return barsWithTwoEqualPivotHighs(30, 29500, 60*tfTestMinuteMs, now)
 		}

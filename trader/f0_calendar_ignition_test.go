@@ -176,7 +176,7 @@ func TestF0StaticUpgradesToLive(t *testing.T) {
 
 	// but a LIVE row is frozen: a second fetch with different content must not rewrite it.
 	resetCalFetchThrottleForTest(at.id) // clear the persisted throttle
-	at.lastCalSkipDate = ""       // clear latch
+	at.lastCalSkipDate = ""             // clear latch
 	at.calFetch = func() ([]byte, error) {
 		t.Fatal("live slice is fresh — must skip, not refetch")
 		return nil, nil
