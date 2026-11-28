@@ -11,9 +11,10 @@ import (
 
 // The readiness list finds the NT8 Documents folder with its own DefaultDetect, which
 // scans /mnt/c/Users/*/Documents only; the updater's addonbuild.Detect also scans the
-// OneDrive-redirected path (m385). This pins the OneDrive half of "the readiness probe
-// looks only in the default folders": here only Detect's globs can find the folder, so a
-// DefaultDetect that asked addonbuild.Detect (reviewer mutant Y4) would return it. It
+// OneDrive-redirected path (m385). This pins only that DefaultDetect does not go through
+// addonbuild.Detect: here only Detect's globs can find the folder, so a DefaultDetect
+// that asked addonbuild.Detect (reviewer mutant Y4) would return it. A DefaultDetect
+// that globbed a OneDrive path ITSELF is not seen by this test (review-5 mutant Z3). It
 // lives in this external package because it needs Detect's unexported globs
 // (SetDetectGlobsForTest, export_test.go) and updatereadiness imports addonbuild.
 func TestReadinessDefaultDetectDoesNotLookInOneDrive(t *testing.T) {

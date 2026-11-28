@@ -17,8 +17,9 @@ import (
 // installed release's AddOn build (m355: the signed manifest's addon.build_id of
 // <VL_RELEASE_DIR>/<running revision> — never oldInstallBuildID()).
 //
-//   - Ack there ("NT8 open"): the same build → nothing is owed; an older or
-//     unrankable release build → held; else, when the box is flat + SIM, the AddOn is rebuilt from
+//   - Ack there ("NT8 open"): the same build → nothing is owed; a release build older than
+//     a VALID running build id, or one that cannot be ranked against it → held
+//     (an empty or "n/a" ack is not ranked: it goes on as if no build ran); else, when the box is flat + SIM, the AddOn is rebuilt from
 //     that verified release's own ninjascript and placed, NT8 is restarted and
 //     the reconnect is proven.
 //   - No ack (NT8 closed, OR its AddOn not linked yet): there is no running build
@@ -44,8 +45,9 @@ type catchupDecision struct {
 // catchupStatus reports whether a catch-up is owed. With an ack (nt8Open) it is
 // owed when the verified installed-release artifact names a build the running
 // AddOn does not run; it is not when that build is already running, and is held
-// (with a log) when that build is older than the running one or cannot be ranked
-// against it (m355 never-downgrade), or the box is not flat+SIM.
+// (with a log) when the ack names a valid build id and that build is older than it
+// or cannot be ranked against it (m355 never-downgrade; an empty or "n/a" ack is
+// not ranked here, only at the place step), or the box is not flat+SIM.
 // Without an ack it is owed whatever is placed, the same build included. An
 // unavailable artifact or one without a build id is held (with a log) either way.
 func (w *Worker) catchupStatus(ctx context.Context) (catchupDecision, error) {
