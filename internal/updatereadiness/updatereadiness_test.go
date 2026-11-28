@@ -111,8 +111,12 @@ func TestCheckAllGreen(t *testing.T) {
 	}
 }
 
-// The compiler item does not read the updater's VL_NT8_EXE and VL_NT8_DOCS_DIR: it asks
-// for C:\Program Files\NinjaTrader 8\bin and for the folder its own detection found. The
+// The compiler item does not read the updater's VL_NT8_EXE: it asks for
+// C:\Program Files\NinjaTrader 8\bin. And Check does not put VL_NT8_DOCS_DIR before its
+// Detect: it asks for the folder Detect gave it. This test passes a FAKE Detect, so it
+// says nothing about where DefaultDetect looks. That is pinned by
+// TestDefaultDetectDoesNotFollowVLNT8DocsDir (below, VL_NT8_DOCS_DIR) and
+// TestReadinessDefaultDetectDoesNotLookInOneDrive (internal/addonbuild, OneDrive). The
 // guide and the comment in checkCompiler say so.
 func TestReadinessProbeLooksOnlyInTheDefaultFolders(t *testing.T) {
 	docs := buildDocs(t)
@@ -144,6 +148,21 @@ func TestReadinessProbeLooksOnlyInTheDefaultFolders(t *testing.T) {
 	if want := windowsPath(filepath.Join(docs, "bin", "Custom")); !strings.HasSuffix(strings.ReplaceAll(got["-CustomDir"], "/", `\`), want) {
 		t.Errorf("-CustomDir %q, want %q, the folder readiness detected", got["-CustomDir"], want)
 	}
+}
+
+// DefaultDetect (the readiness list's own detection) does not follow the updater's
+// VL_NT8_DOCS_DIR, even when it names a valid NT8 Documents folder (with bin/Custom).
+// MUTANT (reviewer Y3): DefaultDetect returns VL_NT8_DOCS_DIR when it is set -> red. On
+// the real box it may return the real folder; under the gate's namespace (/mnt/c hidden)
+// it returns an error. Either way it is not this temp folder.
+func TestDefaultDetectDoesNotFollowVLNT8DocsDir(t *testing.T) {
+	docs := buildDocs(t)
+	t.Setenv("VL_NT8_DOCS_DIR", docs)
+	got, err := DefaultDetect()
+	if got == docs {
+		t.Fatalf("DefaultDetect = %q: it followed VL_NT8_DOCS_DIR; the guide says the readiness list looks only in C:\\Users\\<you>\\Documents", got)
+	}
+	t.Logf("DefaultDetect = %q, %v (not VL_NT8_DOCS_DIR)", got, err)
 }
 
 func TestCheckReportsMissingDocsDir(t *testing.T) {

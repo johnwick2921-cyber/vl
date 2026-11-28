@@ -133,9 +133,16 @@ func TestReadinessGuideSaysOnlyWhatTheProbeTests(t *testing.T) {
 	guideMustSay(t, "only GET /api/updates/readiness, no page shows it",
 		"it turns red when NinjaTrader.Core or the compiler cannot be used; it does not test the release’s own AddOn source, and it does not test the updater")
 	guideMustNotSay(t, "it is red when the real build would be")
-	// Where it looks: TestReadinessProbeLooksOnlyInTheDefaultFolders (updatereadiness); the
-	// slashes: TestExeWithBackslashesBuildsFromTheDefaultFolder (addonbuild). The updater's
-	// env and the 10 seconds are read here.
+	// Where readiness looks. What Check passes to the probe, and the default bin (readiness
+	// sets no Exe): TestReadinessProbeLooksOnlyInTheDefaultFolders (a fake Detect). That
+	// DefaultDetect ignores VL_NT8_DOCS_DIR: TestDefaultDetectDoesNotFollowVLNT8DocsDir
+	// (updatereadiness). That it does not look in OneDrive:
+	// TestReadinessDefaultDetectDoesNotLookInOneDrive (addonbuild). That the handler leaves
+	// Detect and DocsDir unset, so DefaultDetect is used: read below. The slashes:
+	// TestExeWithBackslashesBuildsFromTheDefaultFolder (addonbuild). The updater's env and the
+	// 10 seconds are read here. The updater's OneDrive half is NOT pinned: that addonDocsDir
+	// falls back to addonbuild.Detect is read from the code; Detect's OneDrive scan itself is
+	// TestDetect/onedrive_redirect_localized (addonbuild).
 	guideMustSay(t, `It looks for the program only in C:\\Program Files\\NinjaTrader 8\\bin`,
 		"it is also red when it takes more than 10 seconds; the updater follows VL_NT8_DOCS_DIR and also looks in OneDrive",
 		"it builds from the folder of VL_NT8_EXE when that is written with forward slashes (written with backslashes, it builds from the default folder too)")
@@ -147,6 +154,19 @@ func TestReadinessGuideSaysOnlyWhatTheProbeTests(t *testing.T) {
 	}
 	if h, herr := os.ReadFile("../../api/handler_updates.go"); herr != nil || !strings.Contains(string(h), "updatereadiness.RunViaExec(10 * time.Second)") {
 		t.Errorf("api/handler_updates.go does not give the readiness commands 10 s (read error %v)", herr)
+	}
+	if h, herr := os.ReadFile("../../api/handler_updates.go"); herr == nil {
+		body := string(h)
+		at := strings.Index(body, "func (s *Server) handleUpdatesReadiness(")
+		end := -1
+		if at >= 0 {
+			end = strings.Index(body[at:], "\n}\n")
+		}
+		if at < 0 || end < 0 {
+			t.Errorf("api/handler_updates.go: handleUpdatesReadiness not found")
+		} else if fn := body[at : at+end]; strings.Contains(fn, "Detect") || strings.Contains(fn, "DocsDir") {
+			t.Errorf("handleUpdatesReadiness sets Detect or DocsDir: the guide says readiness looks only in the default folders\n%s", fn)
+		}
 	}
 	err := filepath.WalkDir("../../web/src", func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || strings.Contains(p, "/guide/content/") {

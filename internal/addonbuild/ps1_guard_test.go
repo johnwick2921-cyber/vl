@@ -221,6 +221,22 @@ Write-Output 'VL_ADDON_PROBE=ok'`
 			"return $exe", "exit $LASTEXITCODE", "if (-not $path) { return }", "if (-not (Test-Path $path)) { return }", "return",
 			"exit $LASTEXITCODE", "exit 0"}},
 		{"trap", regexp.MustCompile(`(?i)^trap\b|ErrorActionPreference`), []string{"$ErrorActionPreference = 'Stop'"}},
+		// The comparer self-test: both calls run the builder, -Custom stops on its exit code and
+		// -Probe exits with it. The marker the Go side requires (VL_SELFTEST_OK) is printed by
+		// VLCustomBuilder.exe only, never by the script itself.
+		{"selftest", regexp.MustCompile(`(?i)\bselftest\b`), []string{
+			"& $exe --selftest --nt8Bin $NT8Bin", "if ($LASTEXITCODE -ne 0) { Fail 'VLCustomBuilder --selftest did not pass' }",
+			"& $exe --selftest --nt8Bin $NT8Bin"}},
+		{"VL_SELFTEST_OK", regexp.MustCompile(`(?i)VL_SELFTEST_OK`), nil},
+		// The source text: the builder's one file, then each AddOn source file in the loop.
+		{"$text", regexp.MustCompile(`(?i)\$text\b`), []string{
+			"$text = [System.IO.File]::ReadAllText($src)",
+			"$bTree = [Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree]::ParseText($text, $null, $src, $null)",
+			"$text = [System.IO.File]::ReadAllText($f.FullName)",
+			"$trees.Add([Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree]::ParseText($text, $null, $f.FullName, $null))"}},
+		{"$asmName", regexp.MustCompile(`(?i)\basmName\b`), []string{
+			"$asmName = '__VlAddonProbe'", "$asmName = 'VL.AddOn'",
+			"$compilation = [Microsoft.CodeAnalysis.CSharp.CSharpCompilation]::Create($asmName, $trees, $refs, $options)"}},
 	}
 )
 
@@ -330,6 +346,10 @@ func TestPs1GuardSeesBreaksThatKeepThePinnedText(t *testing.T) {
 		"Fail does not stop":                  {"    exit 1\n}\n", "}\n"},
 		"errors do not stop":                  {"$ErrorActionPreference = 'Stop'", "$ErrorActionPreference = 'SilentlyContinue'"},
 		"a lone CR hides code in a comment":   {cmp, "# note\r$x = 1\n" + cmp},
+		"Y1 the probe prints the marker":      {"& $exe --selftest --nt8Bin $NT8Bin\n    exit", "Write-Output 'VL_SELFTEST_OK'\n    exit"},
+		"Y1b -Custom skips the self-test":     {"& $exe --selftest --nt8Bin $NT8Bin\n    if", "$null = $exe\n    if"},
+		"Y2 the source text emptied":          {"$text = [System.IO.File]::ReadAllText($f.FullName)\n", "$text = [System.IO.File]::ReadAllText($f.FullName)\n        $text = ''\n"},
+		"Y5 another assembly name":            {"$asmName = 'VL.AddOn'\n", "$asmName = 'VL.AddOnX'\n"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			s := BuildPs1()

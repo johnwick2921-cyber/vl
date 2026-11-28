@@ -1,7 +1,8 @@
 // Package updatereadiness answers, BEFORE the owner presses Update, whether
 // this box can do the one-click walk-away update hands-free (W-ADDON-ONE-CLICK,
 // owner order 2026-10-17: "click Update, then nothing else"). Check returns one
-// row per precondition with ok and a plain-words fix the Update page can show.
+// row per precondition with ok and a plain-words fix that a caller of
+// GET /api/updates/readiness can show (no page calls it).
 //
 // Every probe is read-only. The tests use fake directories only; nothing here
 // ever touches the real NinjaTrader install or a live process.
@@ -39,8 +40,9 @@ type Config struct {
 	// DocsDir is the NinjaTrader 8 Documents folder (the WSL path, e.g.
 	// /mnt/c/Users/<u>/Documents/NinjaTrader 8). Empty → Detect is used.
 	DocsDir string
-	// Detect finds the single NT8 Documents folder. nil → the default scan of
-	// /mnt/c/Users/*/Documents/NinjaTrader 8 (addonbuild.Detect once it lands).
+	// Detect finds the single NT8 Documents folder. nil → DefaultDetect, the scan
+	// of /mnt/c/Users/*/Documents/NinjaTrader 8 only (not OneDrive, not
+	// VL_NT8_DOCS_DIR; the updater's addonbuild.Detect also scans OneDrive).
 	Detect func() (string, error)
 	// Run executes a command; nil → the powershell probe fails closed.
 	Run Runner

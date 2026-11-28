@@ -28,7 +28,9 @@ const (
 )
 
 // addonDocsDir resolves VL_NT8_DOCS_DIR, else addonbuild.Detect() (the single
-// /mnt/c/Users/*/Documents/NinjaTrader 8 with bin/Custom; >1 refuses naming them).
+// NT8 Documents folder with bin/Custom, from /mnt/c/Users/*/Documents/NinjaTrader 8
+// and the OneDrive-redirected nt8OneDriveGlob, /mnt/c/Users/*/OneDrive/*/NinjaTrader 8;
+// none or >1 refuses, naming what it saw).
 func addonDocsDir() (string, error) {
 	if v := strings.TrimSpace(os.Getenv("VL_NT8_DOCS_DIR")); v != "" {
 		return v, nil
